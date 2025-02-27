@@ -8,7 +8,7 @@ message(STATUS "CMake Version ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CM
 #
 # INPUTS - to be defined by user
 #
-# RV_ARCH      : Select the processor architecture configuration.  Used to select the pipeline configuration defined config.mk.
+# RISCV_ARCH   : Select the processor architecture configuration.  Used to select the pipeline configuration defined config.mk.
 # VREG_W       : Width(bits) of vector registers.
 # VMEM_W       : Width(bits) of pipeline containing VLSU
 # VLANE_W      : Width(bits) of pipeline containing all other functional units
@@ -54,7 +54,7 @@ elseif(${RISCV_ARCH} STREQUAL "rv32imf_zfh_zve32f_zvfh") #Build CV32E40X with Vi
     set(VPROC_CONFIG dual-zve32f) #pipeline configuration same as Zve32f.  VICUNA_FLAGS provides configuration for half float support
 
 else()
-    message(FATAL_ERROR "Unsupported RISCV_ARCH selected for Vicuna Co-processor")
+    #message(FATAL_ERROR "Unsupported RISCV_ARCH selected for Vicuna Co-processor") #TODO: Scalar Selections don't need to cause a fatal error
     
 endif()
 
@@ -73,7 +73,7 @@ set(DESIGN_RTL_DIR_VICUNA ${CMAKE_CURRENT_SOURCE_DIR}/rtl) #TODO: UPDATE PATH
 #Path to CVFPU sources
 set(DESIGN_RTL_DIR_CVFPU ${CMAKE_CURRENT_SOURCE_DIR}/cvfpu/src) #TODO: UPDATE PATH
 
-#TODO: ADD CV32E40X DIV
+
 set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                               #Vicuna sources
                     ${DESIGN_RTL_DIR_VICUNA}/../vproc_config.sv 
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_xif.sv
@@ -184,6 +184,6 @@ execute_process(COMMAND rm -f vproc_config.sv
 ##############
 # Variables to be used by the project to include Vicuna
 ##############
-set(VICUNA_SRCS ${VICUNA_SOURCE} ${CVFPU_SOURCE})
-set(VICUNA_INCS ${VICUNA_INCLUDE} ${CVFPU_INCLUDE})
-set(VICUNA_FLAGS ${RISCV_ZVE32X} ${RISCV_ZVE32F} ${RISCV_ZVFH} ${FORCE_ALIGNED_READS} ${OLD_VICUNA})
+set(VICUNA_SRCS ${CVFPU_SOURCE} ${VICUNA_SOURCE} PARENT_SCOPE)
+set(VICUNA_INCS ${CVFPU_INCLUDE} ${VICUNA_INCLUDE}  PARENT_SCOPE)
+set(VICUNA_FLAGS ${RISCV_ZVE32X} ${RISCV_ZVE32F} ${RISCV_ZVFH} ${FORCE_ALIGNED_READS} ${OLD_VICUNA} PARENT_SCOPE)
