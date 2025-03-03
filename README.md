@@ -1,6 +1,8 @@
-# vproc_rtl
+# Vicuna 2.0 core
 
-Contains the RTL for Vicuna 2.0 for inclusion in other projects
+Contains the RTL for Vicuna 2.0 for inclusion in other projects.
+
+Currently provides support for 'Zve32x', 'Zve32f' and 'Zvfh'.
 
 ## Overview
 
