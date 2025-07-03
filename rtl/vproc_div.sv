@@ -28,27 +28,8 @@ module vproc_div #(
     import vproc_pkg::*;
 
     ///////////////////////////////////////////////////////////////////////////
-    //Input connections
-    assign data_valid_i_d = pipe_in_valid_i;
-    assign div_ready_i_d = pipe_out_ready_i;
-    assign operand_mask_d = pipe_in_mask_i;
+    //Input/Output Buffers Defines
     ///////////////////////////////////////////////////////////////////////////
-
-    ///////////////////////////////////////////////////////////////////////////
-    //Output Connections
-    assign pipe_out_ctrl_o = unit_ctrl_q;
-    assign pipe_out_res_o = result;
-    assign pipe_out_valid_o = div_valid_o_d;
-
-    always_comb begin
-        pipe_in_ready_o = &div_ready_o & (shift_counter_next == 2'b00); //only signal out when all data has been processed
-        div_valid_o_d = &div_valid_o & (shift_counter_next == 2'b00);
-    end
-    ///////////////////////////////////////////////////////////////////////////
-
-    ///////////////////////////////////////////////////////////////////////////
-    //Input/Output Buffers
-    
 
     logic [DIV_OP_W  -1:0] opa_i_d, opa_i_q, opb_i_d, opb_i_q;
     CTRL_T                unit_ctrl_d, unit_ctrl_q;
@@ -62,6 +43,43 @@ module vproc_div #(
     logic [DIV_OP_W/8-1:0] result_mask_d, result_mask_q;
 
     logic [DIV_OP_W  -1:0] result, result_partial_d, result_partial_d_shifted,result_partial_q;
+
+    ///////////////////////////////////////////////////////////////////////////
+    // DIV ARITHMETIC Defines
+    ///////////////////////////////////////////////////////////////////////////
+    logic [DIV_OP_W/32  -1:0] div_en, div_ready_o, div_valid_o;
+    logic [DIV_OP_W  -1:0] div_in_opa, div_in_opb;
+    logic [DIV_OP_W  -1:0] div_out;
+
+    ///////////////////////////////////////////////////////////////////////////
+    //Shift counter control defines
+    ///////////////////////////////////////////////////////////////////////////
+    logic [1:0] shift_counter, shift_counter_next;
+
+    ///////////////////////////////////////////////////////////////////////////
+    //Input connections
+    ///////////////////////////////////////////////////////////////////////////
+    assign data_valid_i_d = pipe_in_valid_i;
+    assign div_ready_i_d = pipe_out_ready_i;
+    assign operand_mask_d = pipe_in_mask_i;
+    ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
+    //Output Connections
+    ///////////////////////////////////////////////////////////////////////////
+    assign pipe_out_ctrl_o = unit_ctrl_q;
+    assign pipe_out_res_o = result;
+    assign pipe_out_valid_o = div_valid_o_d;
+
+    always_comb begin
+        pipe_in_ready_o = &div_ready_o & (shift_counter_next == 2'b00); //only signal out when all data has been processed
+        div_valid_o_d = &div_valid_o & (shift_counter_next == 2'b00);
+    end
+    ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
+    //Input/Output Buffers
+    ///////////////////////////////////////////////////////////////////////////
 
 
     always_ff @(posedge clk_i) begin
@@ -143,10 +161,6 @@ module vproc_div #(
         endcase
     end
 
-
-    //Shift counter control: 
-    logic [1:0] shift_counter, shift_counter_next;
-
     always_ff @(posedge clk_i) begin
         if (async_rst_ni == 1'b0 | (pipe_out_valid_o & unit_ctrl_q.last_cycle)) begin
             shift_counter <= 2'b0;
@@ -176,10 +190,6 @@ module vproc_div #(
     ///////////////////////////////////////////////////////////////////////////
     // DIV ARITHMETIC
     // Each div unit handles one 32 bit result.
-
-    logic [DIV_OP_W/32  -1:0] div_en, div_ready_o, div_valid_o;
-    logic [DIV_OP_W  -1:0] div_in_opa, div_in_opb;
-    logic [DIV_OP_W  -1:0] div_out;
 
      generate
         for (genvar g = 0; g < DIV_OP_W / 32; g++) begin

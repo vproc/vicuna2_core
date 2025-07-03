@@ -657,8 +657,11 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             end
 
 
-            assign pipe_out_valid_o = (unit_out_valid & ~unit_out_stall) | flushing_q;
-            assign unit_out_ready   = pipe_out_ready_i & ~flushing_q & ~unit_out_stall;
+            assign pipe_out_valid_o = (unit_out_valid) | flushing_q;
+            assign unit_out_ready   = pipe_out_ready_i & ~flushing_q;
+            //unit out stall signal missing.  Needed for ELEM operation?
+            //assign pipe_out_valid_o = (unit_out_valid & ~unit_out_stall) | flushing_q;
+            //assign unit_out_ready   = pipe_out_ready_i & ~flushing_q & ~unit_out_stall;
 
             logic [4:0] base_vaddr;
             assign base_vaddr = flushing_q ? flushing_vaddr_q : unit_out_ctrl.res_vaddr;

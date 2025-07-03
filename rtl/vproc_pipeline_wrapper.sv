@@ -81,6 +81,8 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         output logic [4:0]              xreg_addr_o,
         output logic [31:0]             xreg_data_o
     );
+    
+    import fpnew_pkg::*;
 
 `ifdef VERILATOR
     // Workaround for Verilator due to https://github.com/verilator/verilator/issues/3433
