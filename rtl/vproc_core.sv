@@ -830,10 +830,14 @@ module vproc_core import vproc_pkg::*; #(
     // REGISTER FILE AND EXECUTION UNITS
 
     // register file:
-    logic [VPORT_WR_CNT-1:0]               vregfile_wr_en_q,   vregfile_wr_en_d;
-    logic [VPORT_WR_CNT-1:0][4:0]          vregfile_wr_addr_q, vregfile_wr_addr_d;
-    logic [VPORT_WR_CNT-1:0][VREG_W  -1:0] vregfile_wr_data_q, vregfile_wr_data_d;
-    logic [VPORT_WR_CNT-1:0][VREG_W/8-1:0] vregfile_wr_mask_q, vregfile_wr_mask_d;
+   logic [VPORT_WR_CNT-1:0]               vregfile_wr_en_q /* verilator public */;
+    logic [VPORT_WR_CNT-1:0]               vregfile_wr_en_d;
+    logic [VPORT_WR_CNT-1:0][4:0]          vregfile_wr_addr_q /* verilator public */;
+    logic [VPORT_WR_CNT-1:0][4:0]          vregfile_wr_addr_d;
+    logic [VPORT_WR_CNT-1:0][VREG_W  -1:0] vregfile_wr_data_q /* verilator public */;
+    logic [VPORT_WR_CNT-1:0][VREG_W  -1:0] vregfile_wr_data_d;
+    logic [VPORT_WR_CNT-1:0][VREG_W/8-1:0] vregfile_wr_mask_q /* verilator public */;
+    logic [VPORT_WR_CNT-1:0][VREG_W/8-1:0] vregfile_wr_mask_d;
     logic [VPORT_RD_CNT-1:0][4:0]          vregfile_rd_addr;
     logic [VPORT_RD_CNT-1:0][VREG_W  -1:0] vregfile_rd_data;
     vproc_vregfile #(
