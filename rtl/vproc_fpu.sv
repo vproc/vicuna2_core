@@ -44,6 +44,43 @@ module vproc_fpu #(
         logic      last_cycle;
     } fpu_tag; 
 
+    ///////////////////////////////////////////////////////////////////////////
+    //Input buffer defines
+    ///////////////////////////////////////////////////////////////////////////
+
+    logic [FPU_OP_W  -1:0] pipe_in_op1_i_d, pipe_in_op2_i_d, pipe_in_op3_i_d;
+    logic [FPU_OP_W  -1:0] pipe_in_op1_i_q, pipe_in_op2_i_q, pipe_in_op3_i_q;
+    CTRL_T                unit_ctrl_d, unit_ctrl_q;
+
+    logic                 data_valid_i_d, data_valid_i_q;
+
+    ///////////////////////////////////////////////////////////////////////////
+    //Control logic for Reductions Ops Defines
+    ///////////////////////////////////////////////////////////////////////////
+
+    //store the intermediate result of the reduction operation here
+    logic [31:0] reduction_buffer_d, reduction_buffer_q;
+
+    logic last_cycle; 
+    
+
+    ///////////////////////////////////////////////////////////////////////////
+    // FPU ARITHMETIC defines
+    // Each FPU unit handles one 32 bit result.
+    // Signals for connections to the FPU
+    ///////////////////////////////////////////////////////////////////////////
+    logic [FPU_OP_W/ 32 - 1:0] pipe_in_ready_fpu;
+    logic [FPU_OP_W/ 32 - 1:0] pipe_out_valid_fpu;
+
+    fpu_tag unit_in_fpu_tag;
+    assign unit_in_fpu_tag.ctrl = unit_ctrl_q;
+    assign unit_in_fpu_tag.last_cycle = last_cycle;
+
+    fpu_tag [FPU_OP_W/ 32 - 1:0] unit_out_fpu_tag;
+
+
+    logic [FPU_OP_W  -1:0] operand_0_fpu, operand_1_fpu, operand_2_fpu;
+
    
 
     ///////////////////////////////////////////////////////////////////////////
@@ -116,12 +153,6 @@ module vproc_fpu #(
     //Input buffers
     ///////////////////////////////////////////////////////////////////////////
 
-    logic [FPU_OP_W  -1:0] pipe_in_op1_i_d, pipe_in_op2_i_d, pipe_in_op3_i_d;
-    logic [FPU_OP_W  -1:0] pipe_in_op1_i_q, pipe_in_op2_i_q, pipe_in_op3_i_q;
-    CTRL_T                unit_ctrl_d, unit_ctrl_q;
-
-    logic                 data_valid_i_d, data_valid_i_q;
-
     always_ff @(posedge clk_i) begin
 
         pipe_in_op1_i_q <= pipe_in_op1_i_d;
@@ -136,11 +167,6 @@ module vproc_fpu #(
     ///////////////////////////////////////////////////////////////////////////
     //Control logic for Reductions Ops
     ///////////////////////////////////////////////////////////////////////////
-
-    //store the intermediate result of the reduction operation here
-    logic [31:0] reduction_buffer_d, reduction_buffer_q;
-
-    logic last_cycle; 
     always_comb begin
         last_cycle = 0;
         if ((unit_ctrl_q.last_cycle) | (unit_ctrl_q.last_vl_part & unit_ctrl_d.vl_part_0)) begin
@@ -259,18 +285,6 @@ module vproc_fpu #(
     ///////////////////////////////////////////////////////////////////////////
     // FPU ARITHMETIC
     // Each FPU unit handles one 32 bit result.
-    // Signals for connections to the FPU
-    logic [FPU_OP_W/ 32 - 1:0] pipe_in_ready_fpu;
-    logic [FPU_OP_W/ 32 - 1:0] pipe_out_valid_fpu;
-
-    fpu_tag unit_in_fpu_tag;
-    assign unit_in_fpu_tag.ctrl = unit_ctrl_q;
-    assign unit_in_fpu_tag.last_cycle = last_cycle;
-
-    fpu_tag [FPU_OP_W/ 32 - 1:0] unit_out_fpu_tag;
-
-
-    logic [FPU_OP_W  -1:0] operand_0_fpu, operand_1_fpu, operand_2_fpu;
     
     generate
         for (genvar g = 0; g < FPU_OP_W/ 32; g++) begin

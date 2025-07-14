@@ -25,7 +25,7 @@ module vproc_decoder #(
         `ifdef RISCV_ZVE32F
         output logic fpr_wr_req_valid,
         output logic [4:0] fpr_wr_req_addr_o,
-        input vproc_pkg::fpu_roundmode_e float_round_mode_i,
+        input fpnew_pkg::roundmode_e float_round_mode_i,
         `endif
 
         output logic                    valid_o,
@@ -44,6 +44,7 @@ module vproc_decoder #(
     );
 
     import vproc_pkg::*;
+    import fpnew_pkg::*;
 
     logic [4:0] instr_vs1;
     logic [4:0] instr_vs2;

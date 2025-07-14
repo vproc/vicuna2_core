@@ -7,6 +7,9 @@ package vproc_pkg;
 `define VPROC_OP_MODE_UNION
 //`define VPROC_OP_REGS_UNION
 
+import fpnew_pkg::*;
+
+
 typedef enum {
     VREG_GENERIC     = 0,
     VREG_XLNX_RAM32M = 1,
@@ -223,41 +226,40 @@ typedef struct packed {
     logic       masked;
     div_opcode_e    op;
 `ifdef VPROC_OP_MODE_UNION
-    logic [1:0] unused;
+    logic [9:0] unused;
 `endif
 } op_mode_div;
 
 //Ideally include these from FP_NEW package
-localparam int unsigned OP_BITS = 4;
-typedef enum logic [OP_BITS-1:0] {
-   FMADD, FNMSUB, ADD, MUL,     // ADDMUL operation group
-   DIV, SQRT,                   // DIVSQRT operation group
-   SGNJ, MINMAX, CMP, CLASSIFY, // NONCOMP operation group
-   F2F, F2I, I2F, CPKAB, CPKCD  // CONV operation group
-} fpu_opcode_e;
+//localparam int unsigned OP_BITS = 4;
+//typedef enum logic [OP_BITS-1:0] {
+//   FMADD, FNMSUB, ADD, MUL,     // ADDMUL operation group
+//   DIV, SQRT,                   // DIVSQRT operation group
+//   SGNJ, MINMAX, CMP, CLASSIFY, // NONCOMP operation group
+//   F2F, F2I, I2F, CPKAB, CPKCD  // CONV operation group
+//} fpu_opcode_e;
 
 // Rounding modes
-typedef enum logic [2:0] {
-   RNE = 3'b000,
-   RTZ = 3'b001,
-   RDN = 3'b010,
-   RUP = 3'b011,
-   RMM = 3'b100,
-   ROD = 3'b101,  // This mode is not defined in RISC-V FP-SPEC
-   DYN = 3'b111
-} fpu_roundmode_e;
+//typedef enum logic [2:0] {
+//   RNE = 3'b000,
+//   RTZ = 3'b001,
+//   RDN = 3'b010,
+//   RUP = 3'b011,
+//   RMM = 3'b100,
+//   ROD = 3'b101,  // This mode is not defined in RISC-V FP-SPEC
+//   DYN = 3'b111
+//} fpu_roundmode_e;
  
 typedef struct packed {
     logic       masked;
-    fpu_opcode_e    op;
+    fpnew_pkg::operation_e    op;
     logic       op_mod;
     logic       op_rev;
     logic       op_reduction;
-    fpu_roundmode_e rnd_mode;
+    fpnew_pkg::roundmode_e rnd_mode;
     logic       src_1_narrow;
     logic       src_2_narrow;
 `ifdef VPROC_OP_MODE_UNION
-    logic [3:0] unused;
 `endif
 } op_mode_fpu;
 
@@ -303,7 +305,11 @@ typedef struct packed {
     logic       freg;
     `endif
 `ifdef VPROC_OP_MODE_UNION
-    logic [5:0] unused;
+    `ifdef RISCV_ZVE32F
+        logic [4:0] unused;
+    `else 
+        logic [5:0] unused;
+    `endif
 `endif
 } op_mode_elem;
 
@@ -351,7 +357,7 @@ typedef struct packed {
     op_mode_elem elem;
     op_mode_cfg  cfg;
     op_mode_div  div;
-    op_mode_fpu  fpu; //Only include this if F is selected?
+    op_mode_fpu  fpu;
 } op_mode;
 
 // source register type:
