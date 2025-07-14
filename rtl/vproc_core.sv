@@ -308,6 +308,8 @@ module vproc_core import vproc_pkg::*; #(
     logic instr_valid, issue_id_used;
     assign instr_valid = xif_issue_if.issue_valid & ~issue_id_used & source_xreg_valid;
 
+    logic dec_vl_override;
+
     op_unit instr_unit;
     op_mode instr_mode;
     vproc_decoder #(
@@ -340,10 +342,11 @@ module vproc_core import vproc_pkg::*; #(
         .widenarrow_o       ( dec_data_d.widenarrow               ),
         .rs1_o              ( dec_data_d.rs1                      ),
         .rs2_o              ( dec_data_d.rs2                      ),
-        .rd_o               ( dec_data_d.rd                       )
+        .rd_o               ( dec_data_d.rd                       ),
+        .vl_override_o      ( dec_vl_override                     )
     );
     assign dec_data_d.id         = xif_issue_if.issue_req.id;
-    assign dec_data_d.vl_0       = vl_0_q;
+    assign dec_data_d.vl_0       = vl_0_q & ~dec_vl_override;
     assign dec_data_d.unit       = instr_unit;
     assign dec_data_d.mode       = instr_mode;
     assign dec_data_d.pend_load  = (instr_unit == UNIT_LSU) & ~instr_mode.lsu.store;
@@ -830,10 +833,14 @@ module vproc_core import vproc_pkg::*; #(
     // REGISTER FILE AND EXECUTION UNITS
 
     // register file:
-    logic [VPORT_WR_CNT-1:0]               vregfile_wr_en_q,   vregfile_wr_en_d;
-    logic [VPORT_WR_CNT-1:0][4:0]          vregfile_wr_addr_q, vregfile_wr_addr_d;
-    logic [VPORT_WR_CNT-1:0][VREG_W  -1:0] vregfile_wr_data_q, vregfile_wr_data_d;
-    logic [VPORT_WR_CNT-1:0][VREG_W/8-1:0] vregfile_wr_mask_q, vregfile_wr_mask_d;
+   logic [VPORT_WR_CNT-1:0]               vregfile_wr_en_q /* verilator public */;
+    logic [VPORT_WR_CNT-1:0]               vregfile_wr_en_d;
+    logic [VPORT_WR_CNT-1:0][4:0]          vregfile_wr_addr_q /* verilator public */;
+    logic [VPORT_WR_CNT-1:0][4:0]          vregfile_wr_addr_d;
+    logic [VPORT_WR_CNT-1:0][VREG_W  -1:0] vregfile_wr_data_q /* verilator public */;
+    logic [VPORT_WR_CNT-1:0][VREG_W  -1:0] vregfile_wr_data_d;
+    logic [VPORT_WR_CNT-1:0][VREG_W/8-1:0] vregfile_wr_mask_q /* verilator public */;
+    logic [VPORT_WR_CNT-1:0][VREG_W/8-1:0] vregfile_wr_mask_d;
     logic [VPORT_RD_CNT-1:0][4:0]          vregfile_rd_addr;
     logic [VPORT_RD_CNT-1:0][VREG_W  -1:0] vregfile_rd_data;
     vproc_vregfile #(

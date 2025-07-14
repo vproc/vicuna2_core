@@ -38,7 +38,9 @@ module vproc_decoder #(
         output vproc_pkg::op_widenarrow widenarrow_o,
         output vproc_pkg::op_regs       rs1_o,        // source register rs1/vs1
         output vproc_pkg::op_regs       rs2_o,        // source register rs2/vs2
-        output vproc_pkg::op_regd       rd_o          // destination register rd/vd
+        output vproc_pkg::op_regd       rd_o,          // destination register rd/vd
+
+        output logic                    vl_override_o     //signal if instruction has overridden VL
     );
 
     import vproc_pkg::*;
@@ -85,6 +87,8 @@ module vproc_decoder #(
         rd_o.addr     = instr_vd;
 
         widenarrow_o  = OP_SINGLEWIDTH;
+
+        vl_override_o = 1'b0;
 
         `ifdef RISCV_ZVE32F
 
@@ -236,6 +240,7 @@ module vproc_decoder #(
                                 `ifdef OLD_VICUNA
                                 evl_pol             = EVL_MAX;
                                 `endif
+                                vl_override_o   = 1'b1;
                                 unique case (instr_i[31:29])
                                     5'b00000: begin
                                                 emul = EMUL_1;
@@ -1154,6 +1159,7 @@ module vproc_decoder #(
                             evl_pol             = EVL_MAX;
                             `endif
                             emul_override       = 1'b1;
+                            vl_override_o   = 1'b1;
                             unique case (instr_vs1)
                                 5'b00000: begin
                                             emul = EMUL_1;
