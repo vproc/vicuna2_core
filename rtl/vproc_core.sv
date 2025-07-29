@@ -445,22 +445,18 @@ module vproc_core import vproc_pkg::*; #(
             instr_state_d    [xif_issue_if.issue_req.id] = INSTR_SPECULATIVE;
             instr_empty_res_d[xif_issue_if.issue_req.id] = ~xif_issue_if.issue_resp.writeback & ~xif_issue_if.issue_resp.loadstore;
         end
+
+        // Generate an empty result for all instructions except those that
+        // writeback to the main core and for vector loads and stores
+        if (xif_commit_if.commit_valid & (instr_state_q[xif_commit_if.commit.id] != INSTR_INVALID)) begin
+            result_empty_valid = instr_empty_res_q[xif_commit_if.commit.id];
+        end
         // Only instructions that have already been offloaded or are being offloaded right now
         // can be committed.  Commit transactions for invalid IDs are ignored.
         if (xif_commit_if.commit_valid & (
             (instr_offload & (xif_issue_if.issue_req.id == xif_commit_if.commit.id)) |
             (instr_state_q[xif_commit_if.commit.id] != INSTR_INVALID)
         )) begin
-            // Generate an empty result for all instructions except those that
-            // writeback to the main core and for vector loads and stores
-            if (~xif_commit_if.commit.commit_kill) begin
-                if (dec_valid & (xif_issue_if.issue_req.id == xif_commit_if.commit.id)) begin
-                    result_empty_valid = ~xif_issue_if.issue_resp.writeback & ~xif_issue_if.issue_resp.loadstore;
-                end else begin
-                    result_empty_valid = instr_empty_res_q[xif_commit_if.commit.id];
-                end
-            end
-
             if (dec_buf_valid_q & (dec_data_q.unit == UNIT_CFG) & (dec_data_q.id == xif_commit_if.commit.id)) begin
                 // Configuration instructions are not enqueued.  The instruction
                 // is retired and the result returned as soon as it is
