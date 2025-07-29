@@ -243,25 +243,25 @@ module vproc_decoder #(
                                 `endif
                                 vl_override_o   = 1'b1;
                                 unique case (instr_i[31:29])
-                                    5'b00000: begin
+                                    3'b000: begin
                                                 emul = EMUL_1;
                                                 `ifndef OLD_VICUNA
                                                 vl = (VREG_W/8)-1;
                                                 `endif
                                             end
-                                    5'b00001: begin
+                                    3'b001: begin
                                                 emul = EMUL_2;
                                                 `ifndef OLD_VICUNA
                                                 vl = (2*VREG_W/8)-1;
                                                 `endif
                                             end
-                                    5'b00011: begin
+                                    3'b011: begin
                                                 emul = EMUL_4;
                                                 `ifndef OLD_VICUNA
                                                 vl = (4*VREG_W/8)-1;
                                                 `endif
                                             end
-                                    5'b00111: begin
+                                    3'b111: begin
                                                 emul = EMUL_8;
                                                 `ifndef OLD_VICUNA
                                                 vl = (8*VREG_W/8)-1;
