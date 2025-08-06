@@ -396,3 +396,66 @@ void update_inst_trace(Vvproc_top *top, FILE *inst_trace, uint32_t begin_cycles,
     return;
 }
 
+    
+/*
+* Update xreg commit log dump.  Appends any current commits to provided file.
+* ARGS:
+*   - *top          - pointer to verilator top module
+*   - *commit_log   - pointer to .txt trace file output
+*/
+void update_xreg_commit(Vvproc_top *top, FILE *commit_log){
+    if(top->vproc_top->core->rf_we_wb)
+    {
+        fprintf(commit_log, "x%d 0x%08x\n", top->vproc_top->core->rf_waddr_wb, top->vproc_top->core->rf_wdata_wb);
+    }
+    return;
+}
+
+/*
+* Update freg commit log dump.  Appends any current commits to provided file.  In case RISCV_F is not enabled, remove references to fp_regfile signals as they don't exist
+* ARGS:
+*   - *top          - pointer to verilator top module
+*   - *commit_log   - pointer to .txt trace file output
+*/
+void update_freg_commit(Vvproc_top *top, FILE *commit_log){
+    #ifdef RISCV_F
+    if(top->vproc_top->fpu_ss_i->gen_fp_register_file__DOT__fpu_ss_regfile_i->fpr_commit_valid)
+    {
+        fprintf(commit_log, "f%d 0x%08x\n", top->vproc_top->fpu_ss_i->gen_fp_register_file__DOT__fpu_ss_regfile_i->fpr_commit_addr, top->vproc_top->fpu_ss_i->gen_fp_register_file__DOT__fpu_ss_regfile_i->fpr_commit_data);
+    }
+    #endif
+    return;
+}
+
+/*
+* Update vreg commit log dump.  Appends any current commits to provided file. In case RISCV_ZVE32X is not enabled, remove references to vregfile signals as they don't exist
+* ARGS:
+*   - *top          - pointer to verilator top module
+*   - vreg_w        - width of the vector registers
+*   - *commit_log   - pointer to .txt trace file output
+*/
+void update_vreg_commit(Vvproc_top *top, int vreg_w, FILE *commit_log){
+        #ifdef RISCV_ZVE32X
+        //write commit log for vregs.  Currently set up for one write port.  Only log a commit when an element is actually written. Mask handled internally in case entire write is masked out
+        if(top->vproc_top->v_core->vregfile_wr_en_q)
+        {
+            fprintf(commit_log, "v%d 0x", top->vproc_top->v_core->vregfile_wr_addr_q);
+            unsigned char* reg_write_data = (unsigned char*)&(top->vproc_top->v_core->vregfile_wr_data_q);
+            //bytes written out in this order to match the outputs from spike
+            for (int i = vreg_w/8-1; i >= 0; i--)
+            {   
+                //write XX for bytes that are masked out, these aren't written
+                if ((int)top->vproc_top->v_core->vregfile_wr_mask_q & (0x1 << i))
+                {
+                    fprintf(commit_log, "%02x", reg_write_data[i]);
+                }
+                else
+                {
+                    fprintf(commit_log, "XX");
+                }
+            }
+            fprintf(commit_log, "\n");
+        } 
+        #endif 
+    return;
+}

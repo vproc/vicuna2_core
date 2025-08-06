@@ -9,9 +9,18 @@
 
 #include "Vvproc_top.h"
 
+
+//Depeneding on the architecture selected, some of these files don't exist
 #include "Vvproc_top_vproc_top.h"
 #include "Vvproc_top_cv32e40x_core__pi1.h"
 
+#ifdef RISCV_ZVE32X
+#include "Vvproc_top_vproc_core__pi2.h"
+#endif
+#ifdef RISCV_F
+#include "Vvproc_top_fpu_ss__I1_O0_F0_FBz6_FCz7.h"
+#include "Vvproc_top_fpu_ss_regfile.h"
+#endif
 #include "verilated.h"
 
 #include <stdio.h>
@@ -199,6 +208,31 @@ void update_vcd(VerilatedTrace_t *tfp, uint32_t begin_cycles, uint32_t end_cycle
 *   - end_cycles    - cycle count to end trace
 */
 void update_inst_trace(Vvproc_top *top, FILE *inst_trace, uint32_t begin_cycles, uint32_t end_cycles);
+
+/*
+* Update xreg commit log dump.  Appends any current commits to provided file.
+* ARGS:
+*   - *top          - pointer to verilator top module
+*   - *commit_log   - pointer to .txt trace file output
+*/
+void update_xreg_commit(Vvproc_top *top, FILE *commit_log);
+
+/*
+* Update freg commit log dump.  Appends any current commits to provided file. In case RISCV_F is not enabled, remove references to fp_regfile signals as they don't exist
+* ARGS:
+*   - *top          - pointer to verilator top module
+*   - *commit_log   - pointer to .txt trace file output
+*/
+void update_freg_commit(Vvproc_top *top, FILE *commit_log);
+
+/*
+* Update vreg commit log dump.  Appends any current commits to provided file. In case RISCV_ZVE32X is not enabled, remove references to vregfile signals as they don't exist
+* ARGS:
+*   - *top          - pointer to verilator top module
+*   - vreg_w        - width of the vector registers
+*   - *commit_log   - pointer to .txt trace file output
+*/
+void update_vreg_commit(Vvproc_top *top, int vreg_w, FILE *commit_log);
 
 
 #endif
