@@ -9,18 +9,36 @@
 
 #include "Vvproc_top.h"
 
-
-//Depeneding on the architecture selected, some of these files don't exist
 #include "Vvproc_top_vproc_top.h"
 #include "Vvproc_top_cv32e40x_core__pi1.h"
 
+//Depeneding on the architecture selected, some of these files don't exist or have different names
+#ifdef RISCV_ZVFH
+#include "Vvproc_top_vproc_core__pi2.h"
+#include "Vvproc_top_fpu_ss_regfile.h"
+#include "Vvproc_top_fpu_ss__I1_O0_F0_FBz6_FCz7.h"
+#else
+#ifdef RISCV_ZVE32F
+#include "Vvproc_top_vproc_core__pi2.h"
+#include "Vvproc_top_fpu_ss_regfile.h"
+#include "Vvproc_top_fpu_ss__I1_O0_F0_FBz6_FCz7.h"
+#else
 #ifdef RISCV_ZVE32X
 #include "Vvproc_top_vproc_core__pi2.h"
-#endif
-#ifdef RISCV_F
-#include "Vvproc_top_fpu_ss__I1_O0_F0_FBz6_FCz7.h"
+#else
+#ifdef RISCV_ZFH
 #include "Vvproc_top_fpu_ss_regfile.h"
+#include "Vvproc_top_fpu_ss__I1_O0_F0_FBz3_FCz4.h"
+#else
+#ifdef RISCV_F
+#include "Vvproc_top_fpu_ss_regfile.h"
+#include "Vvproc_top_fpu_ss__I1_O0_F0_FBz3_FCz4.h"
 #endif
+#endif
+#endif
+#endif
+#endif
+
 #include "verilated.h"
 
 #include <stdio.h>
