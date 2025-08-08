@@ -444,16 +444,16 @@ void update_vreg_commit(Vvproc_top *top, int vreg_w, FILE *commit_log){
             //bytes written out in this order to match the outputs from spike
             for (int i = vreg_w/8-1; i >= 0; i--)
             {   
-                //write XX for bytes that are masked out, these aren't written
-                if ((int)top->vproc_top->v_core->vregfile_wr_mask_q & (0x1 << i))
-                {
-                    fprintf(commit_log, "%02x", reg_write_data[i]);
-                }
-                else
-                {
-                    fprintf(commit_log, "XX");
-                }
-            }
+                 //write XX for bytes that are masked out, these aren't written
+                 if (((unsigned char*)&top->vproc_top->v_core->vregfile_wr_mask_q)[i/8] & (0x1 << i%8))
+                 {
+                     fprintf(commit_log, "%02x", reg_write_data[i]);
+                 }
+                 else
+                 {
+                     fprintf(commit_log, "XX");
+                 }
+             }
             fprintf(commit_log, "\n");
         } 
         #endif 
