@@ -1159,6 +1159,7 @@ module vproc_core import vproc_pkg::*; #(
         .result_csr_delayed_i      ( result_csr_delayed         ),
         .result_csr_data_i         ( result_csr_data            ),
         .result_csr_data_delayed_i ( csr_vl_o                   ),
+        .xif_commit_if             ( xif_commit_if              ),
         .xif_result_if             ( xif_result_if              )
     );
 

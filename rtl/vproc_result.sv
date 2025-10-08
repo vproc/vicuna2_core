@@ -43,6 +43,7 @@ module vproc_result #(
         input  logic [31:0]         result_csr_data_i,
         input  logic [31:0]         result_csr_data_delayed_i,
 
+        vproc_xif.coproc_commit     xif_commit_if,
         vproc_xif.coproc_result     xif_result_if
     );
 
@@ -225,8 +226,8 @@ module vproc_result #(
 
 
     always_comb begin
-        next_id_d = next_id_q;
-        if ((xif_result_if.result_valid && xif_result_if.result_ready) || fpu_res_accepted) begin
+        next_id_d = next_id_q; //Possible for a ready result and killed commit at the same time?
+        if ((xif_result_if.result_valid && xif_result_if.result_ready) || fpu_res_accepted || xif_commit_if.commit.commit_kill && xif_commit_if.commit_valid) begin
             next_id_d = next_id_q + 1;
         end
     end
