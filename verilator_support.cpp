@@ -55,6 +55,17 @@ void advance_cycle(Vvproc_top *top){
 }
 
 /*
+* Function to advance clock to next value specified
+* ARGS:
+*   - *top          - pointer to verilator top module
+*   - clk_val     - value to set the clock to
+*/
+void advance_half_cycle(Vvproc_top *top, int clk_val){
+    top->clk_i = clk_val;
+    top->eval();
+    return;
+}
+/*
 *   Function to read from memory and manage/update memory buffers.  Generalized to work on byte pointers for variable width interfaces.
 *   Queues of correct sizes are expected to be allocated and provided by the user.
 *
