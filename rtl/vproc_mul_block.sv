@@ -21,6 +21,8 @@ module vproc_mul_block #(
         input  logic                  acc_flag_i, // use accumulator (otherwise it is replaced with 0)
         input  logic                  acc_sub_i,  // subtract multiplication result from accumulator instead of adding
 
+        input logic                   out_ready_i, //ready signal for next pipeline stage to allow stalling without data loss
+
         output logic [32:0] res_o
     );
 
@@ -37,8 +39,10 @@ module vproc_mul_block #(
 
                 if (BUF_OPS) begin
                     always_ff @(posedge clk_i) begin
-                        op1_q <= op1_i;
-                        op2_q <= op2_i;
+                        if (out_ready_i) begin
+                            op1_q <= op1_i;
+                            op2_q <= op2_i;
+                        end
                     end
                 end else begin
                     always_comb begin
@@ -49,9 +53,11 @@ module vproc_mul_block #(
 
                 if (BUF_MUL) begin
                     always_ff @(posedge clk_i) begin
-                        mul_q     <= mul_d;
-                        acc_q     <= acc_flag_i ? acc_i : '0;
-                        acc_sub_q <= acc_sub_i;
+                        if (out_ready_i) begin
+                            mul_q     <= mul_d;
+                            acc_q     <= acc_flag_i ? acc_i : '0;
+                            acc_sub_q <= acc_sub_i;
+                        end
                     end
                 end else begin
                     always_comb begin
@@ -63,7 +69,9 @@ module vproc_mul_block #(
 
                 if (BUF_RES) begin
                     always_ff @(posedge clk_i) begin
-                        res_q <= res_d;
+                        if (out_ready_i) begin
+                            res_q <= res_d;
+                        end
                     end
                 end else begin
                     always_comb begin

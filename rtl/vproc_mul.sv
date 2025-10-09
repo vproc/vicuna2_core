@@ -356,6 +356,7 @@ module vproc_mul #(
                 .acc_i        ( mul_acc    [16*g +: 16] ),
                 .acc_flag_i   ( mul_accflag             ),
                 .acc_sub_i    ( mul_accsub              ),
+                .out_ready_i  ( state_res_ready         ),
                 .res_o        ( mul_res    [33*g +: 33] )
             );
         end
