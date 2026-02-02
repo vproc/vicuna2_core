@@ -353,8 +353,8 @@ module vproc_lsu import vproc_pkg::*; #(
     // XIF mem_result_valid is asserted and the memory result's instruction ID matches and transaction is not suppressed(MIGHT BE AN ISSUE TODO)
     logic xif_mem_result_id_valid;
     assign xif_mem_result_id_valid = xif_memres_if.mem_result_valid &
-                                    (xif_memres_if.mem_result.id == deq_state.id) & !deq_state.suppressed;
-
+                                    //(xif_memres_if.mem_result.id == deq_state.id) & !deq_state.suppressed; //XIF mem_result_id has been deprecated.  Remove check for this
+                                    !deq_state.suppressed;
 
     assign deq_ready           = xif_mem_result_id_valid | deq_state.suppressed | mem_err_d;
     assign state_rdata_valid_d = deq_valid & deq_ready;

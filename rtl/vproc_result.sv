@@ -43,8 +43,9 @@ module vproc_result #(
         input  logic [31:0]         result_csr_data_i,
         input  logic [31:0]         result_csr_data_delayed_i,
 
-        vproc_xif.coproc_commit     xif_commit_if,
-        vproc_xif.coproc_result     xif_result_if
+        vproc_xif.coproc_issue      xif_issue_if,
+        vproc_xif.coproc_result     xif_result_if,
+        vproc_xif.coproc_commit     xif_commit_if
     );
 
     // Total count of instruction IDs used by the extension interface
@@ -82,20 +83,24 @@ module vproc_result #(
     end
 
     logic [XIF_ID_W-1:0] next_id_q, next_id_d;
-    always_ff @(posedge clk_i or negedge async_rst_ni) begin : vproc_next_result_id
-        if (~async_rst_ni) begin
-            next_id_q <= '0;
-        end
-        else if (~sync_rst_ni) begin
-            next_id_q <= '0;
-        end
-        else begin
-            next_id_q <= next_id_d;
-        end
-    end
 
 
-
+  //FIFO of XIF IDs to verify instructions are result signalled in the order they are issued
+  //need to handle case for killed IDs?  CVA6 doesnt have this problem since issued instructions are always non-speculative (use commit if? should work for all cases except csrs for cv32e40x?)
+  fifo_v3 #(
+    .FALL_THROUGH (1'b1        ),
+    .dtype        (logic [XIF_ID_W-1:0]),
+    .DEPTH        (4           )   //
+  ) next_xif_id_fifo (
+    .clk_i,
+    .rst_ni     (sync_rst_ni),
+    .flush_i    (1'b0                    ), //additional signals are available (full/empty signalling) which can be used to stall the pipeline if necessary.  However, full depth should never be reached because only LSU instructions and vector-> scalar move instructions can stall long enough
+    .data_i     (xif_commit_if.commit.id),
+    .push_i     (xif_commit_if.commit_valid & !xif_commit_if.commit.commit_kill),
+    .data_o     (next_id_q        ),
+    .pop_i      (xif_result_if.result_valid & xif_result_if.result_ready)
+  );
+  
     typedef enum logic [2:0] {
         RESULT_SOURCE_EMPTY,
         RESULT_SOURCE_EMPTY_BUF,
@@ -117,10 +122,12 @@ module vproc_result #(
             result_source_hold_q <= result_source_hold_d;
         end
     end
+
     always_ff @(posedge clk_i) begin
         result_source_q   <= result_source_d;
         result_empty_id_q <= result_empty_id_d;
     end
+    
     result_source_e      result_source;
     logic [XIF_ID_W-1:0] result_empty_id;
     always_comb begin
@@ -196,9 +203,12 @@ module vproc_result #(
         if (result_source == RESULT_SOURCE_CSR_BUF) begin
             result_csr_valid_d = ~xif_result_if.result_ready || !(result_csr_id_q == next_id_q);
         end
-
         // instr ID is added to buffer if another result takes precedence or XIF iface is not ready or current instruction is not the next one to be retired
+        `ifdef COMMIT_AND_ISSUE
+        if ( (result_source == RESULT_SOURCE_EMPTY) | result_empty_valid_i & ((result_source != RESULT_SOURCE_EMPTY) | ~xif_result_if.result_ready | result_empty_id_i != next_id_q)) begin //need to buffer all empty results
+        `else
         if (result_empty_valid_i & ((result_source != RESULT_SOURCE_EMPTY) | ~xif_result_if.result_ready | result_empty_id_i != next_id_q)) begin
+        `endif
             instr_result_empty_d[result_empty_id_i] = 1'b1;
         end
         // CSR result is always buffered
@@ -226,8 +236,13 @@ module vproc_result #(
 
 
     always_comb begin
+        `ifdef COMMIT_AND_ISSUE
+        next_id_d = next_id_q;
+        if ((xif_result_if.result_valid && xif_result_if.result_ready) || fpu_res_accepted) begin
+        `else 
         next_id_d = next_id_q; //Possible for a ready result and killed commit at the same time?
         if ((xif_result_if.result_valid && xif_result_if.result_ready) || fpu_res_accepted || xif_commit_if.commit.commit_kill && xif_commit_if.commit_valid) begin
+        `endif
             next_id_d = next_id_q + 1;
         end
     end
@@ -249,8 +264,11 @@ module vproc_result #(
 
         unique case (result_source)
             RESULT_SOURCE_EMPTY: begin
+                `ifdef COMMIT_AND_ISSUE
+                xif_result_if.result_valid = '0; //for CVA6 need to buffer result empty for one cycle
+                `else
                 xif_result_if.result_valid = result_empty_id_i == next_id_q; //only raise result valid if current instruction is the one the scalar core is waiting for (no out of order retiring)
-                //xif_result_if.result_valid = '1;
+                `endif
                 xif_result_if.result.id    = result_empty_id_i;
             end
             RESULT_SOURCE_EMPTY_BUF: begin

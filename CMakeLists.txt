@@ -68,10 +68,12 @@ option(FORCE_ALIGNED_READS "original vicuna configuration where all vector reads
 ##############
 
 #Path to VICUNA sources  
-set(DESIGN_RTL_DIR_VICUNA ${CMAKE_CURRENT_SOURCE_DIR}/rtl) #TODO: UPDATE PATH
+set(DESIGN_RTL_DIR_VICUNA ${CMAKE_CURRENT_SOURCE_DIR}/rtl)
 
 #Path to CVFPU sources
-set(DESIGN_RTL_DIR_CVFPU ${CMAKE_CURRENT_SOURCE_DIR}/cvfpu/src) #TODO: UPDATE PATH
+set(DESIGN_RTL_DIR_CVFPU ${CMAKE_CURRENT_SOURCE_DIR}/cvfpu/src)
+
+set(DESIGN_RTL_DIR_COMMON ${CMAKE_CURRENT_SOURCE_DIR}/pulp_common_cells)
 
 
 set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                               #Vicuna sources
@@ -100,10 +102,14 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_unit_wrapper.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_vregfile.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_vreg_wr_mux.sv
+                    ${DESIGN_RTL_DIR_COMMON}/src/fifo_v3.sv
                     )
 
 set(VICUNA_INCLUDE  ${DESIGN_RTL_DIR_VICUNA}                                            #Vicuna Include Dirs
-                    ${DESIGN_RTL_DIR_VICUNA}/../sva)
+                    ${DESIGN_RTL_DIR_VICUNA}/../sva
+                    ${DESIGN_RTL_DIR_COMMON}/include
+                    ${DESIGN_RTL_DIR_COMMON}/src
+                    )
                    
 set(CVFPU_SOURCE    ${DESIGN_RTL_DIR_CVFPU}/fpnew_pkg.sv
                     ${DESIGN_RTL_DIR_CVFPU}/common_cells/src/cf_math_pkg.sv             #CVFPU Sources
@@ -121,10 +127,9 @@ set(CVFPU_SOURCE    ${DESIGN_RTL_DIR_CVFPU}/fpnew_pkg.sv
                     ${DESIGN_RTL_DIR_CVFPU}/fpnew_opgroup_fmt_slice.sv
                     ${DESIGN_RTL_DIR_CVFPU}/fpnew_opgroup_multifmt_slice.sv
                     ${DESIGN_RTL_DIR_CVFPU}/fpnew_rounding.sv
-                    ${DESIGN_RTL_DIR_CVFPU}/common_cells/src/stream_fifo.sv
+                    ${DESIGN_RTL_DIR_CVFPU}/common_cells/src/stream_fifo.sv     #TODO: CVFPU uses an older version of PULP common cells.  This may cause an issue
                     ${DESIGN_RTL_DIR_CVFPU}/common_cells/src/lzc.sv
                     ${DESIGN_RTL_DIR_CVFPU}/common_cells/src/rr_arb_tree.sv
-                    ${DESIGN_RTL_DIR_CVFPU}/common_cells/src/fifo_v3.sv
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_ctrl.v
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_double.v
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl/ct_vfdsu_ff1.v
@@ -154,8 +159,6 @@ set(CVFPU_SOURCE    ${DESIGN_RTL_DIR_CVFPU}/fpnew_pkg.sv
 
 
 set(CVFPU_INCLUDE   ${DESIGN_RTL_DIR_CVFPU}
-                    ${DESIGN_RTL_DIR_CVFPU}/common_cells/include
-                    ${DESIGN_RTL_DIR_CVFPU}/common_cells/src
                     ${DESIGN_RTL_DIR_CVFPU}/fpu_div_sqrt_mvp/hdl
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/openc910/C910_RTL_FACTORY/gen_rtl/vfdsu/rtl
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/openc910/C910_RTL_FACTORY/gen_rtl/clk/rtl
@@ -184,6 +187,12 @@ execute_process(COMMAND rm -f vproc_config.sv
 ##############
 # Variables to be used by the project to include Vicuna
 ##############
-set(VICUNA_SRCS ${CVFPU_SOURCE} ${VICUNA_SOURCE} PARENT_SCOPE)
-set(VICUNA_INCS ${CVFPU_INCLUDE} ${VICUNA_INCLUDE}  PARENT_SCOPE)
 set(VICUNA_FLAGS ${RISCV_ZVE32X} ${RISCV_ZVE32F} ${RISCV_ZVFH} ${FORCE_ALIGNED_READS} ${OLD_VICUNA} PARENT_SCOPE)
+
+set(VICUNA_SRCS ${VICUNA_SOURCE} PARENT_SCOPE)
+set(VICUNA_INCS ${VICUNA_INCLUDE} PARENT_SCOPE)
+
+#Include these if FPNEW is not included elsewhere
+
+set(VICUNA_FPU_SRCS ${CVFPU_SOURCE} PARENT_SCOPE) 
+set(VICUNA_FPU_INCS ${CVFPU_INCLUDE} PARENT_SCOPE)

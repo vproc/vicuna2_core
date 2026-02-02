@@ -289,7 +289,7 @@ module vproc_fpu #(
     generate
         for (genvar g = 0; g < FPU_OP_W/ 32; g++) begin
               fpnew_top #(
-                    .DivSqrtSel    (fpnew_pkg::THMULTI),                //TODO: Wire this to T-Head unit
+                    //.DivSqrtSel    (fpnew_pkg::THMULTI),                //TODO: Wire this to T-Head unit
                     .Features      (FPU_FEATURES),        //TODO:Pass in from top level ideally (or define as part of package? if so cant swap them)
                     .Implementation(FPU_IMPLEMENTATION),  //TODO:Pass in from top level ideally (or define as part of package? if so cant swap them)
                     .TagType       (fpu_tag)              // Type for metadata to pass through with instruction.  allows for pipelined operation

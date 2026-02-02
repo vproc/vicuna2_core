@@ -442,17 +442,32 @@ module vproc_core import vproc_pkg::*; #(
             // empty result or not. This must be done for accepted as well as
             // rejected instructions, since the main core will commit all of
             // them and rejected instructions must not produce a result.
-            instr_state_d    [xif_issue_if.issue_req.id] = INSTR_SPECULATIVE;
+            `ifdef COMMIT_AND_ISSUE
+                //CVA6 sends commit and issue together
+                instr_state_d    [xif_issue_if.issue_req.id] = INSTR_COMMITTED;
+            `else
+                instr_state_d    [xif_issue_if.issue_req.id] = INSTR_SPECULATIVE;
+            `endif
             instr_empty_res_d[xif_issue_if.issue_req.id] = ~xif_issue_if.issue_resp.writeback & ~xif_issue_if.issue_resp.loadstore;
         end
 
         // Generate an empty result for all instructions except those that
         // writeback to the main core and for vector loads and stores
+        `ifdef COMMIT_AND_ISSUE
+        if (xif_commit_if.commit_valid) begin
+            result_empty_valid = instr_empty_res_q[xif_commit_if.commit.id] || instr_empty_res_d[xif_commit_if.commit.id]; //allow for commit in same cycle as issue
+        end
+        //clear instr_empty_res_d on successful result signalling
+        if (xif_result_if.result_valid && xif_result_if.result_ready) begin
+            instr_empty_res_d[xif_result_if.result.id] = 1'b0;
+        end
+        `else
         if (xif_commit_if.commit_valid & (instr_state_q[xif_commit_if.commit.id] != INSTR_INVALID)) begin
             result_empty_valid = instr_empty_res_q[xif_commit_if.commit.id];
         end
+        `endif   
         // Only instructions that have already been offloaded or are being offloaded right now
-        // can be committed.  Commit transactions for invalid IDs are ignored.
+        // can be committed.  Commit transactions for invalid IDs are ignored. //CV32A6 can commit an instruction while offloading
         if (xif_commit_if.commit_valid & (
             (instr_offload & (xif_issue_if.issue_req.id == xif_commit_if.commit.id)) |
             (instr_state_q[xif_commit_if.commit.id] != INSTR_INVALID)
@@ -1159,8 +1174,10 @@ module vproc_core import vproc_pkg::*; #(
         .result_csr_delayed_i      ( result_csr_delayed         ),
         .result_csr_data_i         ( result_csr_data            ),
         .result_csr_data_delayed_i ( csr_vl_o                   ),
-        .xif_commit_if             ( xif_commit_if              ),
-        .xif_result_if             ( xif_result_if              )
+        .xif_issue_if              ( xif_issue_if               ),
+        .xif_result_if             ( xif_result_if              ),
+        .xif_commit_if             ( xif_commit_if              )
+
     );
 
 
