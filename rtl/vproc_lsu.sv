@@ -52,6 +52,8 @@ module vproc_lsu import vproc_pkg::*; #(
 
     // reduced LSU state for passing through the queue
     typedef struct packed {
+        logic                        state_req_valid_q;
+        logic                        state_req_valid_d;
         logic                        first_cycle;
         logic                        last_cycle;
         logic [XIF_ID_W-1:0]         id;
@@ -66,13 +68,17 @@ module vproc_lsu import vproc_pkg::*; #(
         logic                        exc;
         logic [5:0]                  exccode;
         logic [5:0]                  vreg_idx; //Needed for PACK
+        logic [31:0]                 req_addr_q;
+        logic [VMEM_W  -1:0]         wdata_buf_q;
+        logic [VMEM_W/8-1:0]         wmask_buf_q;
+        logic [VMEM_W/8-1:0]         vmsk_tmp_q;
+        
     } lsu_state_red;
 
     ///////////////////////////////////////////////////////////////////////////
     // LSU BUFFERS
     
     logic         state_req_ready,   lsu_queue_ready;
-    logic         state_req_stall;
     logic         state_req_valid_q, state_req_valid_d, state_rdata_valid;
     CTRL_T        state_req_q,       state_req_d;
     lsu_state_red state_rdata;
@@ -89,6 +95,10 @@ module vproc_lsu import vproc_pkg::*; #(
 
     // temporary buffer for byte mask during request:
     logic [VMEM_W/8-1:0] vmsk_tmp_q, vmsk_tmp_d;
+
+    logic [       VMEM_W   -1:0] rdata_buf;
+    logic [$clog2(VMEM_W/8)-1:0] rdata_off;
+    logic [       VMEM_W/8 -1:0] rmask_buf;
 
     generate
         if (BUF_REQUEST) begin
@@ -124,13 +134,6 @@ module vproc_lsu import vproc_pkg::*; #(
         end
 
     endgenerate
-
-    // Stall vreg writes until pending reads of the destination register are
-    // complete and while the instruction is speculative; for the LSU stalling
-    // has to happen at the request stage, since later stalling is not possible
-    // Also stall if incoming instruction is speculative OR a current instruction has not finished
-    assign state_req_stall = (~state_req_q.mode.lsu.store & state_req_q.res_store & vreg_pend_rd_i[state_req_q.res_vaddr]) |
-                             ((instr_state_i[state_req_q.id] == INSTR_SPECULATIVE) | ~(state_req_q.id == deq_state.id)) | ~lsu_queue_ready;
 
     ///////////////////////////////////////////////////////////////////////////
     // LSU READ/WRITE
@@ -219,6 +222,40 @@ module vproc_lsu import vproc_pkg::*; #(
         end
     end
 
+    // suppress memory request if all data elements are invalid (have indices greater than VL)
+    // TODO: memory requests should probably also be suppressed if all elements are masked off, but
+    // that could be tricky because the LSU cannot accept a memory response transaction while
+    // dequeueing a suppressed request
+    logic req_suppress;
+    assign req_suppress = (instr_state_i[state_req_q.id] == INSTR_KILLED) | state_req_q.vl_part_0; 
+
+
+    // queue for storing masks and offsets until the memory system fulfills the request: //Might need to add here
+    lsu_state_red state_req_red;
+    always_comb begin
+        state_req_red              = DONT_CARE_ZERO ? '0 : 'x;
+        state_req_red.state_req_valid_q = state_req_valid_q;
+        state_req_red.state_req_valid_d = state_req_valid_d;
+        state_req_red.first_cycle  = state_req_q.first_cycle;
+        state_req_red.last_cycle   = state_req_q.last_cycle;
+        state_req_red.id           = state_req_q.id;
+        state_req_red.mode         = state_req_q.mode.lsu;
+        state_req_red.vl_part      = state_req_q.vl_part;
+        state_req_red.vl_part_0    = state_req_q.vl_part_0;
+        state_req_red.last_vl_part = state_req_q.last_vl_part;
+        state_req_red.res_vaddr    = state_req_q.res_vaddr;
+        state_req_red.res_store    = state_req_q.res_store;
+        state_req_red.res_shift    = state_req_q.res_shift;
+        state_req_red.vreg_idx     = state_req_q.vreg_idx;
+        state_req_red.suppressed   = req_suppress;
+        state_req_red.exc          = xif_mem_if.mem_resp.exc & ~req_suppress;
+        state_req_red.exccode      = xif_mem_if.mem_resp.exccode;
+        state_req_red.req_addr_q   = req_addr_q;
+        state_req_red.wdata_buf_q  = wdata_buf_q;
+        state_req_red.wmask_buf_q  = wmask_buf_q;
+        state_req_red.vmsk_tmp_q   = vmsk_tmp_q;
+    end
+
 
     vproc_lsu_extension #(
         .VMEM_W                   ( VMEM_W                                      ),
@@ -234,12 +271,13 @@ module vproc_lsu import vproc_pkg::*; #(
         .clk_i                    ( clk_i                                       ),
         .async_rst_ni             ( async_rst_ni                                ),
         .sync_rst_ni              ( sync_rst_ni                                 ),
-        .state_req_valid_q_i      ( state_req_valid_q                           ),
-        .state_req_valid_d_i      ( state_req_valid_d                           ),
-        .state_req_stall_i        ( state_req_stall                             ),
+        .vreg_pend_rd_i           ( vreg_pend_rd_i                              ),
+        .state_req_red_i          ( state_req_red                               ),
         .state_rdata_valid_o      ( state_rdata_valid                           ),
         .state_req_ready_o        ( state_req_ready                             ),
-        .lsu_queue_ready_o        ( lsu_queue_ready                             ),
+        .rdata_buf_o              ( rdata_buf                                   ),
+        .rdata_off_o              ( rdata_off                                   ),
+        .rmask_buf_o              ( rmask_buf                                   ),
         .state_rdata_o            ( state_rdata                                 ),
         .instr_state_i            ( instr_state_i                               ),
         .trans_complete_valid_o   ( trans_complete_valid_o                      ),
@@ -256,8 +294,8 @@ module vproc_lsu import vproc_pkg::*; #(
     logic [VMEM_W/8-1:0] rdata_unit_vl_mask, rdata_unit_vdmsk;
     logic rdata_stri_vdmsk;
     assign rdata_unit_vl_mask = ~state_rdata.vl_part_0 ? ({(VMEM_W/8){1'b1}} >> (~state_rdata.vl_part)) : '0;
-    assign rdata_unit_vdmsk   = (state_rdata.mode.masked ? rmask_buf_q : {VMEM_W/8{1'b1}}) & rdata_unit_vl_mask;
-    assign rdata_stri_vdmsk   = ~state_rdata.vl_part_0 & (state_rdata.mode.masked ? rmask_buf_q[0] : 1'b1);
+    assign rdata_unit_vdmsk   = (state_rdata.mode.masked ? rmask_buf : {VMEM_W/8{1'b1}}) & rdata_unit_vl_mask;
+    assign rdata_stri_vdmsk   = ~state_rdata.vl_part_0 & (state_rdata.mode.masked ? rmask_buf[0] : 1'b1);
 
     assign pipe_out_valid_o = state_rdata_valid;
 
@@ -279,17 +317,17 @@ module vproc_lsu import vproc_pkg::*; #(
     assign pipe_out_pend_clr_o = state_rdata.res_store;
     always_comb begin
         if (state_rdata.mode.stride == LSU_UNITSTRIDE) begin
-            pipe_out_res_o = rdata_buf_q;
+            pipe_out_res_o = rdata_buf;
         end else begin
             pipe_out_res_o = DONT_CARE_ZERO ? '0 : 'x;
             unique case (state_rdata.mode.eew)
-                VSEW_8:  pipe_out_res_o[7 :0] = rdata_buf_q[{3'b000, rdata_off_q                                  } * 8 +: 8 ];
-                VSEW_16: pipe_out_res_o[15:0] = rdata_buf_q[{3'b000, rdata_off_q & ({$clog2(VMEM_W/8){1'b1}} << 1)} * 8 +: 16];
-                VSEW_32: pipe_out_res_o[31:0] = rdata_buf_q[{3'b000, rdata_off_q & ({$clog2(VMEM_W/8){1'b1}} << 2)} * 8 +: 32];
+                VSEW_8:  pipe_out_res_o[7 :0] = rdata_buf[{3'b000, rdata_off                                  } * 8 +: 8 ];
+                VSEW_16: pipe_out_res_o[15:0] = rdata_buf[{3'b000, rdata_off & ({$clog2(VMEM_W/8){1'b1}} << 1)} * 8 +: 16];
+                VSEW_32: pipe_out_res_o[31:0] = rdata_buf[{3'b000, rdata_off & ({$clog2(VMEM_W/8){1'b1}} << 2)} * 8 +: 32];
                 default: ;
             endcase
             if (~VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE]) begin
-                pipe_out_res_o = rdata_buf_q;
+                pipe_out_res_o = rdata_buf;
             end
         end
         pipe_out_mask_o = (state_rdata.mode.stride == LSU_UNITSTRIDE) ? rdata_unit_vdmsk : {(VMEM_W/8){rdata_stri_vdmsk}};
