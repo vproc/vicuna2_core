@@ -447,7 +447,7 @@ module vproc_decoder #(
                             mode_o.alu.inv_op1  = 1'b1;
                             mode_o.alu.inv_op2  = 1'b0;
                             mode_o.alu.sat_res  = 1'b0;
-                            mode_o.alu.op_mask  = ALU_MASK_SEL;
+                            mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
                         end
@@ -460,7 +460,7 @@ module vproc_decoder #(
                             mode_o.alu.inv_op1  = 1'b1;
                             mode_o.alu.inv_op2  = 1'b0;
                             mode_o.alu.sat_res  = 1'b0;
-                            mode_o.alu.op_mask  = ALU_MASK_SEL;
+                            mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
                         end
@@ -473,7 +473,7 @@ module vproc_decoder #(
                             mode_o.alu.inv_op1  = 1'b1;
                             mode_o.alu.inv_op2  = 1'b0;
                             mode_o.alu.sat_res  = 1'b0;
-                            mode_o.alu.op_mask  = ALU_MASK_SEL;
+                            mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
                         end
@@ -486,7 +486,7 @@ module vproc_decoder #(
                             mode_o.alu.inv_op1  = 1'b1;
                             mode_o.alu.inv_op2  = 1'b0;
                             mode_o.alu.sat_res  = 1'b0;
-                            mode_o.alu.op_mask  = ALU_MASK_SEL;
+                            mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
                         end
