@@ -1,5 +1,8 @@
-module vproc_lsu_extension import vproc_pkg::*; #(
+module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned        VMEM_W          = 32,   // width in bits of the vector memory interface
+        parameter int unsigned        VREG_W          = 128,   // width in bits of a vector register
+        parameter int unsigned        MEM_PORTS       = 1,
+        parameter bit [OBI_CFG.IdWidth-1:0] OBI_ID    = '1,
         parameter bit                 BUF_REQUEST     = 1'b1, // insert pipeline stage before issuing request
         parameter bit                 BUF_RDATA       = 1'b1, // insert pipeline stage after memory read
         parameter type                LSU_STATE_RED_T = logic,
@@ -7,6 +10,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         parameter int unsigned        XIF_ID_CNT      = 8,    // total count of instruction IDs
         parameter int unsigned           VLSU_QUEUE_SZ = 4,
         parameter bit [VLSU_FLAGS_W-1:0] VLSU_FLAGS    = '0,
+        parameter int unsigned        HIT_DEPTH        = 1,
         parameter bit                 DONT_CARE_ZERO  = 1'b0  // initialize don't care values to zero
     )
     (
@@ -33,13 +37,134 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         output logic [5:0]            trans_complete_exccode_o,
 
         vproc_xif.coproc_mem          xif_mem_if,
-        vproc_xif.coproc_mem_result   xif_memres_if
+        vproc_xif.coproc_mem_result   xif_memres_if,
+
+        obi_intf.Manager              obi_intf [MEM_PORTS-1:0]
     );
 
-    logic            state_req_stall; 
+    /////////////////////////////////scratch memory//////////////////////////////// 
+    localparam int unsigned MAX_SEG_EMUL = 4;
+    localparam int unsigned MAX_ELEMENT_CNT = VREG_W * MAX_SEG_EMUL / 8;
+
+    typedef logic [$clog2(MAX_ELEMENT_CNT)-1 : 0] elem_cnt_t;
+
+    typedef enum logic [1:0] {
+        VALID,
+        PENDING,
+        NOT_VALID
+    } scratch_state_t;
+
+    typedef struct packed {
+        logic [2:0] nfields;
+        elem_cnt_t elem_cnt; 
+    } store_id_t;
+
+    typedef struct packed {
+        scratch_state_t state;
+        logic [31:0] address;
+        store_id_t [VMEM_W/8-1:0] store_id;
+        logic [$clog2(VMEM_W/8)-1:0] wmask;
+        logic [VMEM_W-1:0] data;
+    } scratch_line_t;
+
+    typedef scratch_line_t [MAX_ELEMENT_CNT-1 : 0] scratch_memory_t;
+
+    scratch_memory_t scratch_memory_q, scratch_memory_d;
+
+    /////////////////////////////////scratch state////////////////////////////////
+    logic scratch_hit;
+    logic scratch_pending;
+
+    elem_cnt_t scratch_pending_index;
+    logic scratch_pending_req_cleared;
+    logic [VMEM_W-1 : 0] scratch_pending_output;
+    logic [$clog2(VMEM_W/8)-1:0] scratch_pending_data_off;
+
+    logic [VMEM_W-1:0] scratch_hit_data;
+
+    typedef enum logic [2:0] {
+        IDLE,
+        LOAD,
+        PENDING_LOAD_STALL,
+        STORE_SCRATCH,
+        PENDING_STORE_STALL,
+        STORE_MEMORY
+    } scratch_fsm_state_t;
+
+    struct packed {
+        scratch_fsm_state_t fsm_state;
+        elem_cnt_t write_index;
+        elem_cnt_t [MEM_PORTS-1:0] port_write_index;
+        elem_cnt_t elem_cnt;
+        logic [MEM_PORTS-1:0] current_input_port;
+        logic [MEM_PORTS-1:0] current_output_port;
+    } scratch_state_t;
+
+    scratch_state_t scratch_state_q, scratch_state_d;
+
+    /////////////////////////////////input queue////////////////////////////////
+    logic               input_queue_valid_out;
+    logic               input_queue_ready_in;
+    logic               input_queue_ready_out;
+    LSU_STATE_RED_T     state_req_red;
+
+    /////////////////////////////////Store queue////////////////////////////////
+    logic               store_queue_ready_out;
+    logic               store_queue_valid_in;
+    logic               store_queue_valid_out;
+
+    struct packed {
+        logic [XIF_ID_W-1:0]         id;
+        op_mode_lsu                  mode;
+        logic [31:0]                 req_addr_q;
+        logic [VMEM_W  -1:0]         wdata_buf_q;
+        logic [VMEM_W/8-1:0]         wmask_buf_q;
+        logic                        last_cycle;
+    } store_queue_data_out_t;
+
+    store_queue_data_out_t store_queue_data_in, store_queue_data_out;
+
+    /////////////////////////////////Scratch queue////////////////////////////////
+    logic                           scratch_queue_valid_out;
+    logic                           scratch_queue_ready_in;
+    logic                           scratch_queue_hit_out;
+    logic                           scratch_queue_pending_out;
+    elem_cnt_t                      scratch_queue_pending_index_out;
+    logic [$clog2(VMEM_W/8)-1:0]    scratch_queue_pending_data_off_out;
+    logic [VMEM_W-1 : 0]            scratch_queue_data_out;
+
+
+    /////////////////////////////////Output queue////////////////////////////////
+    logic               output_queue_valid_out;
+    logic               output_queue_ready_out;
+    logic               output_queue_ready_in;
+    LSU_STATE_RED_T     deq_state;
+
+    // load data, offset and mask buffers:
+    logic [       VMEM_W   -1:0] rdata_buf_q, rdata_buf_d;
+    logic [$clog2(VMEM_W/8)-1:0] rdata_off_q, rdata_off_d;
+    logic [       VMEM_W/8 -1:0] rmask_buf_q, rmask_buf_d;
+
+    /////////////////////////////////Port queue////////////////////////////////
+    logic [MEM_PORTS-1 : 0] port_queue_ready_out;
+    logic [MEM_PORTS-1 : 0] port_queue_valid_out;
+    logic [MEM_PORTS-1 : 0] port_queue_ready_in;
+    logic [VMEM_W   -1:0]   port_queue_rdata_out [MEM_PORTS-1 : 0]; 
+    logic [MEM_PORTS-1 : 0] port_queue_mem_err_out;
+
+
+    /////////////////////////////////Memory request////////////////////////////////
+    logic           mem_req_switch;
+    obi_intf.Manager     load_mem_req, store_mem_req;
+
+    /////////////////////////////////General signals////////////////////////////////
+    logic            state_req_stall;
+    logic            load_mem_req_stall;
+    logic            store_mem_req_stall;
+    logic            pending_req_stall; 
     logic            state_rdata_valid_q, state_rdata_valid_d;
 
-    logic            state_req_ready,   lsu_input_queue_ready, lsu_output_queue_ready;
+    logic            state_req_ready;
 
     LSU_STATE_RED_T  state_rdata_q, state_rdata_d;
 
@@ -50,10 +175,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     logic       mem_err_q,     mem_err_d;
     logic [5:0] mem_exccode_q, mem_exccode_d;
 
-    // load data, offset and mask buffers:
-    logic [       VMEM_W   -1:0] rdata_buf_q, rdata_buf_d;
-    logic [$clog2(VMEM_W/8)-1:0] rdata_off_q, rdata_off_d;
-    logic [       VMEM_W/8 -1:0] rmask_buf_q, rmask_buf_d;
 
     generate
         if (BUF_REQUEST) begin
@@ -62,13 +183,24 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     mem_exc_q   <= mem_exc_d;
                 end
             end
-            assign state_req_ready = ~state_req_red.state_req_valid_q | (xif_mem_if.mem_valid & xif_mem_if.mem_ready) | (~state_req_stall & ~xif_mem_if.mem_valid);
+            //assign state_req_ready = ~state_req_red.state_req_valid_q | (xif_mem_if.mem_valid & xif_mem_if.mem_ready) | (~state_req_stall & ~xif_mem_if.mem_valid);
+            always_comb begin
+                state_req_ready = ~state_req_red.state_req_valid_q;
+                for(int i = 0; i < MEM_PORTS; i++) begin
+                    state_req_ready |=  (obi_intf[i].req & obi_intf[i].gnt) | (~state_req_stall & ~obi_intf[i].req);
+                end
+            end
         end else begin
             always_ff @(posedge clk_i) begin
                 // always need a flip-flop for the exception flag
                 mem_exc_q <= mem_exc_d;
             end
-            assign state_req_ready = (xif_mem_if.mem_valid & xif_mem_if.mem_ready) | (~state_req_stall & ~xif_mem_if.mem_valid);
+            //assign state_req_ready = (xif_mem_if.mem_valid & xif_mem_if.mem_ready) | (~state_req_stall & ~xif_mem_if.mem_valid);
+            always_comb begin
+                for(int i = 0; i < MEM_PORTS; i++) begin
+                    state_req_ready |= (obi_intf[i].req & obi_intf[i].gnt) | (~state_req_stall & ~obi_intf[i].req);
+                end
+            end
         end
 
         // Note: The stages receiving memory data and writing it to vector
@@ -87,6 +219,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 end
                 else begin
                     state_rdata_valid_q <= state_rdata_valid_d;
+
+                    scratch_state_q <= scratch_state_d;
+                    scratch_memory_q <= scratch_memory_d;
                 end
             end
             always_ff @(posedge clk_i) begin : vproc_lsu_stage_rdata
@@ -121,20 +256,44 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     // Also stall if incoming instruction is speculative OR a current instruction has not finished
     assign state_req_stall = (~state_req_red.mode.store & state_req_red.res_store & vreg_pend_rd_i[state_req_red.res_vaddr]) |
                              ((instr_state_i[state_req_red.id] == INSTR_SPECULATIVE) | ~(state_req_red.id == deq_state.id)) | 
-                             ~lsu_input_queue_ready | ~lsu_output_queue_ready;
+                             ~input_queue_ready_out | ~output_queue_ready_out;
+
+    assign load_mem_req_stall = (~state_req_red.mode.store & state_req_red.res_store & vreg_pend_rd_i[state_req_red.res_vaddr]) |
+                                ((instr_state_i[state_req_red.id] == INSTR_SPECULATIVE) | ~(state_req_red.id == deq_state.id)) | 
+                                ~output_queue_ready_out;
+
+    assign store_mem_req_stall = (~state_req_red.mode.store & state_req_red.res_store & vreg_pend_rd_i[state_req_red.res_vaddr]) |
+                                 ((instr_state_i[state_req_red.id] == INSTR_SPECULATIVE) | ~(state_req_red.id == deq_state.id));
+
+    assign pending_req_stall = scratch_state_q.fsm_state == PENDING_LOAD_STALL | scratch_state_d.fsm_state == PENDING_LOAD_STALL |
+                               scratch_state_q.fsm_state == PENDING_STORE_STALL | scratch_state_q.fsm_state == PENDING_STORE_STALL;            
 
     // memory request (keep requesting next access while addressing is not complete)
-    assign xif_mem_if.mem_valid     = state_req_red.state_req_valid_q & ~state_req_red.suppressed & ~state_req_stall & (~mem_exc_q | state_req_red.first_cycle) & state_req_red_valid;
-    assign xif_mem_if.mem_req.id    = state_req_red.id;
-    assign xif_mem_if.mem_req.addr  = VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE] ? {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}} : state_req_red.req_addr_q;
-    assign xif_mem_if.mem_req.mode  = '0;
-    assign xif_mem_if.mem_req.we    = state_req_red.mode.store;
-    assign xif_mem_if.mem_req.size  = {1'b0, state_req_red.mode.eew};
-    assign xif_mem_if.mem_req.be    = state_req_red.wmask_buf_q;
-    assign xif_mem_if.mem_req.attr  = '0;
-    assign xif_mem_if.mem_req.wdata = state_req_red.wdata_buf_q;
-    assign xif_mem_if.mem_req.last  = state_req_red.last_cycle;
-    assign xif_mem_if.mem_req.spec  = '0;
+    assign xif_mem_if = mem_req_switch ? store_mem_req : load_mem_req;
+
+    always_comb begin
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            obi_intf[i] = mem_req_switch ? store_mem_req : load_mem_req;
+
+            if(~scratch_state_q.current_input_port[i]) begin
+                obi_intf[i].req = 0;
+            end 
+        end
+    end
+
+    assign load_mem_req.req           = state_req_red.state_req_valid_q & ~state_req_red.suppressed & ~load_mem_req_stall & (~mem_exc_q | state_req_red.first_cycle) & input_queue_valid_out & ~scratch_hit;
+    assign load_mem_req.mem_req.id    = OBI_ID;
+    assign load_mem_req.addr          = VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE] ? {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}} : state_req_red.req_addr_q;
+    assign load_mem_req.we            = state_req_red.mode.store;
+    assign load_mem_req.be            = state_req_red.wmask_buf_q;
+    assign load_mem_req.wdata         = state_req_red.wdata_buf_q;
+
+    assign store_mem_req.req           = ~state_req_red.suppressed & ~store_mem_req_stall & (~mem_exc_q | state_req_red.first_cycle) & store_queue_valid_out;
+    assign store_mem_req.mem_req.id    = OBI_ID;
+    assign store_mem_req.addr          = VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE] ? {store_queue_data_out.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}} : store_queue_data_out.req_addr_q;
+    assign store_mem_req.we            = store_queue_data_out.mode.store;
+    assign store_mem_req.be            = store_queue_data_out.wmask_buf_q;
+    assign store_mem_req.wdata         = store_queue_data_out.wdata_buf_q;
 
     // monitor the memory response for exceptions
     always_comb begin
@@ -147,50 +306,429 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     end
 
     // input queue
-    logic         state_req_red_valid; // LSU queue dequeue valid signal
-    logic         state_req_red_ready;
-    LSU_STATE_RED_T state_req_red;
     vproc_queue #(
         .WIDTH        ( $bits(LSU_STATE_RED_T)                                        ),
         .DEPTH        ( VLSU_QUEUE_SZ                                                 ),
         .FLOW         ( 1'b1                                                          )
-    ) lsu_input_queue (
+    ) input_queue (
         .clk_i        ( clk_i                                                         ),
         .async_rst_ni ( async_rst_ni                                                  ),
         .sync_rst_ni  ( sync_rst_ni                                                   ),
-        .enq_ready_o  ( lsu_input_queue_ready                                         ),
+        .enq_ready_o  ( input_queue_ready_out                                         ),
         .enq_valid_i  ( state_req_red_i.state_req_valid_q & ~state_req_stall          ),
         .enq_data_i   ( state_req_red_i                                               ),
-        .deq_ready_i  ( state_req_red_ready                                           ),
-        .deq_valid_o  ( state_req_red_valid                                           ),
+        .deq_ready_i  ( input_queue_ready_in                                          ),
+        .deq_valid_o  ( input_queue_valid_out                                         ),
         .deq_data_o   ( state_req_red                                                 ),
         .flags_any_o  (                                                               ),
         .flags_all_o  (                                                               )
     );
 
-    // output queue -> queue after sending memory request
-    logic         deq_valid; // LSU queue dequeue valid signal
-    logic         deq_ready;
-    LSU_STATE_RED_T deq_state;
+    // Store queue
     vproc_queue #(
-        .WIDTH        ( $clog2(VMEM_W/8) + VMEM_W/8 + $bits(LSU_STATE_RED_T)                                      ),
-        .DEPTH        ( VLSU_QUEUE_SZ                                                                             ),
-        .FLOW         ( 1'b1                                                                                      )
-    ) lsu_output_queue (
-        .clk_i        ( clk_i                                                                                     ),
-        .async_rst_ni ( async_rst_ni                                                                              ),
-        .sync_rst_ni  ( sync_rst_ni                                                                               ),
-        .enq_ready_o  ( lsu_output_queue_ready                                                                    ),
-        .enq_valid_i  ( state_req_red.state_req_valid_q & state_req_ready & state_req_red_valid                   ),
-        .enq_data_i   ( {state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0], state_req_red.vmsk_tmp_q, state_req_red} ),
-        .deq_ready_i  ( deq_ready                                                                                 ),
-        .deq_valid_o  ( deq_valid                                                                                 ),
-        .deq_data_o   ( {rdata_off_d, rmask_buf_d, deq_state}                                                     ),
-        .flags_any_o  (                                                                                           ),
-        .flags_all_o  (                                                                                           )
+        .WIDTH        ( $bits(LSU_STATE_RED_T)                                        ),
+        .DEPTH        ( VLSU_QUEUE_SZ                                                 ),
+        .FLOW         ( 1'b1                                                          )
+    ) store_queue (
+        .clk_i        ( clk_i                                                         ),
+        .async_rst_ni ( async_rst_ni                                                  ),
+        .sync_rst_ni  ( sync_rst_ni                                                   ),
+        .enq_ready_o  ( store_queue_ready_out                                         ),
+        .enq_valid_i  ( store_queue_valid_in                                          ),
+        .enq_data_i   ( store_queue_data_in                                           ),
+        .deq_ready_i  ( store_mem_req.mem_valid                                       ),
+        .deq_valid_o  ( store_queue_valid_out                                         ),
+        .deq_data_o   ( store_queue_data_out                                          ),
+        .flags_any_o  (                                                               ),
+        .flags_all_o  (                                                               )
     );
 
-    assign state_req_red_ready = state_req_ready & lsu_output_queue_ready;
+
+    // Port queue
+    generate
+        for (genvar i = 0; i < MEM_PORTS; i++) begin
+            vproc_queue #(
+                .WIDTH        ( $bits(LSU_STATE_RED_T)                                        ),
+                .DEPTH        ( VLSU_QUEUE_SZ                                                 ),
+                .FLOW         ( 1'b1                                                          )
+            ) port_queue (
+                .clk_i        ( clk_i                                                         ),
+                .async_rst_ni ( async_rst_ni                                                  ),
+                .sync_rst_ni  ( sync_rst_ni                                                   ),
+                .enq_ready_o  ( port_queue_ready_out[i]                                       ),
+                .enq_valid_i  ( obi_intf[i].rvalid                                            ),
+                .enq_data_i   ( {obi_intf[i].rdata, obi_intf[i].err}                          ),
+                .deq_ready_i  ( port_queue_ready_in[i]                                        ),
+                .deq_valid_o  ( port_queue_valid_out[i]                                       ),
+                .deq_data_o   ( {port_queue_rdata_out, port_queue_mem_err_out[i]}             ),
+                .flags_any_o  (                                                               ),
+                .flags_all_o  (                                                               )
+            );
+        end
+    endgenerate
+
+    
+
+    always_comb begin
+        logic [2:0] eew_in_bytes;
+
+        logic [$clog2(VMEM_W/8)-1:0] scratch_data_off;
+        logic [$clog2(VMEM_W/8)-1:0] scratch_load_offset;
+
+        logic [$clog2(VMEM_W/8)-1:0] scratch_wmask;
+        logic [$clog2(VMEM_W/8)-1:0] scratch_store_offset;
+
+        scratch_state_d = scratch_state_q;
+        scratch_memory_d = scratch_memory_q;
+
+        scratch_hit = 0;
+        scratch_hit_data = '0;
+
+        scratch_pending_output = '0;
+        scratch_pending_req_cleared = 0;
+
+        eew_in_bytes = 1;
+
+        scratch_data_off = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
+        scratch_load_offset = '0;
+
+        scratch_wmask = '0;
+        scratch_write_offset = '0;
+        scratch_store_offset = '0;
+
+        mem_req_switch = 0;
+        store_mem_req.mem_valid = 0;
+
+        store_queue_valid_in = 0;
+
+        store_queue_data_in.id = state_req_red.id;
+        store_queue_data_in.mode = state_req_red.mode;
+        store_queue_data_in.req_addr_q = scratch_memory_q.[scratch_state_q.write_index].address;
+        store_queue_data_in.wdata_buf_q = scratch_memory_q.[scratch_state_q.write_index].data;
+        store_queue_data_in.wmask_buf_q = scratch_memory_q.[scratch_state_q.write_index].wmask;
+        store_queue_data_in.last_cycle = 0;
+
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            port_queue_ready_in[i] = 0;
+        end
+
+        unique case (state_req_red.mode.eew)
+            VSEW_8:
+                eew_in_bytes = 1;
+            VSEW_16:
+                eew_in_bytes = 2;
+            VSEW_32: 
+                eew_in_bytes = 4;
+        endcase
+
+        // Reset scratch memory if first cycle
+        if(state_req_red.first_cycle & input_queue_ready_in & input_queue_valid_out) begin
+            for(int i = 0; i < MAX_ELEMENT_CNT; i++) begin
+                scratch_memory_d[i].state = NOT_VALID;
+                scratch_memory_d[i].pending_req_cnt = '0;
+            end
+        end
+
+        // Reset element count
+        if(state_req_red.init_addr) begin
+            scratch_state_d.elem_cnt = '0;
+        end
+
+        // Reset indices if last cycle
+        if(state_req_red.last_cycle & input_queue_ready_in & input_queue_valid_out) begin
+            scratch_state_d.write_index = '0;
+            scratch_state_d.elem_cnt = '0;
+        end
+
+
+        unique case (scratch_state_q.fsm_state)
+        
+            IDLE: begin
+                if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.mode.store) begin
+                    scratch_state_d.fsm_state = LOAD;
+                end else if (input_queue_ready_in & input_queue_valid_out & state_req_red.mode.store) begin
+                    scratch_state_d.fsm_state = STORE_SCRATCH;
+                end
+            end    
+
+            LOAD: begin
+                if(input_queue_ready_in & input_queue_valid_out) begin
+
+                    for(int i = 0; i < HIT_DEPTH; i++) begin
+                        if(
+                            (
+                                scratch_memory_q.[scratch_state_q.write_index - 1 - i].state == VALID ||
+                                scratch_memory_q.[scratch_state_q.write_index - 1 - i].state == PENDING
+                            ) &
+                            scratch_memory_q.[scratch_state_q.write_index - 1 - i].address <= state_req_red.req_addr_q &
+                            scratch_memory_q.[scratch_state_q.write_index - 1 - i].address + VMEM_W/8 >= state_req_red.req_addr_q + eew_in_bytes
+                        ) begin
+                            
+                            scratch_hit = 1;
+
+                            scratch_data_off = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
+                            scratch_load_offset = state_req_red.req_addr_q - scratch_memory_q.[scratch_state_q.write_index - 1 - i].address;
+                            scratch_data_off += scratch_load_offset;   
+
+                            unique case (state_req_red.mode.eew)
+                                VSEW_8:
+                                    scratch_hit_data[7 :0] = scratch_memory_q.[scratch_state_q.write_index - 1 - i].data[{3'b000, scratch_data_off                                  } * 8 +: 8 ];
+                                VSEW_16: 
+                                    scratch_hit_data[15:0] = scratch_memory_q.[scratch_state_q.write_index - 1 - i].data[{3'b000, scratch_data_off & ({$clog2(VMEM_W/8){1'b1}} << 1)} * 8 +: 16];
+                                VSEW_32: 
+                                    scratch_hit_data[31:0] = scratch_memory_q.[scratch_state_q.write_index - 1 - i].data[{3'b000, scratch_data_off & ({$clog2(VMEM_W/8){1'b1}} << 2)} * 8 +: 32];
+                                default: ;
+                            endcase
+                            if (VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE]) begin
+                                scratch_hit_data = scratch_memory_q.[scratch_state_q.write_index - 1 - i].data;
+                            end
+
+                            if (scratch_memory_q.[scratch_state_q.write_index - 1 - i].state == PENDING) begin
+                                scratch_memory_d.[scratch_state_q.write_index - 1 - i].pending_req_cnt++;
+                                scratch_pending = 1;
+                                scratch_pending_index = scratch_state_q.write_index - 1 - i;
+                                scratch_pending_data_off = scratch_data_off;
+                            end
+
+                        end
+                    end
+
+                    if(~scratch_hit) begin
+                        if(
+                            (
+                                scratch_memory_q[scratch_state_d.write_index[i]].state == PENDING ||
+                                scratch_memory_q[scratch_state_d.write_index[i]].state == VALID
+                            ) &
+                            scratch_memory_q[scratch_state_d.write_index[i]].pending_req_cnt > 0
+                        ) begin
+                            scratch_state_d.fsm_state = PENDING_LOAD_STALL;
+                        end else begin
+                            scratch_memory_d[scratch_state_q.write_index].state = PENDING;
+                            scratch_memory_d[scratch_state_q.write_index].address = state_req_red.req_addr_q;
+                            scratch_memory_d[scratch_state_q.write_index].pending_req_cnt = 1;
+                            scratch_state_d.write_index++;
+                            scratch_state_d.current_input_port = {scratch_state_q.current_input_port[MEM_PORTS-2:1], cratch_state_q.current_input_port[MEM_PORTS-1]};
+                            for(int i = 0; i < MEM_PORTS; i++) begin
+                                if(scratch_state_q.current_input_port[i]) begin
+                                    scratch_state_d.port_write_index[i] = scratch_state_q.write_index;
+                                end
+                            end
+                        end
+                        
+                    end
+
+                end else begin
+                    // if queues are not ready, check if pending loads can be cleared
+                    // take over valid memory result into scratch
+                    for(int i = 0; i < MEM_PORTS; i++) begin
+                        if(scratch_state_q.current_output_port[i]) begin
+                            if(port_queue_valid_out[i]) begin
+                                scratch_state_d.fsm_state = PENDING_LOAD_STALL;
+                            end
+                        end
+                    end
+                end
+            end
+
+            PENDING_LOAD_STALL: begin
+                // deal with pending loads
+
+                if (scratch_queue_valid_out & scratch_queue_pending_out) begin
+                    if(scratch_memory_q.[scratch_queue_pending_index_out].state == VALID) begin
+                        scratch_memory_d.[scratch_queue_pending_index_out].pending_req_cnt--;
+                        scratch_pending_req_cleared = 1;
+
+                        unique case (state_req_red.mode.eew)
+                            VSEW_8:
+                                scratch_pending_output[7 :0] = scratch_memory_q.[scratch_queue_pending_index_out].data[{3'b000, scratch_queue_pending_data_off_out                                  } * 8 +: 8 ];
+                            VSEW_16: 
+                                scratch_pending_output[15:0] = scratch_memory_q.[scratch_queue_pending_index_out].data[{3'b000, scratch_queue_pending_data_off_out & ({$clog2(VMEM_W/8){1'b1}} << 1)} * 8 +: 16];
+                            VSEW_32: 
+                                scratch_pending_output[31:0] = scratch_memory_q.[scratch_queue_pending_index_out].data[{3'b000, scratch_queue_pending_data_off_out & ({$clog2(VMEM_W/8){1'b1}} << 2)} * 8 +: 32];
+                            default: ;
+                        endcase
+                        if (VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE]) begin
+                            scratch_pending_output = scratch_memory_q.[scratch_queue_pending_index_out].data;
+                        end
+                    end
+                end
+
+                for(int i = 0; i < MEM_PORTS; i++) begin
+                    if(scratch_state_q.current_output_port[i] & port_queue_valid_out[i]) begin
+
+                        scratch_memory_d[scratch_state_q.port_write_index[i]].state = VALID;
+                        scratch_memory_d[scratch_state_q.port_write_index[i]].data = port_queue_rdata_out[i];
+                        //TODO: handle err
+                        port_queue_ready_in[i] = 1;
+                        
+                    end
+
+                    if(scratch_memory_q[scratch_state_q.port_write_index[i]].pending_req_cnt == 0) begin
+                        scratch_state_d.fsm_state = LOAD;
+                        scratch_state_d.current_output_port = {scratch_state_q.current_output_port[MEM_PORTS-2:1], cratch_state_q.current_output_port[MEM_PORTS-1]};  
+                    end
+
+                end
+            end
+
+            STORE_SCRATCH: begin
+                mem_req_switch = 1;
+                if (input_queue_ready_in & input_queue_valid_out) begin
+                    
+                    for(int i = 0; i < HIT_DEPTH; i++) begin
+                        if(
+                            scratch_memory_q.[scratch_state_q.write_index - 1 - i].state == VALID &
+                            scratch_memory_q.[scratch_state_q.write_index - 1 - i].address <= state_req_red.req_addr_q &
+                            scratch_memory_q.[scratch_state_q.write_index - 1 - i].address + VMEM_W/8 >= state_req_red.req_addr_q + eew_in_bytes
+                        ) begin
+                            scratch_hit = 1;
+                            //TODO: save index and use it instead of scratch_state_q.write_index - 1 - i
+                        end
+                    end
+
+                    if(~scratch_hit) begin
+                        scratch_hit = 1;
+                        if(scratch_memory_q.[scratch_state_q.write_index].state == NOT_VALID) begin
+                            scratch_memory_d.[scratch_state_q.write_index].state = VALID;
+                            scratch_memory_d.[scratch_state_q.write_index].address = state_req_red.req_addr_q;
+                        else
+                            if(store_queue_ready_out) begin
+                                store_queue_valid_in = 1;
+                            end else begin
+                                scratch_state_d.fsm_state = PENDING_STORE_STALL;
+                            end
+                            //TODO: stall input queue
+                        end
+                    end
+
+                    // shifted in case of ~VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE], otherwise offset is 0
+                    scratch_store_offset = state_req_red.req_addr_q - scratch_memory_q.[scratch_state_q.write_index - i].address;
+                    scratch_wmask = state_req_red.wmask_buf_q << scratch_store_offset; 
+
+                    unique case (state_req_red.mode.eew)
+                        VSEW_8: begin
+                            for (int j = 0; j < VMEM_W / 8 ; j++) begin
+                                if(
+                                scratch_wmask[j] & 
+                                (
+                                    scratch_memory_q.store_id[j].elem_cnt < scratch_state_q.elem_cnt |
+                                        (
+                                            scratch_memory_q.store_id[j].elem_cnt == scratch_state_q.elem_cnt & 
+                                            scratch_memory_q.store_id[j].nfields > state_req_red.nfields
+                                        )
+                                )
+                                ) begin
+                                    scratch_memory_d.[scratch_state_q.write_index - i].data[8*j +: 8] = state_req_red.wdata_buf_q[8*j +: 8];
+                                    scratch_memory_d.store_id[j].nfields = state_req_red.nfields;
+                                    scratch_memory_d.store_id[j].elem_cnt = scratch_state_q.elem_cnt;
+                                    scratch_memory_d.wmask[j] = 1;
+                                end
+                            end
+                        end
+                        VSEW_16: begin
+                            for (int j = 0; j < VMEM_W / 16 ; j++) begin
+                                if(
+                                scratch_wmask[j] & 
+                                (
+                                    scratch_memory_q.store_id[j].elem_cnt < scratch_state_q.elem_cnt |
+                                        (
+                                            scratch_memory_q.store_id[j].elem_cnt == scratch_state_q.elem_cnt & 
+                                            scratch_memory_q.store_id[j].nfields > state_req_red.nfields
+                                        )
+                                )
+                                ) begin
+                                    scratch_memory_d.[scratch_state_q.write_index - i].data[16*j +: 16] = state_req_red.wdata_buf_q[16*j +: 16];
+                                    scratch_memory_d.store_id[j].nfields = state_req_red.nfields;
+                                    scratch_memory_d.store_id[j].elem_cnt = scratch_state_q.elem_cnt;
+                                    scratch_memory_d.wmask[j] = 1;
+                                end
+                            end
+                        end
+                        VSEW_32: begin
+                            for (int j = 0; j < VMEM_W / 32 ; j++) begin
+                                if(
+                                scratch_wmask[j] & 
+                                (
+                                    scratch_memory_q.store_id[j].elem_cnt < scratch_state_q.elem_cnt |
+                                        (
+                                            scratch_memory_q.store_id[j].elem_cnt == scratch_state_q.elem_cnt & 
+                                            scratch_memory_q.store_id[j].nfields > state_req_red.nfields
+                                        )
+                                )
+                                ) begin
+                                    scratch_memory_d.[scratch_state_q.write_index - i].data[32*j +: 32] = state_req_red.wdata_buf_q[32*j W+: 32];
+                                    scratch_memory_d.store_id[j].nfields = state_req_red.nfields;
+                                    scratch_memory_d.store_id[j].elem_cnt = scratch_state_q.elem_cnt;
+                                    scratch_memory_d.wmask[j] = 1;
+                                end
+                            end
+                        end
+                        default: ;
+                    endcase
+
+                end
+            end
+
+            PENDING_STORE_STALL: begin
+                store_queue_valid_in = 1;
+                if(store_queue_ready_out) begin
+                    scratch_state_d.fsm_state = STORE_SCRATCH;
+                end
+                
+            end
+
+            STORE_MEMORY: begin
+                mem_req_switch = 1;
+                if(store_mem_req.mem_valid) begin
+                    //TODO:write back all valid lines back to memory
+                end
+            end
+
+        endcase
+
+
+
+    end
+
+
+    // scratch queue
+    vproc_queue #(
+        .WIDTH        ( VMEM_W + 1 + 1 + $bits(elem_cnt_t) + $clog2(VMEM_W/8)                                                                                             ),
+        .DEPTH        ( VLSU_QUEUE_SZ                                                                                                                                     ),
+        .FLOW         ( 1'b1                                                                                                                                              )
+    ) scratch_queue (
+        .clk_i        ( clk_i                                                                                                                                             ),
+        .async_rst_ni ( async_rst_ni                                                                                                                                      ),
+        .sync_rst_ni  ( sync_rst_ni                                                                                                                                       ),
+        .enq_ready_o  (                                                                                                                                                   ),
+        .enq_valid_i  ( state_req_red.state_req_valid_q & state_req_ready & input_queue_valid_out & ~pending_req_stall                                                    ),
+        .enq_data_i   ( {scratch_hit_data, scratch_hit, scratch_pending, scratch_pending_index, scratch_pending_data_off}                                                 ),
+        .deq_ready_i  ( scratch_queue_ready_in                                                                                                                            ),
+        .deq_valid_o  ( scratch_queue_valid_out                                                                                                                           ),
+        .deq_data_o   ( {scratch_queue_data_out, scratch_queue_hit_out, scratch_queue_pending_out, scratch_queue_pending_index_out, scratch_queue_pending_data_off_out}   ),
+        .flags_any_o  (                                                                                                                                                   ),
+        .flags_all_o  (                                                                                                                                                   )
+    );
+
+
+    // output queue -> queue after sending memory request
+    vproc_queue #(
+        .WIDTH        ( $clog2(VMEM_W/8) + VMEM_W/8 + $bits(LSU_STATE_RED_T)                                                            ),
+        .DEPTH        ( VLSU_QUEUE_SZ                                                                                                   ),
+        .FLOW         ( 1'b1                                                                                                            )
+    ) output_queue (
+        .clk_i        ( clk_i                                                                                                           ),
+        .async_rst_ni ( async_rst_ni                                                                                                    ),
+        .sync_rst_ni  ( sync_rst_ni                                                                                                     ),
+        .enq_ready_o  ( output_queue_ready_out                                                                                          ),
+        .enq_valid_i  ( state_req_red.state_req_valid_q & state_req_ready & input_queue_valid_out & ~pending_req_stall                  ),
+        .enq_data_i   ( {state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0], state_req_red.vmsk_tmp_q, state_req_red}                       ),
+        .deq_ready_i  ( output_queue_ready_in                                                                                           ),
+        .deq_valid_o  ( output_queue_valid_out                                                                                          ),
+        .deq_data_o   ( {rdata_off_d, rmask_buf_d, deq_state}                                                                           ),
+        .flags_any_o  (                                                                                                                 ),
+        .flags_all_o  (                                                                                                                 )
+    );
 
     // XIF mem_result_valid is asserted and the memory result's instruction ID matches and transaction is not suppressed(MIGHT BE AN ISSUE TODO)
     logic xif_mem_result_id_valid;
@@ -198,14 +736,28 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                     //(xif_memres_if.mem_result.id == deq_state.id) & !deq_state.suppressed; //XIF mem_result_id has been deprecated.  Remove check for this
                                     !deq_state.suppressed;
 
-    assign deq_ready           = xif_mem_result_id_valid | deq_state.suppressed | mem_err_d;
-    assign state_rdata_valid_d = deq_valid & deq_ready;
+    // Ready signals
+    assign output_queue_ready_in           = xif_mem_result_id_valid | deq_state.suppressed | mem_err_d | scratch_queue_ready_in;
+    assign scratch_queue_ready_in = scratch_queue_valid_out & scratch_queue_hit_out & (~scratch_queue_pending_out || scratch_pending_req_cleared);
+
+    always_comb begin
+        input_queue_ready_in = state_req_ready & output_queue_ready_out & ~pending_req_stall;
+
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            if(scratch_state_q.current_input_port[i]) begin
+                input_queue_ready_in &= port_queue_ready_out[i];
+            end
+        end
+    end
+
+    // Valid signals
+    assign state_rdata_valid_d = output_queue_valid_out & output_queue_ready_in;
 
     // monitor the memory result for bus errors and the queue for exceptions
     always_comb begin
         mem_err_d     = mem_err_q;
         mem_exccode_d = mem_exccode_q;
-        if (deq_valid & (deq_state.first_cycle | ~mem_err_q)) begin
+        if (output_queue_valid_out & (deq_state.first_cycle | ~mem_err_q)) begin
             // reset the error flag in the first cycle, unless there is a bus
             // error or an exception occured during the request
             mem_err_d     = deq_state.exc | (xif_mem_result_id_valid & xif_memres_if.mem_result.err);
@@ -218,7 +770,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // LSU transaction complete queue, result indicates potential exceptions
     logic trans_complete_valid, trans_complete_ready;
-    assign trans_complete_valid = deq_valid & deq_ready & deq_state.last_cycle &
+    assign trans_complete_valid = output_queue_valid_out & output_queue_ready_in & deq_state.last_cycle &
                                   (instr_state_i[deq_state.id] == INSTR_COMMITTED);
 
     vproc_queue #(
@@ -246,7 +798,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     end
 
     // load data:
-    assign rdata_buf_d = xif_memres_if.mem_result.rdata;
+    assign rdata_buf_d = scratch_queue_ready_in ? (scratch_queue_pending_out ? scratch_pending_output : scratch_queue_data_out) : xif_memres_if.mem_result.rdata;
 
     assign state_rdata_valid_o = state_rdata_valid_q;
     assign state_req_ready_o = state_req_ready;

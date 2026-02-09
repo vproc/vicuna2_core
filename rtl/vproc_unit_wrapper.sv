@@ -77,6 +77,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             logic [MAX_OP_W/8-1:0] unit_out_mask;
             vproc_lsu #(
                 .VMEM_W                   ( MAX_OP_W                                    ),
+                .VREG_W                   ( VREG_W                                    ),
                 .CTRL_T                   ( CTRL_T                                      ),
                 .XIF_ID_W                 ( XIF_ID_W                                    ),
                 .XIF_ID_CNT               ( XIF_ID_CNT                                  ),

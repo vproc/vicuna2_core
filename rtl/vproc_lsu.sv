@@ -5,6 +5,7 @@
 
 module vproc_lsu import vproc_pkg::*; #(
         parameter int unsigned        VMEM_W          = 32,   // width in bits of the vector memory interface
+        parameter int unsigned        VREG_W          = 128,   // width in bits of a vector register
         parameter bit                 BUF_REQUEST     = 1'b1, // insert pipeline stage before issuing request
         parameter bit                 BUF_RDATA       = 1'b1, // insert pipeline stage after memory read
         parameter type                CTRL_T          = logic,
@@ -54,6 +55,8 @@ module vproc_lsu import vproc_pkg::*; #(
     typedef struct packed {
         logic                        state_req_valid_q;
         logic                        state_req_valid_d;
+        logic [2:0]                  nfields;
+        logic                        init_addr;
         logic                        first_cycle;
         logic                        last_cycle;
         logic [XIF_ID_W-1:0]         id;
@@ -236,6 +239,8 @@ module vproc_lsu import vproc_pkg::*; #(
         state_req_red              = DONT_CARE_ZERO ? '0 : 'x;
         state_req_red.state_req_valid_q = state_req_valid_q;
         state_req_red.state_req_valid_d = state_req_valid_d;
+        state_req_red.nfields      = state_req_q.nfields;
+        state_req_red.init_addr    = state_req_q.init_addr;
         state_req_red.first_cycle  = state_req_q.first_cycle;
         state_req_red.last_cycle   = state_req_q.last_cycle;
         state_req_red.id           = state_req_q.id;
@@ -259,6 +264,7 @@ module vproc_lsu import vproc_pkg::*; #(
 
     vproc_lsu_extension #(
         .VMEM_W                   ( VMEM_W                                      ),
+        .VREG_W                   ( VREG_W                                      ),
         .BUF_REQUEST              ( BUF_REQUEST                                 ),
         .BUF_RDATA                ( BUF_RDATA                                   ),
         .LSU_STATE_RED_T          ( lsu_state_red                               ),
