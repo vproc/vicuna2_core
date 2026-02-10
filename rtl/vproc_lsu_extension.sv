@@ -172,7 +172,7 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
     logic mem_exc_q, mem_exc_d;
 
     // memory request caused an error (exception or bus error):
-    logic       mem_err_q,     mem_err_d;
+    logic       mem_err_q,     mem_err_d, mem_any_err_q, mem_any_err_d;
     logic [5:0] mem_exccode_q, mem_exccode_d;
 
 
@@ -183,7 +183,6 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                     mem_exc_q   <= mem_exc_d;
                 end
             end
-            //assign state_req_ready = ~state_req_red.state_req_valid_q | (xif_mem_if.mem_valid & xif_mem_if.mem_ready) | (~state_req_stall & ~xif_mem_if.mem_valid);
             always_comb begin
                 state_req_ready = ~state_req_red.state_req_valid_q;
                 for(int i = 0; i < MEM_PORTS; i++) begin
@@ -195,7 +194,6 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                 // always need a flip-flop for the exception flag
                 mem_exc_q <= mem_exc_d;
             end
-            //assign state_req_ready = (xif_mem_if.mem_valid & xif_mem_if.mem_ready) | (~state_req_stall & ~xif_mem_if.mem_valid);
             always_comb begin
                 for(int i = 0; i < MEM_PORTS; i++) begin
                     state_req_ready |= (obi_intf[i].req & obi_intf[i].gnt) | (~state_req_stall & ~obi_intf[i].req);
@@ -231,6 +229,7 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                     rdata_off_q   <= rdata_off_d;
                     rmask_buf_q   <= rmask_buf_d;
                     mem_err_q     <= mem_err_d;
+                    mem_any_err_q <= mem_any_err_d;
                     mem_exccode_q <= mem_exccode_d;
                 end
             end
@@ -245,6 +244,7 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
             always_ff @(posedge clk_i) begin
                 // always need a flip-flop for the error flag and exception code
                 mem_err_q     <= mem_err_d;
+                mem_any_err_q <= mem_any_err_d;
                 mem_exccode_q <= mem_exccode_d;
             end
         end
@@ -269,8 +269,6 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                                scratch_state_q.fsm_state == PENDING_STORE_STALL | scratch_state_q.fsm_state == PENDING_STORE_STALL;            
 
     // memory request (keep requesting next access while addressing is not complete)
-    assign xif_mem_if = mem_req_switch ? store_mem_req : load_mem_req;
-
     always_comb begin
         for(int i = 0; i < MEM_PORTS; i++) begin
             obi_intf[i] = mem_req_switch ? store_mem_req : load_mem_req;
@@ -412,6 +410,11 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
             port_queue_ready_in[i] = 0;
         end
 
+        mem_any_err_d = mem_any_err_q;
+        if(state_req_red.first_cycle) begin
+            mem_any_err_d = 0;
+        end
+
         unique case (state_req_red.mode.eew)
             VSEW_8:
                 eew_in_bytes = 1;
@@ -533,6 +536,17 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
             PENDING_LOAD_STALL: begin
                 // deal with pending loads
 
+                for(int i = 0; i < MEM_PORTS; i++) begin
+                    if(scratch_state_q.current_output_port[i] & port_queue_valid_out[i]) begin
+
+                        scratch_memory_d[scratch_state_q.port_write_index[i]].state = VALID;
+                        scratch_memory_d[scratch_state_q.port_write_index[i]].data = port_queue_rdata_out[i];
+                        mem_any_err_d |= port_queue_mem_err_out[i];
+                        port_queue_ready_in[i] = 1;
+                        scratch_state_d.current_output_port = {scratch_state_q.current_output_port[MEM_PORTS-2:1], cratch_state_q.current_output_port[MEM_PORTS-1]};
+                    end
+                end
+
                 if (scratch_queue_valid_out & scratch_queue_pending_out) begin
                     if(scratch_memory_q.[scratch_queue_pending_index_out].state == VALID) begin
                         scratch_memory_d.[scratch_queue_pending_index_out].pending_req_cnt--;
@@ -553,22 +567,12 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                     end
                 end
 
-                for(int i = 0; i < MEM_PORTS; i++) begin
-                    if(scratch_state_q.current_output_port[i] & port_queue_valid_out[i]) begin
 
-                        scratch_memory_d[scratch_state_q.port_write_index[i]].state = VALID;
-                        scratch_memory_d[scratch_state_q.port_write_index[i]].data = port_queue_rdata_out[i];
-                        //TODO: handle err
-                        port_queue_ready_in[i] = 1;
-                        
-                    end
-
-                    if(scratch_memory_q[scratch_state_q.port_write_index[i]].pending_req_cnt == 0) begin
-                        scratch_state_d.fsm_state = LOAD;
-                        scratch_state_d.current_output_port = {scratch_state_q.current_output_port[MEM_PORTS-2:1], cratch_state_q.current_output_port[MEM_PORTS-1]};  
-                    end
-
+                if(output_queue_ready_out) begin
+                    scratch_state_d.fsm_state = LOAD;
                 end
+
+                
             end
 
             STORE_SCRATCH: begin
@@ -730,15 +734,9 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
         .flags_all_o  (                                                                                                                 )
     );
 
-    // XIF mem_result_valid is asserted and the memory result's instruction ID matches and transaction is not suppressed(MIGHT BE AN ISSUE TODO)
-    logic xif_mem_result_id_valid;
-    assign xif_mem_result_id_valid = xif_memres_if.mem_result_valid &
-                                    //(xif_memres_if.mem_result.id == deq_state.id) & !deq_state.suppressed; //XIF mem_result_id has been deprecated.  Remove check for this
-                                    !deq_state.suppressed;
-
     // Ready signals
-    assign output_queue_ready_in           = xif_mem_result_id_valid | deq_state.suppressed | mem_err_d | scratch_queue_ready_in;
-    assign scratch_queue_ready_in = scratch_queue_valid_out & scratch_queue_hit_out & (~scratch_queue_pending_out || scratch_pending_req_cleared);
+    assign output_queue_ready_in           = deq_state.suppressed | mem_err_d | scratch_queue_ready_in;
+    assign scratch_queue_ready_in = scratch_queue_valid_out & scratch_queue_hit_out & (~scratch_queue_pending_out | scratch_pending_req_cleared);
 
     always_comb begin
         input_queue_ready_in = state_req_ready & output_queue_ready_out & ~pending_req_stall;
@@ -760,7 +758,7 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
         if (output_queue_valid_out & (deq_state.first_cycle | ~mem_err_q)) begin
             // reset the error flag in the first cycle, unless there is a bus
             // error or an exception occured during the request
-            mem_err_d     = deq_state.exc | (xif_mem_result_id_valid & xif_memres_if.mem_result.err);
+            mem_err_d     = deq_state.exc | (mem_any_err_q);
             mem_exccode_d = deq_state.exc ? deq_state.exccode : (
                 // bus error translates to a load/store access fault exception
                 deq_state.mode.store ? 6'h07 : 6'h05
