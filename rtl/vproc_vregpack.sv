@@ -65,6 +65,7 @@ module vproc_vregpack #(
 
     import vproc_pkg::*;
 
+
     // width of the pending write vreg clear counter (choosen such that it can span up to 1/4 of the
     // vector register addresses)
     localparam int unsigned PEND_CLEAR_CNT_W = $clog2(VADDR_W-1);
@@ -164,8 +165,13 @@ module vproc_vregpack #(
         for (int i = 0; i < RES_CNT; i++) begin
             if (stage_state_q.res_store[i]) begin
                 vreg_wr_valid_o = stage_valid_q & ~stage_stall & ~instr_killed;
-                vreg_wr_data_o  = RES_MASK[i] ? {8{res_buffer[i][VPORT_W/8-1:0]}} : res_buffer[i];
-                vreg_wr_be_o    = msk_buffer[i];
+                if (stage_state_q.res_flags[i].narrow_frac) begin //for fractional narrowing ops, data is in upper half of the res_buffer and is not a mask op
+                    vreg_wr_data_o  = {{(VPORT_W/2){1'b0}}, res_buffer[i][VPORT_W-1:VPORT_W/2]};
+                    vreg_wr_be_o    = {{(VPORT_W/16){1'b0}}, msk_buffer[i][VPORT_W/8-1:VPORT_W/16]};
+                end else begin
+                    vreg_wr_data_o  = RES_MASK[i] ? {8{res_buffer[i][VPORT_W/8-1:0]}} : res_buffer[i];
+                    vreg_wr_be_o    = msk_buffer[i];
+                end
             end
         end
     end

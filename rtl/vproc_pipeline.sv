@@ -152,6 +152,7 @@ module vproc_pipeline import vproc_pkg::*; #(
         logic        [OP_CNT -1:0][31:0] op_xval;
         logic        [RES_CNT-1:0]       res_vreg;
         logic        [RES_CNT-1:0]       res_narrow;
+        logic                            res_narrow_frac;
         logic                     [4 :0] res_vaddr;
         logic                     [31:0] pend_vreg_wr;   // pending vector register writes
     } state_t;
@@ -274,6 +275,7 @@ module vproc_pipeline import vproc_pkg::*; #(
             state_next.op_xval                 = pipe_in_state_i.op_xval;
             state_next.res_vreg                = pipe_in_state_i.res_vreg;
             state_next.res_narrow              = pipe_in_state_i.res_narrow;
+            state_next.res_narrow_frac         = pipe_in_state_i.res_narrow_frac;
             state_next.res_vaddr               = pipe_in_state_i.res_vaddr;
         end else begin
             state_next.first_cycle = '0;
@@ -576,7 +578,7 @@ module vproc_pipeline import vproc_pkg::*; #(
                   ) 
                 & ((RES_ALWAYS_VREG | state_q.res_vreg) != '0) // at least one valid vreg
             ) begin
-            res_store = ((RES_NARROW & state_q.res_narrow) == '0) | ~count_next_inc.part.mul[0];
+            res_store = (((RES_NARROW & state_q.res_narrow) == '0) | (state_q.res_narrow_frac)) | ~count_next_inc.part.mul[0];
         end
         `else
         //if count_next_inc.part.low == 0, then a single vreg has been filled.  The second condition triggers when the end of the vector has been reached in the middle of a vreg (extra condition needed for when vl == 0 (1 byte element) to not trigger twice)
@@ -865,6 +867,7 @@ module vproc_pipeline import vproc_pkg::*; #(
         logic [31:0]                   xval;
         //logic [RES_CNT-1:0]            res_vreg;
         logic [RES_CNT-1:0]            res_narrow;
+        logic                          res_narrow_frac;
         logic                          res_store;
         logic                          res_shift;
         logic [4:0]                    res_vaddr;
@@ -930,6 +933,7 @@ module vproc_pipeline import vproc_pkg::*; #(
 
         //unpack_ctrl.res_vreg   = state_q.res_vreg;
         unpack_ctrl.res_narrow = state_q.res_narrow;
+        unpack_ctrl.res_narrow_frac = state_q.res_narrow_frac;
         unpack_ctrl.res_store  = res_store;
         unpack_ctrl.res_shift  = res_shift;
         unpack_ctrl.res_vaddr  = state_q.res_vaddr;
