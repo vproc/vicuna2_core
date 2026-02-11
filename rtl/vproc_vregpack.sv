@@ -21,7 +21,10 @@ module vproc_vregpack #(
         parameter type                              FLAGS_T             = logic,// flags struct type
         parameter int unsigned                      INSTR_ID_W          = 3,    // instruction IDs width
         parameter int unsigned                      INSTR_ID_CNT        = 8,    // number of instr IDs
-        parameter bit                               DONT_CARE_ZERO      = 1'b0  // set don't care 0
+        parameter bit                               DONT_CARE_ZERO      = 1'b0,  // set don't care 0
+
+        parameter bit                               FIELD_COUNT_USED    = 1'b0,
+        parameter type                              FIELD_ELEM_CNT_T   = logic
     )(
         input  logic                                clk_i,
         input  logic                                async_rst_ni,
@@ -32,6 +35,8 @@ module vproc_vregpack #(
         output logic                                pipe_in_ready_o,
         input  logic   [INSTR_ID_W            -1:0] pipe_in_instr_id_i,     // ID of instruction
         input  vproc_pkg::cfg_vsew                  pipe_in_eew_i,          // current elem width
+        input  logic                                pipe_in_field_instr_i,
+        input  FIELD_ELEM_CNT_T                     pipe_in_field_elem_counter_i,
         input  logic   [VADDR_W               -1:0] pipe_in_vaddr_i,        // vreg address
         input  logic   [RES_CNT-1:0]                pipe_in_res_store_i,    // result store signal
         input  logic   [RES_CNT-1:0]                pipe_in_res_valid_i,    // result is valid
@@ -365,6 +370,13 @@ module vproc_vregpack #(
                         // by default, retain current value for lower part and assign default value for upper part
                         res_buffer_next[i] = {res_default, res_buffer[i][VPORT_W  -RES_W[i]  -1:0]};
                         msk_buffer_next[i] = {msk_default, msk_buffer[i][VPORT_W/8-RES_W[i]/8-1:0]};
+
+                        // shift in case of segmented instruction
+                        if(FIELD_COUNT_USED & i == 0 & pipe_in_field_instr_i) begin
+                            res_buffer_next[i] = VPORT_W'(res_default) >> $clog2(VPORT_W)'((FIELD_ELEM_CNT_T'('1) - pipe_in_field_elem_counter_i) * pipe_in_eew_i);
+                            msk_buffer_next[i] = (VPORT_W/8)'(msk_default) >> FIELD_ELEM_CNT_T'(FIELD_ELEM_CNT_T'('1) - pipe_in_field_elem_counter_i);  
+                        end
+
                         // shift signal shifts entire content right by the width of the result; full-size results
                         // shift every cycle
                         if ((~RES_MASK[i] & ~RES_NARROW[i] & ~RES_ALLOW_ELEMWISE[i] & ~RES_ALWAYS_ELEMWISE[i]) |

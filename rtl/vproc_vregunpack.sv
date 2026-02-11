@@ -35,7 +35,10 @@ module vproc_vregunpack
         parameter int unsigned                        CTRL_DATA_W        = 0,    // ctrl data width
         parameter bit                                 DONT_CARE_ZERO     = 1'b0,  // set don't care 0
 
-        parameter bit [OP_CNT-1:0]                    OP_ALT_COUNTER     = '0
+        parameter bit [OP_CNT-1:0]                    OP_ALT_COUNTER     = '0,
+        parameter bit                                 FIELD_COUNT_USED   = 1'b0,
+        parameter bit [OP_CNT-1:0]                    OP_FIELD           = '0,
+        parameter type                                FIELD_ELEM_CNT_T   = logic
     )(
         input  logic                                  clk_i,
         input  logic                                  async_rst_ni,
@@ -53,10 +56,12 @@ module vproc_vregunpack
         input  op_unit                                pipe_in_unit_i,
         input  vproc_pkg::cfg_vsew                    pipe_in_alt_eew_i,
         input  vproc_pkg::cfg_vsew                    pipe_in_eew_i,        // current element width
+        input  logic                                  pipe_in_field_instr_i,
         input  logic   [OP_CNT-1:0]                   pipe_in_op_load_i,    // load signals of ops
         input  logic   [OP_CNT-1:0][MAX_VADDR_W-1:0]  pipe_in_op_vaddr_i,   // vreg addresses of ops
         input  FLAGS_T [OP_CNT-1:0]                   pipe_in_op_flags_i,   // unpack flags of ops
         input  logic   [OP_CNT-1:0][31           :0]  pipe_in_op_xval_i,    // X reg values for ops
+        input  FIELD_ELEM_CNT_T                       pipe_in_field_elem_counter_i,
 
         // pipeline out
         output logic                                  pipe_out_valid_o,
@@ -103,6 +108,8 @@ module vproc_vregunpack
         op_unit                               unit;
         cfg_vsew                              eew;
         cfg_vsew                              alt_eew;
+        logic                                 field_instr;
+        FIELD_ELEM_CNT_T                      field_elem_counter;
         logic   [OP_CNT-1:0]                  op_load;
         logic   [OP_CNT-1:0][MAX_VADDR_W-1:0] op_vaddr;
         FLAGS_T [OP_CNT-1:0]                  op_flags;
@@ -119,20 +126,24 @@ module vproc_vregunpack
         stage_0.unit     = pipe_in_unit_i;
         stage_0.alt_eew  = pipe_in_alt_eew_i;
         stage_0.eew      = pipe_in_eew_i;
+        stage_0.field_instr = pipe_in_field_instr_i;
         stage_0.op_load  = pipe_in_op_load_i;
         stage_0.op_vaddr = pipe_in_op_vaddr_i;
         stage_0.op_flags = pipe_in_op_flags_i;
         stage_0.op_xval  = pipe_in_op_xval_i;
+        stage_0.field_elem_counter = pipe_in_field_elem_counter_i;
         `else
         if (pipe_in_ready_o & pipe_in_valid_i) begin
             stage_0.ctrl     = pipe_in_ctrl_i;
             stage_0.unit     = pipe_in_unit_i;
             stage_0.alt_eew  = pipe_in_alt_eew_i;
             stage_0.eew      = pipe_in_eew_i;
+            stage_0.field_instr = pipe_in_field_instr_i;
             stage_0.op_load  = pipe_in_op_load_i;
             stage_0.op_vaddr = pipe_in_op_vaddr_i;
             stage_0.op_flags = pipe_in_op_flags_i;
             stage_0.op_xval  = pipe_in_op_xval_i;
+            stage_0.field_elem_counter = pipe_in_field_elem_counter_i;
         end
         `endif
     end
@@ -384,6 +395,8 @@ module vproc_vregunpack
     FLAGS_T  [OP_CNT-1:0]                  op_extract_flags;
     cfg_vsew [OP_CNT-1:0]                  op_extract_eew;
     logic    [OP_CNT-1:0][31           :0] op_xval;
+    logic    [OP_CNT-1:0]                  op_field_instr;
+    FIELD_ELEM_CNT_T [OP_CNT-1:0]          op_field_elem_counter;
     always_comb begin
         for (int i = 0; i < OP_CNT; i++) begin
             op_load         [i] = stage_state[OP_STAGE[i]    ].op_load[i];
@@ -393,6 +406,8 @@ module vproc_vregunpack
             op_extract_flags[i] = stage_state[OP_STAGE[i] + 1].op_flags[i];
             op_extract_eew  [i] = stage_state[OP_STAGE[i]    ].unit == UNIT_LSU & OP_ALT_COUNTER[i] ? stage_state[OP_STAGE[i]    ].alt_eew : stage_state[OP_STAGE[i]    ].eew;
             op_xval         [i] = stage_state[OP_STAGE[i] + 1].op_xval[i];
+            op_field_instr  [i] = OP_FIELD[i] ? stage_state[OP_STAGE[i]    ].field_instr : 0;
+            op_field_elem_counter [i] = OP_FIELD[i] ? stage_state[OP_STAGE[i]    ].field_elem_counter : '0;
         end
 
     end
@@ -474,6 +489,11 @@ module vproc_vregunpack
                 // load signal overrides all others and moves vreg value into buffer
                 if (op_load[i]) begin
                     op_buffer_next[i][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0];
+
+                    if(OP_FIELD[i] & FIELD_COUNT_USED & op_field_instr[i]) begin
+                        //TODO: shifted cast width should be register width
+                        op_buffer_next[i][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0] >> $clog2(OP_VPORT_W)'((FIELD_ELEM_CNT_T'('1) - op_field_elem_counter[i]) * op_load_eew[i]);
+                    end
                 end
 
             end
