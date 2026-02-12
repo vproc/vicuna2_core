@@ -55,6 +55,7 @@ module vproc_lsu import vproc_pkg::*; #(
     typedef struct packed {
         logic                        first_cycle;
         logic                        last_cycle;
+        logic                        emul_last_cycle;
         logic [XIF_ID_W-1:0]         id;
         op_mode_lsu                  mode;
         logic [$clog2(VMEM_W/8)-1:0] vl_part;
@@ -68,6 +69,8 @@ module vproc_lsu import vproc_pkg::*; #(
         logic [5:0]                  exccode;
         logic [5:0]                  vreg_idx; //Needed for PACK
         logic                        field_instr;
+        logic [2:0]                  field_init_count;
+        logic [2:0]                  field_counter;
         FIELD_ELEM_CNT_T             field_elem_counter;
     } lsu_state_red;
 
@@ -320,6 +323,7 @@ module vproc_lsu import vproc_pkg::*; #(
         state_req_red              = DONT_CARE_ZERO ? '0 : 'x;
         state_req_red.first_cycle  = state_req_q.first_cycle;
         state_req_red.last_cycle   = state_req_q.last_cycle;
+        state_req_red.emul_last_cycle   = state_req_q.emul_last_cycle;
         state_req_red.id           = state_req_q.id;
         state_req_red.mode         = state_req_q.mode.lsu;
         state_req_red.vl_part      = state_req_q.vl_part;
@@ -333,6 +337,8 @@ module vproc_lsu import vproc_pkg::*; #(
         state_req_red.exc          = xif_mem_if.mem_resp.exc & ~req_suppress;
         state_req_red.exccode      = xif_mem_if.mem_resp.exccode;
         state_req_red.field_instr  = state_req_q.field_instr;
+        state_req_red.field_init_count = state_req_q.field_init_count;
+        state_req_red.field_counter = state_req_q.field_counter;
         state_req_red.field_elem_counter = state_req_q.field_elem_counter;
     end
     logic         deq_valid; // LSU queue dequeue valid signal
@@ -383,6 +389,7 @@ module vproc_lsu import vproc_pkg::*; #(
     // LSU transaction complete queue, result indicates potential exceptions
     logic trans_complete_valid, trans_complete_ready;
     assign trans_complete_valid = deq_valid & deq_ready & deq_state.last_cycle &
+                                  (state_rdata_q.field_init_count == 0 | (state_rdata_q.field_counter == state_rdata_q.field_init_count)) &
                                   (instr_state_i[deq_state.id] == INSTR_COMMITTED);
 
     vproc_queue #(
@@ -424,7 +431,7 @@ module vproc_lsu import vproc_pkg::*; #(
     always_comb begin
         pipe_out_ctrl_o              = DONT_CARE_ZERO ? '0 : 'x;
         pipe_out_ctrl_o.first_cycle  = state_rdata_q.first_cycle;
-        pipe_out_ctrl_o.last_cycle   = state_rdata_q.last_cycle;
+        pipe_out_ctrl_o.last_cycle   = state_rdata_q.last_cycle & (state_rdata_q.field_init_count == 0 | (state_rdata_q.field_counter == state_rdata_q.field_init_count));
         pipe_out_ctrl_o.id           = state_rdata_q.id;
         pipe_out_ctrl_o.mode.lsu     = state_rdata_q.mode;
         pipe_out_ctrl_o.eew          = state_rdata_q.mode.eew;
@@ -438,7 +445,7 @@ module vproc_lsu import vproc_pkg::*; #(
         pipe_out_ctrl_o.field_instr  = state_rdata_q.field_instr;
         pipe_out_ctrl_o.field_elem_counter    = state_rdata_q.field_elem_counter;
     end
-    assign pipe_out_pend_clr_o = state_rdata_q.res_store;
+    assign pipe_out_pend_clr_o = state_rdata_q.field_instr ? state_rdata_q.emul_last_cycle & state_rdata_q.res_store : state_rdata_q.res_store;
     always_comb begin
         if (state_rdata_q.mode.stride == LSU_UNITSTRIDE) begin
             pipe_out_res_o = rdata_buf_q;

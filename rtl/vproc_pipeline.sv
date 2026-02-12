@@ -134,10 +134,12 @@ module vproc_pipeline import vproc_pkg::*; #(
         logic        [AUX_COUNTER_W-1:0] aux_count;      // auxiliary counter (for dyn addr ops)
         field_elem_cnt_t                 field_elem_counter;
         logic                      [2:0] field_counter;    // field counter (for segment loads/stores)
-        logic                      [2:0] field_count_init;    // field counter (for segment loads/stores)
+        logic                      [2:0] field_init_count;    // field counter (for segment loads/stores)
+        logic                            field_done;
         logic                            first_cycle;
         logic                            last_cycle;
         logic                            alt_last_cycle;
+        logic                            emul_last_cycle;
         logic                            init_addr;      // initialize address (used by LSU)
         logic                            requires_flush;
         logic        [XIF_ID_W     -1:0] id;
@@ -148,6 +150,7 @@ module vproc_pipeline import vproc_pkg::*; #(
         cfg_vxrm                         vxrm;
         logic        [CFG_VL_W     -1:0] vl;
         logic                            vl_0;
+        logic                     [31:0] xval_init;
         logic                     [31:0] xval;
         unpack_flags [OP_CNT -1:0]       op_flags;
         logic        [OP_CNT -1:0]       op_load;
@@ -189,7 +192,7 @@ module vproc_pipeline import vproc_pkg::*; #(
     // State update logic
     state_t            state_next;
     counter_t          count_next_inc,  alt_count_next_inc;
-    logic              last_cycle_next, alt_last_cycle_next, wait_alt_count_next;
+    logic              last_cycle_next, alt_last_cycle_next, wait_alt_count_next, emul_last_cycle_next;
     logic [OP_CNT-1:0] op_load_next, op_shift_next;
     always_comb begin
         state_valid_d          = state_valid_q;
@@ -198,8 +201,15 @@ module vproc_pipeline import vproc_pkg::*; #(
         if (state_ready) begin
             state_wait_alt_count_d = wait_alt_count_next;
             state_d                = state_next;
-            state_d.last_cycle     = last_cycle_next;
-            state_d.alt_last_cycle = alt_last_cycle_next;
+            if(FIELD_COUNT_USED &  state_next.field_init_count > 0 & state_next.field_counter != '0) begin
+                state_d.last_cycle = state_q.last_cycle; 
+                state_d.alt_last_cycle = state_q.alt_last_cycle;
+                state_d.emul_last_cycle = state_q.emul_last_cycle;
+            end else begin
+                state_d.last_cycle = last_cycle_next; 
+                state_d.alt_last_cycle = alt_last_cycle_next;
+                state_d.emul_last_cycle = emul_last_cycle_next;
+            end
             state_d.op_load        = op_load_next;
             for (int i = 0; i < OP_CNT; i++) begin
                 state_d.op_flags[i].shift = op_shift_next[i];
@@ -219,7 +229,7 @@ module vproc_pipeline import vproc_pkg::*; #(
     assign state_ready     = ~state_valid_q | (~state_stall & unpack_ready);
     assign state_done      = ((OP_ALT_COUNTER == 0) ? state_q.last_cycle : (
         (state_q.last_cycle | state_wait_alt_count_q) & ~wait_alt_count_next
-    ));
+    )) & (~FIELD_COUNT_USED |  state_q.field_init_count == 0 | state_q.field_done);
     assign pipe_in_ready_o = state_ready & (~state_valid_q | state_done);
 
     // Identify whether the auxiliary counter is used
@@ -251,9 +261,10 @@ module vproc_pipeline import vproc_pkg::*; #(
                     state_next.aux_count = '0;
                 end
             end
-            state_next.field_count_init        = pipe_in_state_i.field_count_init;
+            state_next.field_init_count        = pipe_in_state_i.field_init_count;
             state_next.field_counter           = '0;
             state_next.field_elem_counter      = '0;
+            state_next.field_done              = 0;
             state_next.first_cycle             = 1'b1;
             state_next.init_addr               = 1'b1;
             state_next.requires_flush          = pipe_in_state_i.requires_flush;
@@ -274,6 +285,7 @@ module vproc_pipeline import vproc_pkg::*; #(
             state_next.vxrm                    = pipe_in_state_i.vxrm;
             state_next.vl                      = pipe_in_state_i.vl;
             state_next.vl_0                    = pipe_in_state_i.vl_0;
+            state_next.xval_init               = pipe_in_state_i.xval;
             state_next.xval                    = pipe_in_state_i.xval;
             state_next.op_flags                = pipe_in_state_i.op_flags;
             state_next.op_init_vaddr           = pipe_in_state_i.op_vaddr;
@@ -285,7 +297,7 @@ module vproc_pipeline import vproc_pkg::*; #(
             state_next.res_vaddr               = pipe_in_state_i.res_vaddr;
         end else begin
 
-            if(FIELD_COUNT_USED & state_q.field_count_init > 0 & state_q.field_counter < state_q.field_count_init) begin
+            if(FIELD_COUNT_USED & state_q.field_init_count > 0 & state_q.field_counter < state_q.field_init_count) begin
 
                 state_next.field_counter = state_q.field_counter + 3'b001;
                 state_next.xval        = DONT_CARE_ZERO ? '0 : 'x;
@@ -317,6 +329,15 @@ module vproc_pipeline import vproc_pkg::*; #(
                     default: ;
                 endcase
 
+                state_next.field_done = state_next.field_init_count == state_next.field_counter & state_q.last_cycle;
+                unique case (state_q.emul)
+                    EMUL_1: state_next.field_done &= state_q.count.part.mul == 3'(000);
+                    EMUL_2: state_next.field_done &= state_q.count.part.mul == 3'(001);
+                    EMUL_4: state_next.field_done &= state_q.count.part.mul == 3'(011);
+                    // EMUL_8 is invalid since EMUL * NFIELDS <= 8 according to spec
+                    default: ;
+                endcase
+
             end else begin
 
                 state_next.first_cycle = '0;
@@ -326,8 +347,10 @@ module vproc_pipeline import vproc_pkg::*; #(
                 state_next.field_counter = '0;
                 state_next.op_vaddr = state_q.op_init_vaddr;
                 state_next.res_vaddr = state_q.res_init_vaddr;
+                state_next.xval = state_q.xval_init;
+                state_next.field_done = state_q.field_done;
 
-                if(state_q.field_count_init > 0) begin
+                if(state_q.field_init_count > 0) begin
                     state_next.field_elem_counter += 1;
                 end
 
@@ -391,6 +414,7 @@ module vproc_pipeline import vproc_pkg::*; #(
     always_comb begin
         last_cycle_next     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         alt_last_cycle_next = DONT_CARE_ZERO ? 1'b0 : 1'bx;
+        emul_last_cycle_next     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
 
         // first cycle is not last cycle unless EMUL is 1 and the counter has no low part
         if (~state_valid_q | state_done) begin
@@ -401,6 +425,7 @@ module vproc_pipeline import vproc_pkg::*; #(
             `ifdef OLD_VICUNA
                 last_cycle_next     = ((pipe_in_state_i.emul == EMUL_1) & (COUNTER_W == 4));
                 alt_last_cycle_next = ((pipe_in_state_i.emul == EMUL_1) & (COUNTER_W == 4));
+                emul_last_cycle_next     = ((pipe_in_state_i.emul == EMUL_1) & (COUNTER_W == 4));
             `else
                 last_cycle_next     = ((pipe_in_state_i.emul == EMUL_1) & (COUNTER_W == 4)) | pipe_in_state_i.vl < MAX_OP_W/8;
                 alt_last_cycle_next = ((pipe_in_state_i.emul == EMUL_1) & (COUNTER_W == 4)) | pipe_in_state_i.vl < MAX_OP_W/8;
@@ -414,16 +439,20 @@ module vproc_pipeline import vproc_pkg::*; #(
 
             last_cycle_next     =     count_next_inc.val[COUNTER_W-5:$clog2(MAX_OP_W/COUNTER_OP_W)] == '1;
             alt_last_cycle_next = alt_count_next_inc.val[COUNTER_W-5:$clog2(MAX_OP_W/COUNTER_OP_W)] == '1;
+            emul_last_cycle_next     =     count_next_inc.val[COUNTER_W-5:$clog2(MAX_OP_W/COUNTER_OP_W)] == '1;
             //clear last cycle in case lower bits are not set for lower counter increments
             unique case (state_q.count_inc)
                COUNT_INC_1: for (int i = 0; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
                    last_cycle_next     &=     count_next_inc.val[i];
+                   emul_last_cycle_next     &=     count_next_inc.val[i];
                end
                COUNT_INC_2: for (int i = 1; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
                    last_cycle_next     &=     count_next_inc.val[i];
+                   emul_last_cycle_next     &=     count_next_inc.val[i];
                end
                COUNT_INC_4: for (int i = 2; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
                    last_cycle_next     &=     count_next_inc.val[i];
+                   emul_last_cycle_next     &=     count_next_inc.val[i];
                end
                default: ;
             endcase
@@ -440,6 +469,7 @@ module vproc_pipeline import vproc_pkg::*; #(
                end
                default: ;
             endcase
+
             //clear last cycle based on EMUL (note: the alt_last_cycle signal is not cleared here
             //as that is only required to indicate completion of one vreg cycle)
             unique case (state_q.emul)
@@ -545,7 +575,7 @@ module vproc_pipeline import vproc_pkg::*; #(
                         end
 
                         // Load field for every cycle new, since we iterate through all segments
-                        if (FIELD_COUNT_USED & OP_FIELD[i] & state_q.field_count_init > 0) begin
+                        if (FIELD_COUNT_USED & OP_FIELD[i] & state_next.unit == UNIT_LSU & state_next.field_init_count > 0 & state_next.mode.lsu.store) begin
                             op_load_next[i] = 1;
                         end;
 
@@ -609,7 +639,7 @@ module vproc_pipeline import vproc_pkg::*; #(
         end
 
         // Store for every cycle, since we iterate through all segments
-        if(FIELD_COUNT_USED & state_q.field_count_init > 0) begin
+        if(FIELD_COUNT_USED & state_q.unit == UNIT_LSU & state_q.field_init_count > 0 & ~state_q.mode.lsu.store) begin
             res_store = 1;
         end
         `else
@@ -803,7 +833,7 @@ module vproc_pipeline import vproc_pkg::*; #(
             
             if(OP_FIELD[i]) begin
                 if (OP_ALWAYS_VREG[i] | state_q.op_flags[i].vreg) begin
-                    for (int j = 0; 3'(j) < state_q.field_count_init; j++) begin
+                    for (int j = 0; 3'(j) < state_q.field_init_count; j++) begin
                         unique case (state_q.emul)
                             EMUL_1: op_fields_pend_reads |= (32'h1 <<  (j + 1)     ) <<  state_q.op_vaddr[i]            ;
                             EMUL_2: op_fields_pend_reads |= (32'h3 << ((j + 1) * 2)) << {state_q.op_vaddr[i][4:1], 1'b0};
@@ -818,7 +848,7 @@ module vproc_pipeline import vproc_pkg::*; #(
             if(OP_INDEX_FIELD[i]) begin
                 // Extend index register pending for segmented instructions
                 if (OP_ALWAYS_VREG[i] | state_q.op_flags[i].vreg) begin
-                    if (state_q.unit == UNIT_LSU & state_q.mode.lsu.alt_count_lsu_use & state_q.field_count_init > 0) begin
+                    if (state_q.unit == UNIT_LSU & state_q.mode.lsu.alt_count_lsu_use & state_q.field_init_count > 0) begin
                         unique case (state_q.mode.lsu.alt_emul)
                             EMUL_1: op_fields_pend_reads |= (32'h1) <<  state_q.op_vaddr[i]            ;
                             EMUL_2: op_fields_pend_reads |= (32'h3) << {state_q.op_vaddr[i][4:1], 1'b0};
@@ -832,7 +862,7 @@ module vproc_pipeline import vproc_pkg::*; #(
 
             if(OP_MASK[i]) begin
                 // Extend mask register pending for segmented instructions
-                op_fields_pend_reads |=  (state_q.field_count_init > 0 & state_q.mode.lsu.masked) ? (32'h1) << state_q.op_vaddr[i] : '0;
+                op_fields_pend_reads |=  (state_q.field_init_count > 0 & state_q.mode.lsu.masked) ? (32'h1) << state_q.op_vaddr[i] : '0;
             end
 
         end
@@ -882,6 +912,7 @@ module vproc_pipeline import vproc_pkg::*; #(
         logic [2:0]                    count_mul;
         logic                          first_cycle;
         logic                          last_cycle;
+        logic                          emul_last_cycle;
         logic                          init_addr;       // initialize address (used by LSU)
         logic                          requires_flush;
         logic                          alt_count_valid; // alternative counter value is valid
@@ -906,6 +937,7 @@ module vproc_pipeline import vproc_pkg::*; #(
         logic                          pend_store;
         logic                     [$clog2(VREG_W/MAX_OP_W)-1 :0] vreg_idx; //TODO: This should be defined per pipeline as log2(VREG_W/MAX_OP_W) bits wide.  Needed by PACK to write results to correct locations
         logic                          field_instr;
+        logic [2:0]                    field_init_count;
         logic [2:0]                    field_counter;
         field_elem_cnt_t               field_elem_counter;
     } ctrl_t;
@@ -918,8 +950,9 @@ module vproc_pipeline import vproc_pkg::*; #(
         unpack_ctrl.vreg_idx = state_q.count >> $clog2(MAX_OP_W/COUNTER_OP_W); //TODO: Explicity truncate this vector (dropping upper bits is itentional behavior, causes loop to beginning after a vreg has been written)
 
         unpack_ctrl.count_mul       = state_q.count.part.mul;
-        unpack_ctrl.first_cycle     = state_q.first_cycle;
+        unpack_ctrl.first_cycle     = state_q.first_cycle & (~FIELD_COUNT_USED | (state_q.field_counter == '0));
         unpack_ctrl.last_cycle      = state_valid_q & state_q.last_cycle; // TODO remove state_valid_q
+        unpack_ctrl.emul_last_cycle = state_q.emul_last_cycle;
         unpack_ctrl.init_addr       = state_q.init_addr;
         unpack_ctrl.requires_flush  = state_q.requires_flush;
         unpack_ctrl.alt_count_valid = DONT_CARE_ZERO ? '0 : 'x;
@@ -1003,8 +1036,10 @@ module vproc_pipeline import vproc_pkg::*; #(
         unpack_ctrl.pend_load  = UNITS[UNIT_LSU] & (state_q.unit == UNIT_LSU) & ~state_q.mode.lsu.store;
         unpack_ctrl.pend_store = UNITS[UNIT_LSU] & (state_q.unit == UNIT_LSU) &  state_q.mode.lsu.store;
 
+        unpack_ctrl.field_init_count = state_q.field_init_count;
+        unpack_ctrl.field_counter = state_q.field_counter;
         unpack_ctrl.field_elem_counter = state_q.field_elem_counter;
-        unpack_ctrl.field_instr = state_q.field_count_init > 0;
+        unpack_ctrl.field_instr = state_q.field_init_count > 0;
     end
 
 
