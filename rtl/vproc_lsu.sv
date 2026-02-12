@@ -216,7 +216,8 @@ module vproc_lsu import vproc_pkg::*; #(
 
     // compose memory address:
     always_comb begin
-        req_addr_d = DONT_CARE_ZERO ? '{default: '0} : '{default: 'x};
+        //req_addr_d = DONT_CARE_ZERO ? '{default: '0} : '{default: 'x};
+        req_addr_d = req_addr_q;
         unique case (pipe_in_ctrl_i.mode.lsu.stride)
             // For (unit-)strided memory requests, the address is initialized with the X register
             // value during the first cycle and incremented during later cycles, but it is left
@@ -443,9 +444,9 @@ module vproc_lsu import vproc_pkg::*; #(
         pipe_out_ctrl_o.res_store    = state_rdata_q.res_store & ~state_rdata_q.exc;
         pipe_out_ctrl_o.res_shift    = state_rdata_q.res_shift;
         pipe_out_ctrl_o.field_instr  = state_rdata_q.field_instr;
-        pipe_out_ctrl_o.field_elem_counter    = state_rdata_q.field_elem_counter;
+        pipe_out_ctrl_o.field_counter = state_rdata_q.field_counter;
     end
-    assign pipe_out_pend_clr_o = state_rdata_q.field_instr ? state_rdata_q.emul_last_cycle & state_rdata_q.res_store : state_rdata_q.res_store;
+    assign pipe_out_pend_clr_o = state_rdata_q.res_store;
     always_comb begin
         if (state_rdata_q.mode.stride == LSU_UNITSTRIDE) begin
             pipe_out_res_o = rdata_buf_q;

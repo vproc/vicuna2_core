@@ -36,7 +36,6 @@ module vproc_unit_mux import vproc_pkg::*; #(
         output logic    [XIF_ID_W              -1:0] pipe_out_instr_id_o,
         output cfg_vsew                              pipe_out_eew_o,
         output logic                                 pipe_out_field_instr_o,
-        output FIELD_ELEM_CNT_T                      pipe_out_field_elem_counter_o,
         output logic    [4:0]                        pipe_out_vaddr_o,
         output logic    [RES_CNT-1:0]                pipe_out_res_store_o,
         output logic    [RES_CNT-1:0]                pipe_out_res_valid_o,
@@ -103,7 +102,7 @@ module vproc_unit_mux import vproc_pkg::*; #(
     logic      [UNIT_CNT-1:0][1:0]                        unit_out_pend_clear_cnt;
     logic      [UNIT_CNT-1:0]                             unit_out_instr_done;
     logic                                                 unit_out_field_instr;
-    FIELD_ELEM_CNT_T                                      unit_out_field_elem_counter;
+    logic      [2:0]                                      unit_out_field_counter;
 
     generate
         for (genvar i = 0; i < UNIT_CNT; i++) begin
@@ -158,7 +157,6 @@ module vproc_unit_mux import vproc_pkg::*; #(
                     .pipe_out_instr_id_o       ( unit_out_instr_id      [i] ),
                     .pipe_out_eew_o            ( unit_out_eew           [i] ),
                     .pipe_out_field_instr_o    ( unit_out_field_instr       ),
-                    .pipe_out_field_elem_counter_o ( unit_out_field_elem_counter ),
                     .pipe_out_vaddr_o          ( unit_out_vaddr         [i] ),
                     .pipe_out_res_store_o      ( unit_out_res_store     [i] ),
                     .pipe_out_res_valid_o      ( unit_out_res_valid     [i] ),
@@ -285,7 +283,6 @@ module vproc_unit_mux import vproc_pkg::*; #(
                 pipe_out_pend_clear_cnt_o = unit_out_pend_clear_cnt[i];
                 pipe_out_instr_done_o     = unit_out_instr_done    [i];
                 pipe_out_field_instr_o    = unit_out_field_instr;
-                pipe_out_field_elem_counter_o = unit_out_field_elem_counter;
             end
         end
     end

@@ -338,6 +338,12 @@ module vproc_pipeline import vproc_pkg::*; #(
                     default: ;
                 endcase
 
+                if(state_next.field_counter != '0) begin
+                    for(int i = 0; i < OP_CNT; i++) begin
+                        state_next.op_flags[i].shift = 0;
+                    end
+                end
+
             end else begin
 
                 state_next.first_cycle = '0;
@@ -496,7 +502,7 @@ module vproc_pipeline import vproc_pkg::*; #(
             alt_last_cycle_next =     alt_count_next_inc >= (state_q.vl >> $clog2(MAX_OP_W/8)) << $clog2(MAX_OP_W/COUNTER_OP_W);
 
             //clear last cycle in case processing final elements for elemwise operation
-            if (state_q.op_flags[0].elemwise) begin //TODO: why doesnt this formula work above, only for elemwise)
+            if (state_q.[][0].elemwise) begin //TODO: why doesnt this formula work above, only for elemwise)
                 last_cycle_next     =     count_next_inc >= (state_q.vl  >> ($clog2(MAX_OP_W/8) - $clog2(MAX_OP_W/COUNTER_OP_W))) -1; 
                 alt_last_cycle_next =     alt_count_next_inc >= (state_q.vl >> ($clog2(MAX_OP_W/8) - $clog2(MAX_OP_W/COUNTER_OP_W))) -1;
 
@@ -636,11 +642,6 @@ module vproc_pipeline import vproc_pkg::*; #(
                 & ((RES_ALWAYS_VREG | state_q.res_vreg) != '0) // at least one valid vreg
             ) begin
             res_store = ((RES_NARROW & state_q.res_narrow) == '0) | ~count_next_inc.part.mul[0];
-        end
-
-        // Store for every cycle, since we iterate through all segments
-        if(FIELD_COUNT_USED & state_q.unit == UNIT_LSU & state_q.field_init_count > 0 & ~state_q.mode.lsu.store) begin
-            res_store = 1;
         end
         `else
         //if count_next_inc.part.low == 0, then a single vreg has been filled.  The second condition triggers when the end of the vector has been reached in the middle of a vreg (extra condition needed for when vl == 0 (1 byte element) to not trigger twice)
@@ -1149,7 +1150,6 @@ module vproc_pipeline import vproc_pkg::*; #(
     logic      [1:0]                        unit_out_pend_clear_cnt;
     logic                                   unit_out_instr_done;
     logic                                   unit_out_field_instr;
-    field_elem_cnt_t                        unit_out_field_elem_counter;
     vproc_unit_mux #(
         .UNITS                     ( UNITS                    ),
         .XIF_ID_W                  ( XIF_ID_W                 ),
@@ -1180,7 +1180,6 @@ module vproc_pipeline import vproc_pkg::*; #(
         .pipe_out_instr_id_o       ( unit_out_instr_id        ),
         .pipe_out_eew_o            ( unit_out_eew             ),
         .pipe_out_field_instr_o    ( unit_out_field_instr     ),
-        .pipe_out_field_elem_counter_o ( unit_out_field_elem_counter ),
         .pipe_out_vaddr_o          ( unit_out_vaddr           ),
         .pipe_out_res_store_o      ( unit_out_res_store       ),
         .pipe_out_res_valid_o      ( unit_out_res_valid       ),
@@ -1228,7 +1227,8 @@ module vproc_pipeline import vproc_pkg::*; #(
         .INSTR_ID_W                  ( XIF_ID_W                ),
         .INSTR_ID_CNT                ( XIF_ID_CNT              ),
         .DONT_CARE_ZERO              ( DONT_CARE_ZERO          ),
-        .FIELD_ELEM_CNT_T          ( field_elem_cnt_t         )
+        .FIELD_COUNT_USED            ( FIELD_COUNT_USED             ),
+        .FIELD_ELEM_CNT_T            ( field_elem_cnt_t         )
     ) pack (
         .clk_i                       ( clk_i                   ),
         .async_rst_ni                ( async_rst_ni            ),
@@ -1238,7 +1238,6 @@ module vproc_pipeline import vproc_pkg::*; #(
         .pipe_in_instr_id_i          ( unit_out_instr_id       ),
         .pipe_in_eew_i               ( unit_out_eew            ),
         .pipe_in_field_instr_i       ( unit_out_field_instr    ),
-        .pipe_in_field_elem_counter_i     ( unit_out_field_elem_counter  ),
         .pipe_in_vaddr_i             ( unit_out_vaddr          ),
         .pipe_in_res_store_i         ( unit_out_res_store      ),
         .pipe_in_res_valid_i         ( unit_out_res_valid      ),
