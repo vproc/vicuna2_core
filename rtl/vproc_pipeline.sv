@@ -201,18 +201,37 @@ module vproc_pipeline import vproc_pkg::*; #(
         if (state_ready) begin
             state_wait_alt_count_d = wait_alt_count_next;
             state_d                = state_next;
+            state_d.op_load        = op_load_next;
+            
+            for (int i = 0; i < OP_CNT; i++) begin
+                // Load field for every cycle new, since we iterate through all segments
+                if (FIELD_COUNT_USED & OP_FIELD[i] & state_next.unit == UNIT_LSU & state_next.field_init_count > 0 & state_next.mode.lsu.store) begin
+                    state_d.op_load[i] = 1;
+                end;
+            end
+
+            for (int i = 0; i < OP_CNT; i++) begin
+                state_d.op_flags[i].shift = op_shift_next[i];
+            end
             if(FIELD_COUNT_USED &  state_next.field_init_count > 0 & state_next.field_counter != '0) begin
                 state_d.last_cycle = state_q.last_cycle; 
                 state_d.alt_last_cycle = state_q.alt_last_cycle;
                 state_d.emul_last_cycle = state_q.emul_last_cycle;
+                for (int i = 0; i < OP_CNT; i++) begin
+                    state_d.op_flags[i].field_start = 0;
+                    state_d.op_flags[i].shift = 0;
+                    if(~OP_FIELD[i]) begin
+                        state_d.op_load[i] = 0;
+                    end
+                end
             end else begin
                 state_d.last_cycle = last_cycle_next; 
                 state_d.alt_last_cycle = alt_last_cycle_next;
                 state_d.emul_last_cycle = emul_last_cycle_next;
-            end
-            state_d.op_load        = op_load_next;
-            for (int i = 0; i < OP_CNT; i++) begin
-                state_d.op_flags[i].shift = op_shift_next[i];
+                for (int i = 0; i < OP_CNT; i++) begin
+                    state_d.op_flags[i].field_start = 1;
+                    state_d.op_flags[i].shift = op_shift_next[i];
+                end
             end
         end
         state_d.pend_vreg_wr = state_q.pend_vreg_wr & vreg_pend_wr_i;
@@ -337,12 +356,6 @@ module vproc_pipeline import vproc_pkg::*; #(
                     // EMUL_8 is invalid since EMUL * NFIELDS <= 8 according to spec
                     default: ;
                 endcase
-
-                if(state_next.field_counter != '0) begin
-                    for(int i = 0; i < OP_CNT; i++) begin
-                        state_next.op_flags[i].shift = 0;
-                    end
-                end
 
             end else begin
 
@@ -579,11 +592,6 @@ module vproc_pipeline import vproc_pkg::*; #(
                                 default: ;
                             endcase
                         end
-
-                        // Load field for every cycle new, since we iterate through all segments
-                        if (FIELD_COUNT_USED & OP_FIELD[i] & state_next.unit == UNIT_LSU & state_next.field_init_count > 0 & state_next.mode.lsu.store) begin
-                            op_load_next[i] = 1;
-                        end;
 
                     end
 
@@ -826,19 +834,32 @@ module vproc_pipeline import vproc_pkg::*; #(
     // add further vregs that are read if multiple fields are used (note that the operand
     // address is incremented as the field count is decremented)
     // TODO make this generic for some specified operand instead of always using operand 1
+    // TODO simplify this
     logic [31:0] op_fields_pend_reads;
+    logic [4:0] diff_temp;
     always_comb begin
         op_fields_pend_reads = '0;
 
         for(int i = 0; i < OP_CNT; i++) begin
+
+            diff_temp = '0;
             
             if(OP_FIELD[i]) begin
-                if (OP_ALWAYS_VREG[i] | state_q.op_flags[i].vreg) begin
-                    for (int j = 0; 3'(j) < state_q.field_init_count; j++) begin
+                if (OP_ALWAYS_VREG[i] | state_q.op_flags[i].vreg & state_q.field_init_count > 0) begin
+                    for (int j = 0; 3'(j) < state_q.field_init_count + 1; j++) begin
                         unique case (state_q.emul)
-                            EMUL_1: op_fields_pend_reads |= (32'h1 <<  (j + 1)     ) <<  state_q.op_vaddr[i]            ;
-                            EMUL_2: op_fields_pend_reads |= (32'h3 << ((j + 1) * 2)) << {state_q.op_vaddr[i][4:1], 1'b0};
-                            EMUL_4: op_fields_pend_reads |= (32'hF << ((j + 1) * 4)) << {state_q.op_vaddr[i][4:2], 2'b0};
+                            EMUL_1: begin
+                                diff_temp = state_q.op_vaddr[i] - state_q.field_counter; 
+                                op_fields_pend_reads |= (32'h1 <<  (j)     ) <<  diff_temp;
+                            end
+                            EMUL_2: begin
+                                diff_temp = state_q.op_vaddr[i] - (state_q.field_counter << 1); 
+                                op_fields_pend_reads |= (32'h3 << ((j) * 2)) << {diff_temp[4:1], 1'b0};
+                            end
+                            EMUL_4: begin
+                                diff_temp = state_q.op_vaddr[i] - (state_q.field_counter << 2);  
+                                op_fields_pend_reads |= (32'hF << ((j) * 4)) << {diff_temp[4:2], 2'b0};
+                            end
                             // EMUL_8 cannot be used with multiple fields
                             default: ;
                         endcase

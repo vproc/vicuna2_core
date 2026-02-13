@@ -406,8 +406,8 @@ module vproc_vregunpack
             op_extract_flags[i] = stage_state[OP_STAGE[i] + 1].op_flags[i];
             op_extract_eew  [i] = stage_state[OP_STAGE[i]    ].unit == UNIT_LSU & OP_ALT_COUNTER[i] ? stage_state[OP_STAGE[i]    ].alt_eew : stage_state[OP_STAGE[i]    ].eew;
             op_xval         [i] = stage_state[OP_STAGE[i] + 1].op_xval[i];
-            op_field_instr  [i] = OP_FIELD[i] ? stage_state[OP_STAGE[i]    ].field_instr : 0;
-            op_field_elem_counter [i] = OP_FIELD[i] ? stage_state[OP_STAGE[i]    ].field_elem_counter : '0;
+            op_field_instr  [i] = stage_state[OP_STAGE[i]    ].field_instr;
+            op_field_elem_counter [i] = stage_state[OP_STAGE[i]    ].field_elem_counter;
         end
 
     end
@@ -479,6 +479,10 @@ module vproc_vregunpack
                 // by default, retain current value for upper part and assign default value for
                 // lower part
                 op_buffer_next[i] = {op_buffer[i][MAX_VPORT_W-1:OP_W[i]], op_default};
+
+                if(FIELD_COUNT_USED & op_field_instr[i] & ~OP_FIELD[i] & ~op_load_flags[i].field_start) begin
+                    op_buffer_next[i] = op_buffer[i];
+                end
                 // shift signal overrides mask, narrow, or element-wise updates and shifts entire
                 // content right by the width of the operand; full-size operands shift every cycle
                 if ((~OP_MASK[i] & ~OP_NARROW[i] & ~OP_ALLOW_ELEMWISE[i] & ~OP_ALWAYS_ELEMWISE[i]) |
@@ -491,8 +495,13 @@ module vproc_vregunpack
                     op_buffer_next[i][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0];
 
                     if(OP_FIELD[i] & FIELD_COUNT_USED & op_field_instr[i]) begin
-                        //TODO: shifted cast width should be register width
-                        op_buffer_next[i][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0] >> $clog2(OP_VPORT_W)'((FIELD_ELEM_CNT_T'('1) - op_field_elem_counter[i]) * op_load_eew[i]);
+                        //TODO: shifted cast width should be register width //FIELD_ELEM_CNT_T'('1)
+                        unique case (op_load_eew[i]) 
+                            VSEW_8: op_buffer_next[i][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0] >> ($clog2(OP_VPORT_W)'(op_field_elem_counter[i]) << 3);
+                            VSEW_16: op_buffer_next[i][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0] >> ($clog2(OP_VPORT_W)'(op_field_elem_counter[i]) << 4); 
+                            VSEW_32: op_buffer_next[i][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0] >> ($clog2(OP_VPORT_W)'(op_field_elem_counter[i]) << 5); 
+                            default: ;
+                        endcase
                     end
                 end
 
