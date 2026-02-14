@@ -219,6 +219,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         logic        [OP_CNT -1:0][31:0] op_xval;
         logic        [RES_CNT-1:0]       res_vreg;
         logic        [RES_CNT-1:0]       res_narrow;
+        logic                            res_narrow_frac;
         logic                     [4 :0] res_vaddr;
     } state_t;
 
@@ -495,6 +496,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
 
         state_init.op_flags[0].vreg   = pipe_in_data_i.rs2.vreg;
         state_init.op_flags[0].narrow = (pipe_in_data_i.widenarrow == OP_WIDENING || pipe_in_data_i.widenarrow == OP_WIDENING_EXT2 || pipe_in_data_i.widenarrow == OP_WIDENING_EXT4);
+        state_init.res_narrow_frac    = pipe_in_data_i.narrow_frac;
         state_init.op_flags[0].vf4_ext = (pipe_in_data_i.widenarrow == OP_WIDENING_EXT4);
         state_init.op_vaddr[0]        = pipe_in_data_i.rs2.r.vaddr;
         state_init.op_xval [0]        = pipe_in_data_i.rs2.r.xval;

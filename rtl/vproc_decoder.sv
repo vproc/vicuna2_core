@@ -36,6 +36,7 @@ module vproc_decoder #(
         output vproc_pkg::op_unit       unit_o,       //
         output vproc_pkg::op_mode       mode_o,
         output vproc_pkg::op_widenarrow widenarrow_o,
+        output logic                    narrow_frac_o,
         output vproc_pkg::op_regs       rs1_o,        // source register rs1/vs1
         output vproc_pkg::op_regs       rs2_o,        // source register rs2/vs2
         output vproc_pkg::op_regd       rd_o,          // destination register rd/vd
@@ -2540,7 +2541,7 @@ module vproc_decoder #(
         vs1_invalid = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         vs2_invalid = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         vd_invalid  = DONT_CARE_ZERO ? 1'b0 : 1'bx;
-
+        narrow_frac_o = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         // regular operation:
         unique case (widenarrow_o)
             OP_SINGLEWIDTH: begin
@@ -2578,6 +2579,7 @@ module vproc_decoder #(
                 vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
                 vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
                 vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_narrow}) != 5'b0;
+                narrow_frac_o = (lmul_i == LMUL_F8) | (lmul_i == LMUL_F4) | (lmul_i == LMUL_F2);
             end
             default: ;
         endcase

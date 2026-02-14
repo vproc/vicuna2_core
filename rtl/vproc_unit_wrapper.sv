@@ -178,6 +178,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_store_o[0]                 = unit_out_ctrl.res_store & ~unit_out_ctrl.mode.alu.cmp;
                 pipe_out_res_flags_o[0].shift           = unit_out_ctrl.res_shift;
                 pipe_out_res_flags_o[0].narrow          = unit_out_ctrl.res_narrow[0];
+                pipe_out_res_flags_o[0].narrow_frac     = unit_out_ctrl.res_narrow_frac;
                 pipe_out_res_flags_o[0].saturate        = unit_out_ctrl.mode.alu.sat_res;
                 pipe_out_res_flags_o[0].sig             = unit_out_ctrl.mode.alu.sigext;
                 pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
