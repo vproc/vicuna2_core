@@ -18,8 +18,7 @@ module vproc_unit_mux import vproc_pkg::*; #(
         parameter type                               CTRL_T          = logic,
         parameter type                               COUNTER_T       = logic,
         parameter int unsigned                       COUNTER_W       = 0,
-        parameter bit                                DONT_CARE_ZERO  = 1'b0,
-        parameter type                               FIELD_ELEM_CNT_T   = logic
+        parameter bit                                DONT_CARE_ZERO  = 1'b0
     )
     (
         input  logic                                 clk_i,
@@ -35,7 +34,6 @@ module vproc_unit_mux import vproc_pkg::*; #(
         input  logic                                 pipe_out_ready_i,
         output logic    [XIF_ID_W              -1:0] pipe_out_instr_id_o,
         output cfg_vsew                              pipe_out_eew_o,
-        output logic                                 pipe_out_field_instr_o,
         output logic    [4:0]                        pipe_out_vaddr_o,
         output logic    [RES_CNT-1:0]                pipe_out_res_store_o,
         output logic    [RES_CNT-1:0]                pipe_out_res_valid_o,
@@ -101,7 +99,6 @@ module vproc_unit_mux import vproc_pkg::*; #(
     logic      [UNIT_CNT-1:0]                             unit_out_pend_clear;
     logic      [UNIT_CNT-1:0][1:0]                        unit_out_pend_clear_cnt;
     logic      [UNIT_CNT-1:0]                             unit_out_instr_done;
-    logic                                                 unit_out_field_instr;
     logic      [2:0]                                      unit_out_field_counter;
 
     generate
@@ -142,8 +139,7 @@ module vproc_unit_mux import vproc_pkg::*; #(
                     .CTRL_T                    ( CTRL_T                     ),
                     .COUNTER_T                 ( COUNTER_T                  ),
                     .COUNTER_W                 ( COUNTER_W                  ),
-                    .DONT_CARE_ZERO            ( DONT_CARE_ZERO             ),
-                    .FIELD_ELEM_CNT_T          ( FIELD_ELEM_CNT_T           )
+                    .DONT_CARE_ZERO            ( DONT_CARE_ZERO             )
                 ) unit (
                     .clk_i                     ( clk_i                      ),
                     .async_rst_ni              ( async_rst_ni               ),
@@ -156,7 +152,6 @@ module vproc_unit_mux import vproc_pkg::*; #(
                     .pipe_out_ready_i          ( unit_out_ready         [i] ),
                     .pipe_out_instr_id_o       ( unit_out_instr_id      [i] ),
                     .pipe_out_eew_o            ( unit_out_eew           [i] ),
-                    .pipe_out_field_instr_o    ( unit_out_field_instr       ),
                     .pipe_out_vaddr_o          ( unit_out_vaddr         [i] ),
                     .pipe_out_res_store_o      ( unit_out_res_store     [i] ),
                     .pipe_out_res_valid_o      ( unit_out_res_valid     [i] ),
@@ -282,7 +277,6 @@ module vproc_unit_mux import vproc_pkg::*; #(
                 pipe_out_pend_clear_o     = unit_out_pend_clear    [i];
                 pipe_out_pend_clear_cnt_o = unit_out_pend_clear_cnt[i];
                 pipe_out_instr_done_o     = unit_out_instr_done    [i];
-                pipe_out_field_instr_o    = unit_out_field_instr;
             end
         end
     end

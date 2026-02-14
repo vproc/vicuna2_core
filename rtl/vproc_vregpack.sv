@@ -23,8 +23,7 @@ module vproc_vregpack #(
         parameter int unsigned                      INSTR_ID_CNT        = 8,    // number of instr IDs
         parameter bit                               DONT_CARE_ZERO      = 1'b0,  // set don't care 0
 
-        parameter bit                               FIELD_COUNT_USED    = 1'b0,
-        parameter type                              FIELD_ELEM_CNT_T   = logic
+        parameter bit                               FIELD_COUNT_USED    = 1'b0
     )(
         input  logic                                clk_i,
         input  logic                                async_rst_ni,
@@ -35,7 +34,6 @@ module vproc_vregpack #(
         output logic                                pipe_in_ready_o,
         input  logic   [INSTR_ID_W            -1:0] pipe_in_instr_id_i,     // ID of instruction
         input  vproc_pkg::cfg_vsew                  pipe_in_eew_i,          // current elem width
-        input  logic                                pipe_in_field_instr_i,
         input  logic   [VADDR_W               -1:0] pipe_in_vaddr_i,        // vreg address
         input  logic   [RES_CNT-1:0]                pipe_in_res_store_i,    // result store signal
         input  logic   [RES_CNT-1:0]                pipe_in_res_valid_i,    // result is valid

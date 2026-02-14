@@ -37,8 +37,7 @@ module vproc_vregunpack
 
         parameter bit [OP_CNT-1:0]                    OP_ALT_COUNTER     = '0,
         parameter bit                                 FIELD_COUNT_USED   = 1'b0,
-        parameter bit [OP_CNT-1:0]                    OP_FIELD           = '0,
-        parameter type                                FIELD_ELEM_CNT_T   = logic
+        parameter bit [OP_CNT-1:0]                    OP_FIELD           = '0
     )(
         input  logic                                  clk_i,
         input  logic                                  async_rst_ni,
@@ -61,7 +60,6 @@ module vproc_vregunpack
         input  FLAGS_T [OP_CNT-1:0]                   pipe_in_op_flags_i,   // unpack flags of ops
         input  logic   [OP_CNT-1:0][31           :0]  pipe_in_op_xval_i,    // X reg values for ops
         input  logic   [2:0]                          pipe_in_field_counter_i,
-        input  FIELD_ELEM_CNT_T                       pipe_in_field_elem_counter_i,
 
         // pipeline out
         output logic                                  pipe_out_valid_o,
@@ -109,7 +107,6 @@ module vproc_vregunpack
         cfg_vsew                              eew;
         cfg_vsew                              alt_eew;
         logic   [2:0]                         field_counter;
-        FIELD_ELEM_CNT_T                      field_elem_counter;
         logic   [OP_CNT-1:0]                  op_load;
         logic   [OP_CNT-1:0][MAX_VADDR_W-1:0] op_vaddr;
         FLAGS_T [OP_CNT-1:0]                  op_flags;
@@ -131,7 +128,6 @@ module vproc_vregunpack
         stage_0.op_flags = pipe_in_op_flags_i;
         stage_0.op_xval  = pipe_in_op_xval_i;
         stage_0.field_counter = pipe_in_field_counter_i;
-        stage_0.field_elem_counter = pipe_in_field_elem_counter_i;
         `else
         if (pipe_in_ready_o & pipe_in_valid_i) begin
             stage_0.ctrl     = pipe_in_ctrl_i;
@@ -143,7 +139,6 @@ module vproc_vregunpack
             stage_0.op_flags = pipe_in_op_flags_i;
             stage_0.op_xval  = pipe_in_op_xval_i;
             stage_0.field_counter = pipe_in_field_counter_i;
-            stage_0.field_elem_counter = pipe_in_field_elem_counter_i;
         end
         `endif
     end
@@ -401,7 +396,6 @@ module vproc_vregunpack
     logic    [OP_CNT-1:0][31           :0] op_xval;
     logic    [OP_CNT-1:0][2:0]             op_load_field_counter;
     logic    [OP_CNT-1:0][2:0]             op_extract_field_counter;
-    FIELD_ELEM_CNT_T [OP_CNT-1:0]          op_field_elem_counter;
     always_comb begin
         for (int i = 0; i < OP_CNT; i++) begin
             op_load         [i] = stage_state[OP_STAGE[i]    ].op_load[i];
@@ -413,7 +407,6 @@ module vproc_vregunpack
             op_xval         [i] = stage_state[OP_STAGE[i] + 1].op_xval[i];
             op_load_field_counter [i] = stage_state[OP_STAGE[i]    ].field_counter;
             op_extract_field_counter [i] = stage_state[OP_STAGE[i] + 1].field_counter;
-            op_field_elem_counter [i] = stage_state[OP_STAGE[i]    ].field_elem_counter;
         end
 
     end
@@ -453,8 +446,10 @@ module vproc_vregunpack
                     op_default = op_buffer[i][OP_W[i]-1:0];
 
                     if(FIELD_COUNT_USED) begin
+
+                        // use field buffer value instead of op_buffer where field 0 resides
                         if(OP_FIELD[i]) begin
-                            if(op_load_flags[i].field_instr & ~op_load_flags[i].field_start) begin
+                            if(op_load_flags[i].field_instr & op_load_field_counter[i] > 0) begin
                                 op_default = field_buffer[op_load_field_counter[i] - 1][OP_W[i]-1:0];
                             end
                         end
@@ -476,13 +471,11 @@ module vproc_vregunpack
                                 
                                 if(FIELD_COUNT_USED) begin
                                     if(OP_FIELD[i]) begin
-                                        if(op_load_flags[i].field_instr & ~op_load_flags[i].field_start) begin
-                                            unique case ({op_load_eew[i], OP_NARROW[i] & op_load_flags[i].narrow})
-                                                {VSEW_8 , 1'b0},
-                                                {VSEW_16, 1'b1}: op_default[OP_W[i]-9:0] = field_buffer[op_load_field_counter[i] - 1][OP_W[i]-1 :8 ];
-                                                {VSEW_16, 1'b0},
-                                                {VSEW_32, 1'b1}: op_default[OP_W[i]-9:0] = field_buffer[op_load_field_counter[i] - 1][OP_W[i]+7 :16];
-                                                {VSEW_32, 1'b0}: op_default[OP_W[i]-9:0] = field_buffer[op_load_field_counter[i] - 1][OP_W[i]+23:32];
+                                        if(op_load_flags[i].field_instr & op_load_field_counter[i] > 0) begin
+                                            unique case (op_load_eew[i])
+                                                VSEW_8: op_default[OP_W[i]-9:0] = field_buffer[op_load_field_counter[i] - 1][OP_W[i]-1 :8 ];
+                                                VSEW_16: op_default[OP_W[i]-9:0] = field_buffer[op_load_field_counter[i] - 1][OP_W[i]+7 :16];
+                                                VSEW_32: op_default[OP_W[i]-9:0] = field_buffer[op_load_field_counter[i] - 1][OP_W[i]+23:32];
                                                 default: ;
                                             endcase
                                         end
@@ -511,14 +504,16 @@ module vproc_vregunpack
                 op_buffer_next[i] = {op_buffer[i][MAX_VPORT_W-1:OP_W[i]], op_default};
 
                 if(FIELD_COUNT_USED) begin
-
-                    if(op_load_flags[i].field_instr & ~op_load_flags[i].field_start) begin
+                    
+                    // retain current value without shifting since it is turn of other field
+                    if(op_load_flags[i].field_instr & op_load_field_counter[i] > 0) begin
                         op_buffer_next[i] = op_buffer[i];
                     end
 
 
                     if(OP_FIELD[i]) begin
 
+                        // shift value if it is turn of field or retain value if it is not turn of field
                         for(int j = 0; j < 7; j++) begin
                             if(op_load_field_counter[i] == j + 1) begin
                                 field_buffer_next[j] = {field_buffer[j][MAX_VPORT_W-1:OP_W[i]], op_default};
@@ -538,17 +533,21 @@ module vproc_vregunpack
                 ) begin
 
                     op_buffer_next[i][OP_VPORT_W-OP_W[i]-1:0] = op_buffer[i][OP_VPORT_W-1:OP_W[i]];
-
+                    
+                    // if it is turn of field shift the respective field_buffer
                     if(OP_FIELD[i] & FIELD_COUNT_USED & op_load_flags[i].field_instr  & op_load_field_counter[i] > 0) begin
                         field_buffer_next[op_load_field_counter[i] - 1][OP_VPORT_W-OP_W[i]-1:0] = field_buffer[op_load_field_counter[i] - 1][OP_VPORT_W-1:OP_W[i]];
                     end
 
+                    // if it is turn of field, do not shift value of op_buffer
                     if(FIELD_COUNT_USED & op_load_flags[i].field_instr  & op_load_field_counter[i] > 0) begin
                         op_buffer_next[i] = op_buffer[i];
                     end
                 end
                 // load signal overrides all others and moves vreg value into buffer
                 if (op_load[i]) begin
+
+                    // if it is turn of field load value into field buffer, otherwise into op_buffer
                     if(OP_FIELD[i] & FIELD_COUNT_USED & op_load_flags[i].field_instr  & op_load_field_counter[i] > 0) begin
                         field_buffer_next[op_load_field_counter[i] - 1][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0];
                     end else begin
@@ -601,6 +600,7 @@ module vproc_vregunpack
                         endcase
                     end
                 end else if(FIELD_COUNT_USED & OP_FIELD[i] & op_extract_flags[i].field_instr) begin
+                    // take result value out of field buffer if it is turn of field
                     for(int j = 0; j < 7; j++) begin
                         if(op_extract_field_counter[i]) begin
                             op_data[i][OP_W[i]-1:0] = field_buffer[op_extract_field_counter[i] - 1][OP_W[i]-1:0];

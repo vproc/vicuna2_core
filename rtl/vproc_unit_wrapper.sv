@@ -18,8 +18,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         parameter type                               CTRL_T          = logic,
         parameter type                               COUNTER_T       = logic,
         parameter int unsigned                       COUNTER_W       = 0,
-        parameter bit                                DONT_CARE_ZERO  = 1'b0,
-        parameter type                               FIELD_ELEM_CNT_T   = logic
+        parameter bit                                DONT_CARE_ZERO  = 1'b0
     )
     (
         input  logic                                 clk_i,
@@ -35,7 +34,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         input  logic                                 pipe_out_ready_i,
         output logic    [XIF_ID_W              -1:0] pipe_out_instr_id_o,
         output cfg_vsew                              pipe_out_eew_o,
-        output logic                                 pipe_out_field_instr_o,
         output logic    [4:0]                        pipe_out_vaddr_o,
         output logic    [RES_CNT-1:0]                pipe_out_res_store_o,
         output logic    [RES_CNT-1:0]                pipe_out_res_valid_o,
@@ -83,8 +81,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 .XIF_ID_CNT               ( XIF_ID_CNT                                  ),
                 .VLSU_QUEUE_SZ            ( VLSU_QUEUE_SZ                               ),
                 .VLSU_FLAGS               ( VLSU_FLAGS                                  ),
-                .DONT_CARE_ZERO           ( DONT_CARE_ZERO                              ),
-                .FIELD_ELEM_CNT_T         ( FIELD_ELEM_CNT_T                            )
+                .DONT_CARE_ZERO           ( DONT_CARE_ZERO                              )
             ) lsu (
                 .clk_i                    ( clk_i                                       ),
                 .async_rst_ni             ( async_rst_ni                                ),
@@ -138,7 +135,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                          pipe_out_res_flags_o[i].vreg_idx       = '0;
                     end
                 end
-                pipe_out_field_instr_o                  = unit_out_ctrl.field_instr;
             end
             assign pipe_out_pend_clear_cnt_o = '0;
             assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
@@ -199,7 +195,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             assign pipe_out_pend_clear_o     = unit_out_ctrl.mode.alu.cmp ? unit_out_ctrl.last_cycle : unit_out_ctrl.res_store;
             assign pipe_out_pend_clear_cnt_o = '0;
             assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
-            assign pipe_out_field_instr_o = 0;
         end
         else if (UNIT == UNIT_MUL) begin
             CTRL_T                 unit_out_ctrl;
@@ -246,7 +241,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
             assign pipe_out_pend_clear_cnt_o = '0;
             assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
-            assign pipe_out_field_instr_o = 0;
         end
         else if (UNIT == UNIT_SLD) begin
             CTRL_T                 unit_out_ctrl;
@@ -290,7 +284,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
             assign pipe_out_pend_clear_cnt_o = '0;
             assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
-            assign pipe_out_field_instr_o = 0;
         end
         else if (UNIT == UNIT_ELEM) begin
             logic        unit_out_valid;
@@ -484,7 +477,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             assign pipe_out_instr_done_o     = (~flushing_q & unit_out_ctrl.last_cycle & ~unit_out_ctrl.requires_flush                                ) | flushing_last_cycle;
             assign pipe_out_pend_clear_o     = (~flushing_q & unit_out_ctrl.last_cycle & ~unit_out_ctrl.requires_flush & ~unit_out_ctrl.mode.elem.xreg) | flushing_last_cycle;
             assign pipe_out_pend_clear_cnt_o = unit_out_ctrl.emul; // TODO reductions always have destination EMUL == 1
-            assign pipe_out_field_instr_o = 0;
         end 
         else if (UNIT == UNIT_DIV) begin
             CTRL_T                 unit_out_ctrl;
@@ -528,7 +520,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             assign pipe_out_pend_clear_o                = unit_out_ctrl.res_store;
             assign pipe_out_pend_clear_cnt_o            = '0;
             assign pipe_out_instr_done_o                = unit_out_ctrl.last_cycle;
-            assign pipe_out_field_instr_o = 0;
         end 
         else if (UNIT == UNIT_FPU) begin
             CTRL_T                 unit_out_ctrl;
@@ -675,7 +666,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
 
             assign pipe_out_valid_o = (unit_out_valid) | flushing_q;
             assign unit_out_ready   = pipe_out_ready_i & ~flushing_q;
-            assign pipe_out_field_instr_o = 0;
             //unit out stall signal missing.  Needed for ELEM operation?
             //assign pipe_out_valid_o = (unit_out_valid & ~unit_out_stall) | flushing_q;
             //assign unit_out_ready   = pipe_out_ready_i & ~flushing_q & ~unit_out_stall;

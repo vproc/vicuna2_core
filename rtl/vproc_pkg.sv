@@ -400,7 +400,6 @@ typedef struct packed {
     logic vf4_ext;
     logic sigext;
     logic field_instr;
-    logic field_start;
 } unpack_flags;
 
 // result store info structure
