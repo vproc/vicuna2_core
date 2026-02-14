@@ -202,15 +202,9 @@ module vproc_pipeline import vproc_pkg::*; #(
             state_wait_alt_count_d = wait_alt_count_next;
             state_d                = state_next;
             state_d.op_load        = op_load_next;
-            
-            for (int i = 0; i < OP_CNT; i++) begin
-                // Load field for every cycle new, since we iterate through all segments
-                if (FIELD_COUNT_USED & OP_FIELD[i] & state_next.unit == UNIT_LSU & state_next.field_init_count > 0 & state_next.mode.lsu.store) begin
-                    state_d.op_load[i] = 1;
-                end;
-            end
 
             for (int i = 0; i < OP_CNT; i++) begin
+                state_d.op_flags[i].field_instr = state_next.field_init_count > 0;
                 state_d.op_flags[i].shift = op_shift_next[i];
             end
             if(FIELD_COUNT_USED &  state_next.field_init_count > 0 & state_next.field_counter != '0) begin
@@ -219,7 +213,7 @@ module vproc_pipeline import vproc_pkg::*; #(
                 state_d.emul_last_cycle = state_q.emul_last_cycle;
                 for (int i = 0; i < OP_CNT; i++) begin
                     state_d.op_flags[i].field_start = 0;
-                    state_d.op_flags[i].shift = 0;
+                    state_d.op_flags[i].shift = state_q.op_flags[i].shift;
                     if(~OP_FIELD[i]) begin
                         state_d.op_load[i] = 0;
                     end
@@ -1135,11 +1129,11 @@ module vproc_pipeline import vproc_pkg::*; #(
         .pipe_in_unit_i       ( unpack_ctrl.unit             ),
         .pipe_in_alt_eew_i    ( unpack_ctrl.mode.lsu.alt_eew ),
         .pipe_in_eew_i        ( unpack_ctrl.eew              ),
-        .pipe_in_field_instr_i( unpack_ctrl.field_instr      ),
         .pipe_in_op_load_i    ( op_load                      ),
         .pipe_in_op_vaddr_i   ( op_vaddr                     ),
         .pipe_in_op_flags_i   ( op_flags                     ),
         .pipe_in_op_xval_i    ( op_xval                      ),
+        .pipe_in_field_counter_i    ( unpack_ctrl.field_counter                      ),
         .pipe_in_field_elem_counter_i    ( unpack_ctrl.field_elem_counter                      ),
         .pipe_out_valid_o     ( unpack_out_valid             ),
         .pipe_out_ready_i     ( unpack_out_ready             ),

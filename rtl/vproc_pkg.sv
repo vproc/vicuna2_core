@@ -399,6 +399,7 @@ typedef struct packed {
     logic narrow;
     logic vf4_ext;
     logic sigext;
+    logic field_instr;
     logic field_start;
 } unpack_flags;
 
