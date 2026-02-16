@@ -822,7 +822,7 @@ module vproc_pipeline import vproc_pkg::*; #(
             
             if(OP_FIELD[i]) begin
                 if (OP_ALWAYS_VREG[i] | state_q.op_flags[i].vreg & state_q.field_init_count > 0) begin
-                    for (int j = 0; 3'(j) < state_q.field_init_count + 1; j++) begin
+                    for (int j = 0; 4'(j) < state_q.field_init_count + 1; j++) begin
                         unique case (state_q.emul)
                             EMUL_1: begin
                                 op_fields_pend_reads |= (32'h1 <<  (j)     ) <<  state_q.op_init_vaddr[i];
