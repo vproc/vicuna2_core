@@ -271,6 +271,7 @@ module vproc_core import vproc_pkg::*; #(
         op_unit              unit;
         op_mode              mode;
         op_widenarrow        widenarrow;
+        logic                narrow_frac;
         op_regs              rs1;
         op_regs              rs2;
         op_regd              rd;
@@ -340,6 +341,7 @@ module vproc_core import vproc_pkg::*; #(
         .unit_o             ( instr_unit                          ),
         .mode_o             ( instr_mode                          ),
         .widenarrow_o       ( dec_data_d.widenarrow               ),
+        .narrow_frac_o      ( dec_data_d.narrow_frac              ),
         .rs1_o              ( dec_data_d.rs1                      ),
         .rs2_o              ( dec_data_d.rs2                      ),
         .rd_o               ( dec_data_d.rd                       ),

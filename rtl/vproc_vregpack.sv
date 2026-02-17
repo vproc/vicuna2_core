@@ -21,7 +21,9 @@ module vproc_vregpack #(
         parameter type                              FLAGS_T             = logic,// flags struct type
         parameter int unsigned                      INSTR_ID_W          = 3,    // instruction IDs width
         parameter int unsigned                      INSTR_ID_CNT        = 8,    // number of instr IDs
-        parameter bit                               DONT_CARE_ZERO      = 1'b0  // set don't care 0
+        parameter bit                               DONT_CARE_ZERO      = 1'b0,  // set don't care 0
+
+        parameter bit                               FIELD_COUNT_USED    = 1'b0
     )(
         input  logic                                clk_i,
         input  logic                                async_rst_ni,
@@ -64,6 +66,7 @@ module vproc_vregpack #(
     );
 
     import vproc_pkg::*;
+
 
     // width of the pending write vreg clear counter (choosen such that it can span up to 1/4 of the
     // vector register addresses)
@@ -164,8 +167,13 @@ module vproc_vregpack #(
         for (int i = 0; i < RES_CNT; i++) begin
             if (stage_state_q.res_store[i]) begin
                 vreg_wr_valid_o = stage_valid_q & ~stage_stall & ~instr_killed;
-                vreg_wr_data_o  = RES_MASK[i] ? {8{res_buffer[i][VPORT_W/8-1:0]}} : res_buffer[i];
-                vreg_wr_be_o    = msk_buffer[i];
+                if (stage_state_q.res_flags[i].narrow_frac) begin //for fractional narrowing ops, data is in upper half of the res_buffer and is not a mask op
+                    vreg_wr_data_o  = {{(VPORT_W/2){1'b0}}, res_buffer[i][VPORT_W-1:VPORT_W/2]};
+                    vreg_wr_be_o    = {{(VPORT_W/16){1'b0}}, msk_buffer[i][VPORT_W/8-1:VPORT_W/16]};
+                end else begin
+                    vreg_wr_data_o  = RES_MASK[i] ? {8{res_buffer[i][VPORT_W/8-1:0]}} : res_buffer[i];
+                    vreg_wr_be_o    = msk_buffer[i];
+                end
             end
         end
     end
@@ -365,6 +373,7 @@ module vproc_vregpack #(
                         // by default, retain current value for lower part and assign default value for upper part
                         res_buffer_next[i] = {res_default, res_buffer[i][VPORT_W  -RES_W[i]  -1:0]};
                         msk_buffer_next[i] = {msk_default, msk_buffer[i][VPORT_W/8-RES_W[i]/8-1:0]};
+
                         // shift signal shifts entire content right by the width of the result; full-size results
                         // shift every cycle
                         if ((~RES_MASK[i] & ~RES_NARROW[i] & ~RES_ALLOW_ELEMWISE[i] & ~RES_ALWAYS_ELEMWISE[i]) |

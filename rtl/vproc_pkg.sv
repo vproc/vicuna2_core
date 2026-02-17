@@ -399,6 +399,7 @@ typedef struct packed {
     logic narrow;
     logic vf4_ext;
     logic sigext;
+    logic field_instr;
 } unpack_flags;
 
 // result store info structure
@@ -406,6 +407,7 @@ typedef struct packed {
     logic       shift;
     logic       elemwise;
     logic       narrow;
+    logic       narrow_frac;
     logic       saturate;
     logic       sig;
     logic [2:0] mul_idx;

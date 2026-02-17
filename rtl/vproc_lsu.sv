@@ -13,7 +13,7 @@ module vproc_lsu import vproc_pkg::*; #(
         parameter int unsigned        XIF_ID_CNT      = 8,    // total count of instruction IDs
         parameter int unsigned           VLSU_QUEUE_SZ = 4,
         parameter bit [VLSU_FLAGS_W-1:0] VLSU_FLAGS    = '0,
-        parameter bit                 DONT_CARE_ZERO  = 1'b0  // initialize don't care values to zero
+        parameter bit                 DONT_CARE_ZERO  = 1'b0  // initialize don't care values to zero,
     )
     (
         input  logic                  clk_i,
@@ -76,6 +76,8 @@ module vproc_lsu import vproc_pkg::*; #(
         logic [VMEM_W/8-1:0]         wmask_buf_q;
         logic [VMEM_W/8-1:0]         vmsk_tmp_q;
         
+        logic [2:0]                  field_init_count;
+        logic [2:0]                  field_counter;
     } lsu_state_red;
 
     ///////////////////////////////////////////////////////////////////////////
@@ -90,7 +92,8 @@ module vproc_lsu import vproc_pkg::*; #(
     assign pending_store_o = state_req_valid_q &  state_req_q.mode.lsu.store;
 
     // request address:
-    logic [31:0] req_addr_q, req_addr_d;
+    logic [31:0] req_addr_q [7:0];
+    logic [31:0] req_addr_d [7:0]; 
 
     // store data and mask buffers:
     logic [VMEM_W  -1:0] wdata_buf_q, wdata_buf_d;
@@ -154,25 +157,26 @@ module vproc_lsu import vproc_pkg::*; #(
 
     // compose memory address:
     always_comb begin
-        req_addr_d = DONT_CARE_ZERO ? '0 : 'x;
+        //req_addr_d = DONT_CARE_ZERO ? '{default: '0} : '{default: 'x};
+        req_addr_d = req_addr_q;
         unique case (pipe_in_ctrl_i.mode.lsu.stride)
             // For (unit-)strided memory requests, the address is initialized with the X register
             // value during the first cycle and incremented during later cycles, but it is left
             // unchanged in case the input is invalid (avoids corrupting the address).  Note that
             // for strided loads, the X register value holds the base address in the first cycle
             // and then switches to the increment value.
-            LSU_UNITSTRIDE: req_addr_d = pipe_in_valid_i ? (pipe_in_ctrl_i.init_addr ?
-                pipe_in_ctrl_i.xval : req_addr_q + 32'(VMEM_W / 8)
-            ) : req_addr_q;
-            LSU_STRIDED:    req_addr_d = pipe_in_valid_i ? (pipe_in_ctrl_i.init_addr ?
-                pipe_in_ctrl_i.xval : req_addr_q + pipe_in_ctrl_i.xval
-            ) : req_addr_q;
+            LSU_UNITSTRIDE: req_addr_d[pipe_in_ctrl_i.field_counter] = pipe_in_valid_i ? (pipe_in_ctrl_i.init_addr ?
+                pipe_in_ctrl_i.xval : req_addr_q[pipe_in_ctrl_i.field_counter] + 32'(VMEM_W / 8)
+            ) : req_addr_q[pipe_in_ctrl_i.field_counter];
+            LSU_STRIDED:    req_addr_d[pipe_in_ctrl_i.field_counter] = pipe_in_valid_i ? (pipe_in_ctrl_i.init_addr ?
+                pipe_in_ctrl_i.xval : req_addr_q[pipe_in_ctrl_i.field_counter] + pipe_in_ctrl_i.xval
+            ) : req_addr_q[pipe_in_ctrl_i.field_counter];
             LSU_INDEXED: begin
                 // note: the index is multiplied by the element byte width and the field count
                 unique case (pipe_in_ctrl_i.mode.lsu.alt_eew)
-                    VSEW_8:  req_addr_d = pipe_in_ctrl_i.xval +  32'(vs2_data[7 :0]);
-                    VSEW_16: req_addr_d = pipe_in_ctrl_i.xval + 32'(vs2_data[15:0]);
-                    VSEW_32: req_addr_d = pipe_in_ctrl_i.xval + 32'(vs2_data[31:0]);
+                    VSEW_8:  req_addr_d[pipe_in_ctrl_i.field_counter] = pipe_in_ctrl_i.xval +  32'(vs2_data[7 :0]);
+                    VSEW_16: req_addr_d[pipe_in_ctrl_i.field_counter] = pipe_in_ctrl_i.xval + 32'(vs2_data[15:0]);
+                    VSEW_32: req_addr_d[pipe_in_ctrl_i.field_counter] = pipe_in_ctrl_i.xval + 32'(vs2_data[31:0]);
                     default: ;
                 endcase
             end
@@ -199,17 +203,17 @@ module vproc_lsu import vproc_pkg::*; #(
                 VSEW_8: begin
                     for (int i = 0; i < VMEM_W / 8 ; i++)
                         wdata_buf_d[i*8  +: 8 ] = vs3_data[7 :0];
-                    wmask_buf_d = {{VMEM_W/8-1{1'b0}},    wdata_stri_mask  } <<  req_addr_d[$clog2(VMEM_W/8)-1:0]                                    ;
+                    wmask_buf_d = {{VMEM_W/8-1{1'b0}},    wdata_stri_mask  } <<  req_addr_d[pipe_in_ctrl_i.field_counter][$clog2(VMEM_W/8)-1:0]                                    ;
                 end
                 VSEW_16: begin
                     for (int i = 0; i < VMEM_W / 16; i++)
                         wdata_buf_d[i*16 +: 16] = vs3_data[15:0];
-                    wmask_buf_d = {{VMEM_W/8-2{1'b0}}, {2{wdata_stri_mask}}} << (req_addr_d[$clog2(VMEM_W/8)-1:0] & ({$clog2(VMEM_W/8){1'b1}} << 1));
+                    wmask_buf_d = {{VMEM_W/8-2{1'b0}}, {2{wdata_stri_mask}}} << (req_addr_d[pipe_in_ctrl_i.field_counter][$clog2(VMEM_W/8)-1:0] & ({$clog2(VMEM_W/8){1'b1}} << 1));
                 end
                 VSEW_32: begin
                     for (int i = 0; i < VMEM_W / 32; i++)
                         wdata_buf_d[i*32 +: 32] = vs3_data[31:0];
-                    wmask_buf_d = {{VMEM_W/8-4{1'b0}}, {4{wdata_stri_mask}}} << (req_addr_d[$clog2(VMEM_W/8)-1:0] & ({$clog2(VMEM_W/8){1'b1}} << 2));
+                    wmask_buf_d = {{VMEM_W/8-4{1'b0}}, {4{wdata_stri_mask}}} << (req_addr_d[pipe_in_ctrl_i.field_counter][$clog2(VMEM_W/8)-1:0] & ({$clog2(VMEM_W/8){1'b1}} << 2));
                 end
                 default: ;
             endcase
@@ -255,10 +259,12 @@ module vproc_lsu import vproc_pkg::*; #(
         state_req_red.suppressed   = req_suppress;
         state_req_red.exc          = xif_mem_if.mem_resp.exc & ~req_suppress;
         state_req_red.exccode      = xif_mem_if.mem_resp.exccode;
-        state_req_red.req_addr_q   = req_addr_q;
+        state_req_red.req_addr_q   = req_addr_q[state_req_q.field_counter];
         state_req_red.wdata_buf_q  = wdata_buf_q;
         state_req_red.wmask_buf_q  = wmask_buf_q;
         state_req_red.vmsk_tmp_q   = vmsk_tmp_q;
+        state_req_red.field_init_count = state_req_q.field_init_count;
+        state_req_red.field_counter = state_req_q.field_counter;
     end
 
 
@@ -307,20 +313,24 @@ module vproc_lsu import vproc_pkg::*; #(
 
     always_comb begin
         pipe_out_ctrl_o              = DONT_CARE_ZERO ? '0 : 'x;
-        pipe_out_ctrl_o.first_cycle  = state_rdata.first_cycle;
-        pipe_out_ctrl_o.last_cycle   = state_rdata.last_cycle;
-        pipe_out_ctrl_o.id           = state_rdata.id;
-        pipe_out_ctrl_o.mode.lsu     = state_rdata.mode;
-        pipe_out_ctrl_o.eew          = state_rdata.mode.eew;
-        pipe_out_ctrl_o.vl_part      = state_rdata.vl_part;
-        pipe_out_ctrl_o.vl_part_0    = state_rdata.vl_part_0;
-        pipe_out_ctrl_o.last_vl_part = state_rdata.last_vl_part & state_rdata.res_store; //only pass last_vl_part if storing to vreg
-        pipe_out_ctrl_o.vreg_idx     = state_rdata.vreg_idx;
-        pipe_out_ctrl_o.res_vaddr    = state_rdata.res_vaddr;
-        pipe_out_ctrl_o.res_store    = state_rdata.res_store & ~state_rdata.exc;
-        pipe_out_ctrl_o.res_shift    = state_rdata.res_shift;
+        pipe_out_ctrl_o.first_cycle  = state_rdata_q.first_cycle;
+        // only assert last_cycle once at the end of the field
+        // since it is used to dequeue the unit queue
+        pipe_out_ctrl_o.last_cycle   = state_rdata_q.last_cycle & (state_rdata_q.field_init_count == 0 | (state_rdata_q.field_counter == state_rdata_q.field_init_count));
+        pipe_out_ctrl_o.id           = state_rdata_q.id;
+        pipe_out_ctrl_o.mode.lsu     = state_rdata_q.mode;
+        pipe_out_ctrl_o.eew          = state_rdata_q.mode.eew;
+        pipe_out_ctrl_o.vl_part      = state_rdata_q.vl_part;
+        pipe_out_ctrl_o.vl_part_0    = state_rdata_q.vl_part_0;
+        pipe_out_ctrl_o.last_vl_part = state_rdata_q.last_vl_part & state_rdata_q.res_store; //only pass last_vl_part if storing to vreg
+        pipe_out_ctrl_o.vreg_idx     = state_rdata_q.vreg_idx;
+        pipe_out_ctrl_o.res_vaddr    = state_rdata_q.res_vaddr;
+        pipe_out_ctrl_o.res_store    = state_rdata_q.res_store & ~state_rdata_q.exc;
+        pipe_out_ctrl_o.res_shift    = state_rdata_q.res_shift;
+        pipe_out_ctrl_o.field_counter = state_rdata_q.field_counter;
     end
     assign pipe_out_pend_clr_o = state_rdata.res_store;
+    
     always_comb begin
         if (state_rdata.mode.stride == LSU_UNITSTRIDE) begin
             pipe_out_res_o = rdata_buf;

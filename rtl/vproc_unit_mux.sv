@@ -99,6 +99,7 @@ module vproc_unit_mux import vproc_pkg::*; #(
     logic      [UNIT_CNT-1:0]                             unit_out_pend_clear;
     logic      [UNIT_CNT-1:0][1:0]                        unit_out_pend_clear_cnt;
     logic      [UNIT_CNT-1:0]                             unit_out_instr_done;
+    logic      [2:0]                                      unit_out_field_counter;
 
     generate
         for (genvar i = 0; i < UNIT_CNT; i++) begin

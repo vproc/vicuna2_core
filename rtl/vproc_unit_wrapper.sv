@@ -43,7 +43,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         output logic                                 pipe_out_pend_clear_o,
         output logic    [1:0]                        pipe_out_pend_clear_cnt_o,
         output logic                                 pipe_out_instr_done_o,
-
         output logic                                 pending_load_o,
         output logic                                 pending_store_o,
 
@@ -116,18 +115,27 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_instr_id_o = unit_out_ctrl.id;
                 pipe_out_eew_o      = unit_out_ctrl.eew;
                 pipe_out_vaddr_o    = unit_out_ctrl.res_vaddr;
-                pipe_out_res_store_o = '0;
-                pipe_out_res_valid_o = '0;
                 pipe_out_res_flags_o = '{default: pack_flags'('0)};
-                pipe_out_res_data_o  = '0;
                 pipe_out_res_mask_o  = '0;
-                pipe_out_res_flags_o[0].shift           = unit_out_ctrl.res_shift;
-                pipe_out_res_flags_o[0].elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
-                pipe_out_res_store_o[0]                 = unit_out_ctrl.res_store;
-                pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
-                pipe_out_res_data_o [0]                 = unit_out_res;
-                pipe_out_res_mask_o [0][MAX_OP_W/8-1:0] = unit_out_mask;
-                pipe_out_res_flags_o[0].vreg_idx        = unit_out_ctrl.vreg_idx;
+                for(int i = 0; i < RES_CNT; i++) begin
+                    if(i == unit_out_ctrl.field_counter) begin
+                        pipe_out_res_store_o[i] = unit_out_ctrl.res_store;
+                        pipe_out_res_data_o[i] = unit_out_res;
+                        pipe_out_res_valid_o[i] = pipe_out_valid_o;
+                        pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = unit_out_mask;
+                        pipe_out_res_flags_o[i].shift           = unit_out_ctrl.res_shift;
+                        pipe_out_res_flags_o[i].elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
+                        pipe_out_res_flags_o[i].vreg_idx        = unit_out_ctrl.vreg_idx;
+                    end else begin
+                        pipe_out_res_store_o[i] = 0;
+                        pipe_out_res_data_o[i] = '0;
+                        pipe_out_res_valid_o[i] = 0;
+                        pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = '0;
+                        pipe_out_res_flags_o[i].shift           = 0;
+                        pipe_out_res_flags_o[i].elemwise        = 0;
+                         pipe_out_res_flags_o[i].vreg_idx       = '0;
+                    end
+                end
             end
             assign pipe_out_pend_clear_cnt_o = '0;
             assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
@@ -171,6 +179,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_store_o[0]                 = unit_out_ctrl.res_store & ~unit_out_ctrl.mode.alu.cmp;
                 pipe_out_res_flags_o[0].shift           = unit_out_ctrl.res_shift;
                 pipe_out_res_flags_o[0].narrow          = unit_out_ctrl.res_narrow[0];
+                pipe_out_res_flags_o[0].narrow_frac     = unit_out_ctrl.res_narrow_frac;
                 pipe_out_res_flags_o[0].saturate        = unit_out_ctrl.mode.alu.sat_res;
                 pipe_out_res_flags_o[0].sig             = unit_out_ctrl.mode.alu.sigext;
                 pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
