@@ -21,7 +21,9 @@ module vproc_vregpack #(
         parameter type                              FLAGS_T             = logic,// flags struct type
         parameter int unsigned                      INSTR_ID_W          = 3,    // instruction IDs width
         parameter int unsigned                      INSTR_ID_CNT        = 8,    // number of instr IDs
-        parameter bit                               DONT_CARE_ZERO      = 1'b0  // set don't care 0
+        parameter bit                               DONT_CARE_ZERO      = 1'b0,  // set don't care 0
+
+        parameter bit                               FIELD_COUNT_USED    = 1'b0
     )(
         input  logic                                clk_i,
         input  logic                                async_rst_ni,
@@ -371,6 +373,7 @@ module vproc_vregpack #(
                         // by default, retain current value for lower part and assign default value for upper part
                         res_buffer_next[i] = {res_default, res_buffer[i][VPORT_W  -RES_W[i]  -1:0]};
                         msk_buffer_next[i] = {msk_default, msk_buffer[i][VPORT_W/8-RES_W[i]/8-1:0]};
+
                         // shift signal shifts entire content right by the width of the result; full-size results
                         // shift every cycle
                         if ((~RES_MASK[i] & ~RES_NARROW[i] & ~RES_ALLOW_ELEMWISE[i] & ~RES_ALWAYS_ELEMWISE[i]) |

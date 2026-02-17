@@ -180,13 +180,14 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
     localparam bit OP0_ALT_COUNTER        = UNITS[UNIT_SLD] | UNITS[UNIT_LSU];
 
     // result count and default width
-    localparam int unsigned RES_CNT       = UNITS[UNIT_ALU] ? 2 : 1;
+    localparam int unsigned RES_CNT       = UNITS[UNIT_LSU] ? 8 : UNITS[UNIT_ALU] ? 2 : 1;
     localparam int unsigned MAX_RES_W     = MAX_OP_W;
 
     // result flags
     localparam bit RES0_ALWAYS_VREG       = ~UNITS[UNIT_LSU] & ~UNITS[UNIT_ALU] & ~UNITS[UNIT_ELEM];
     localparam bit RES0_NARROW            = UNITS[UNIT_ALU];//Might need to add FPU HERE from conversion ops
     localparam bit RES0_ALLOW_ELEMWISE    = UNITS[UNIT_LSU] | UNITS[UNIT_ELEM] | UNITS[UNIT_FPU];
+    localparam bit [7:0] RES_0_8_ALLOW_ELEMWISE = {8{UNITS[UNIT_LSU]}};
 
     // miscellaneous pipeline config
     localparam bit FIELD_COUNT_USED       = UNITS[UNIT_LSU];
@@ -202,7 +203,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         logic        [ALT_COUNT_W  -1:0] alt_count_init;    // alternative counter initial value
         count_inc_e                      alt_count_inc;
         count_inc_e                      count_inc;         // counter increment policy
-        logic                      [2:0] field_count_init;  // field counter initial value
+        logic                      [2:0] field_init_count;  // field counter initial value
         logic                            requires_flush;    // whether the instr requires flushing
         logic        [XIF_ID_W     -1:0] id;
         op_unit                          unit;
@@ -461,7 +462,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             state_init.alt_count_inc = state_init.count_inc;
         end
 
-        state_init.field_count_init = unit_lsu ? pipe_in_data_i.mode.lsu.nfields : '0;
+        state_init.field_init_count = unit_lsu ? pipe_in_data_i.mode.lsu.nfields : '0;
         state_init.requires_flush = (unit_elem & elem_flush) | (unit_fpu & pipe_in_data_i.mode.fpu.op_reduction);
         state_init.id             = pipe_in_data_i.id;
         state_init.unit           = pipe_in_data_i.unit;
@@ -729,6 +730,75 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             localparam bit [1:0]    RES_MASK            = 2'b10;
             localparam bit [1:0]    RES_NARROW          = {1'b0, RES0_NARROW};
             localparam bit [1:0]    RES_ALLOW_ELEMWISE  = {1'b0, RES0_ALLOW_ELEMWISE};
+
+            localparam bit [2:0]    OP_FIELD            = FIELD_COUNT_USED ? 3'b010 : '0;
+            localparam bit [2:0]    OP_INDEX_FIELD      = FIELD_COUNT_USED ? 3'b001 : '0;
+
+            vproc_pipeline #(
+                .VREG_W              ( VREG_W              ),
+                .CFG_VL_W            ( CFG_VL_W            ),
+                .XIF_ID_W            ( XIF_ID_W            ),
+                .XIF_ID_CNT          ( XIF_ID_CNT          ),
+                .UNITS               ( UNITS               ),
+                .MAX_VPORT_W         ( MAX_VPORT_W         ),
+                .MAX_VADDR_W         ( MAX_VADDR_W         ),
+                .VPORT_CNT           ( VPORT_CNT           ),
+                .VPORT_W             ( VPORT_W             ),
+                .VADDR_W             ( VADDR_W             ),
+                .VPORT_BUFFER        ( VPORT_BUFFER        ),
+                .MAX_OP_W            ( MAX_OP_W            ),
+                .OP_CNT              ( OP_CNT              ),
+                .OP_W                ( OP_W                ),
+                .OP_STAGE            ( OP_STAGE            ),
+                .OP_SRC              ( OP_SRC              ),
+                .OP_DYN_ADDR_SRC     ( 1                   ),
+                .OP_DYN_ADDR         ( OP_DYN_ADDR         ),
+                .OP_MASK             ( OP_MASK             ),
+                .OP_XREG             ( OP_XREG             ),
+                .OP_NARROW           ( OP_NARROW           ),
+                .OP_ALLOW_ELEMWISE   ( OP_ALLOW_ELEMWISE   ),
+                .OP_ALWAYS_ELEMWISE  ( OP_ALWAYS_ELEMWISE  ),
+                .OP_ALT_COUNTER      ( OP_ALT_COUNTER      ),
+                .OP_ALWAYS_VREG      ( '0                  ),
+                .UNPACK_STAGES       ( UNPACK_STAGES       ),
+                .MAX_RES_W           ( MAX_RES_W           ),
+                .RES_CNT             ( RES_CNT             ),
+                .RES_W               ( RES_W               ),
+                .RES_MASK            ( RES_MASK            ),
+                .RES_NARROW          ( RES_NARROW          ),
+                .RES_ALLOW_ELEMWISE  ( RES_ALLOW_ELEMWISE  ),
+                .RES_ALWAYS_ELEMWISE ( '0                  ),
+                .RES_ALWAYS_VREG     ( RES_ALWAYS_VREG     ),
+                .FIELD_COUNT_USED    ( FIELD_COUNT_USED    ),
+                .OP_FIELD            ( OP_FIELD            ),
+                .OP_INDEX_FIELD      ( OP_INDEX_FIELD      ),
+                .VLSU_QUEUE_SZ       ( VLSU_QUEUE_SZ       ),
+                .VLSU_FLAGS          ( VLSU_FLAGS          ),
+                .MUL_TYPE            ( MUL_TYPE            ),
+                .INIT_STATE_T        ( state_t             ),
+                .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
+            ) pipeline (
+                .pipe_in_state_i     ( state_init          ),
+                .*
+            );
+        end
+        else if (OP_CNT == 3 && RES_CNT == 8) begin
+            localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
+            localparam int unsigned OP_STAGE       [3] = '{OP0_STAGE, OP1_STAGE, UNPACK_STAGES-1};
+            localparam int unsigned OP_SRC         [3] = '{OP0_SRC  , OP1_SRC  , VPORT_CNT};
+            localparam bit [2:0]    OP_DYN_ADDR        = '0;
+            localparam bit [2:0]    OP_MASK            = 3'b100;
+            localparam bit [2:0]    OP_XREG            = {1'b0, OP1_XREG, 1'b0};
+            localparam bit [2:0]    OP_NARROW          = {1'b0, OP1_NARROW, OP0_NARROW};
+            localparam bit [2:0]    OP_ALLOW_ELEMWISE  = {OPMASK_ELEMWISE, OP1_ELEMWISE, OP0_ELEMWISE};
+            localparam bit [2:0]    OP_ALWAYS_ELEMWISE = '0;
+            localparam bit [2:0]    OP_ALT_COUNTER     = {2'b0, OP0_ALT_COUNTER};
+
+            localparam int unsigned RES_W           [8] = '{8{MAX_RES_W}};
+            localparam bit [7:0]    RES_ALWAYS_VREG     = {7'b0, RES0_ALWAYS_VREG};
+            localparam bit [7:0]    RES_MASK            = 8'b0;
+            localparam bit [7:0]    RES_NARROW          = {7'b0, RES0_NARROW};
+            localparam bit [7:0]    RES_ALLOW_ELEMWISE  = RES_0_8_ALLOW_ELEMWISE;
 
             localparam bit [2:0]    OP_FIELD            = FIELD_COUNT_USED ? 3'b010 : '0;
             localparam bit [2:0]    OP_INDEX_FIELD      = FIELD_COUNT_USED ? 3'b001 : '0;
