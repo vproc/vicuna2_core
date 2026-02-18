@@ -89,6 +89,7 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
     struct packed {
         scratch_fsm_state_t fsm_state;
         scratch_fsm_state_t pending_store_state_cb;
+        scratch_fsm_state_t pending_load_state_cb;
         elem_cnt_t write_index;
         elem_cnt_t [MEM_PORTS-1:0] port_write_index;
         portq_elem_cnt_t [MEM_PORTS-1:0] portq_elem_cnt;
@@ -497,6 +498,7 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                             scratch_memory_q[scratch_state_d.write_index].pending_req_cnt > 0
                         ) begin
                             scratch_state_d.fsm_state = PENDING_LOAD_STALL;
+                            scratch_state_d.pending_load_state_cb = LOAD;
                         end else begin
                             if(mem_req_queue_ready_out) begin
                                 mem_req_queue_valid_in = 1;
@@ -513,6 +515,7 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                                 end
                             end else begin
                                 scratch_state_d.fsm_state = PENDING_LOAD_STALL;
+                                scratch_state_d.pending_load_state_cb = LOAD;
                             end
                         end
                         
@@ -525,6 +528,7 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                         if(scratch_state_q.current_output_port[i]) begin
                             if(port_queue_valid_out[i]) begin
                                 scratch_state_d.fsm_state = PENDING_LOAD_STALL;
+                                scratch_state_d.pending_load_state_cb = LOAD;
                             end
                         end
                     end
@@ -580,10 +584,19 @@ module vproc_lsu_extension import vproc_pkg::*, obi_pkg::*; #(
                     end
                 end
 
-
-                if(output_queue_ready_out) begin
-                    scratch_state_d.fsm_state = LOAD;
-                end
+                unique case(scratch_state_q.pending_load_state_cb)
+                    LOAD: begin 
+                        if(output_queue_ready_out) begin
+                            scratch_state_d.fsm_state = scratch_state_q.pending_load_state_cb;
+                        end
+                    end
+                    IDLE: begin
+                        if(scratch_state_q.outstanding_mem_req_cnt == '0) begin
+                            scratch_state_d.fsm_state = scratch_state_q.pending_load_state_cb;
+                        end
+                    end
+                    default: ;
+                endcase 
 
                 
             end
