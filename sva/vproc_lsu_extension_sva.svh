@@ -2,21 +2,13 @@
 // Licensed under the Solderpad Hardware License v2.1, see LICENSE.txt for details
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
-
-    // Assert that there is no memory result transaction while dequeueing a suppressed request
+    
+    // Assert that there are no outstanding memory request in the idle state
     assert property (
         @(posedge clk_i)
-        (deq_valid & xif_mem_result_id_valid) |-> ~deq_state.suppressed
+        (scratch_state_q.fsm_state == IDLE) |-> scratch_state_q.outstanding_mem_req_cnt == 0
     ) else begin
-        $error("incoming memory result transaction while dequeueing a suppressed request");
-    end
-
-    // Assert that there is no memory result transaction while dequeueing a failed request
-    assert property (
-        @(posedge clk_i)
-        (deq_valid & xif_mem_result_id_valid) |-> ~deq_state.exc
-    ) else begin
-        $error("incoming memory result transaction while dequeueing a failed request");
+        $error("outstanding memory requests not resolved");
     end
 
     // Assert that the transaction complete queue is always ready

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
 
-module vproc_core import vproc_pkg::*; #(
+module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         // XIF interface configuration (must be provided when instantiating this module)
         parameter int unsigned           XIF_ID_W                 = 0, // width of instruction IDs
         parameter int unsigned           XIF_MEM_W                = 0, // memory interface width
@@ -33,6 +33,10 @@ module vproc_core import vproc_pkg::*; #(
         parameter int unsigned           INSTR_QUEUE_SZ           = vproc_config::INSTR_QUEUE_SZ,
         parameter bit [BUF_FLAGS_W-1:0]  BUF_FLAGS                = vproc_config::BUF_FLAGS,
 
+        parameter int unsigned           MEM_PORTS                = 1,
+        parameter obi_cfg_t              OBI_CFG                  = ObiDefaultConfig,
+        parameter int unsigned           PORT_QUEUE_DEPTH         = 1,
+
         parameter bit                    DONT_CARE_ZERO           = 1'b0, // init don't cares to 0
         parameter bit                    ASYNC_RESET              = 1'b0  // rst_ni is async
     )(
@@ -42,9 +46,9 @@ module vproc_core import vproc_pkg::*; #(
         // eXtension interface
         vproc_xif.coproc_issue           xif_issue_if,
         vproc_xif.coproc_commit          xif_commit_if,
-        vproc_xif.coproc_mem             xif_mem_if,
-        vproc_xif.coproc_mem_result      xif_memres_if,
         vproc_xif.coproc_result          xif_result_if,
+
+        OBI_BUS.Manager                  obi_bus [MEM_PORTS-1:0],
 
         output logic                     pending_load_o,
         output logic                     pending_store_o,
@@ -984,10 +988,10 @@ module vproc_core import vproc_pkg::*; #(
             end
 
             // LSU-related signals
-            vproc_xif #(
-                .X_ID_WIDTH  ( XIF_ID_W  ),
-                .X_MEM_WIDTH ( XIF_MEM_W )
-            ) pipe_xif ();
+            OBI_BUS #(
+                .OBI_CFG     ( OBI_CFG   )
+            ) pipe_obi_bus [MEM_PORTS-1:0] ();
+
             logic                pending_load, pending_store;
             logic                trans_complete_valid;
             logic                trans_complete_ready;
@@ -1031,6 +1035,9 @@ module vproc_core import vproc_pkg::*; #(
                 .VLSU_FLAGS               ( VLSU_FLAGS                 ),
                 .MUL_TYPE                 ( MUL_TYPE                   ),
                 .DECODER_DATA_T           ( decoder_data               ),
+                .MEM_PORTS                ( MEM_PORTS                  ),
+                .OBI_CFG                  ( OBI_CFG                    ),
+                .PORT_QUEUE_DEPTH         ( PORT_QUEUE_DEPTH           ),
                 .DONT_CARE_ZERO           ( DONT_CARE_ZERO             )
             ) pipe (
                 .clk_i                    ( clk_i                      ),
@@ -1057,8 +1064,7 @@ module vproc_core import vproc_pkg::*; #(
                 .vreg_wr_clr_cnt_o        ( pipe_vreg_wr_clr_cnt[i]    ),
                 .pending_load_o           ( pending_load               ),
                 .pending_store_o          ( pending_store              ),
-                .xif_mem_if               ( pipe_xif                   ),
-                .xif_memres_if            ( pipe_xif                   ),
+                .obi_bus                  ( pipe_obi_bus               ),
                 .trans_complete_valid_o   ( trans_complete_valid       ),
                 .trans_complete_ready_i   ( trans_complete_ready       ),
                 .trans_complete_id_o      ( trans_complete_id          ),
@@ -1076,24 +1082,28 @@ module vproc_core import vproc_pkg::*; #(
             if (PIPE_UNITS[i][UNIT_LSU]) begin
                 assign pending_load_lsu           = pending_load;
                 assign pending_store_lsu          = pending_store;
-                assign xif_mem_if.mem_valid       = pipe_xif.mem_valid;
-                assign pipe_xif.mem_ready         = xif_mem_if.mem_ready;
-                assign xif_mem_if.mem_req.id      = pipe_xif.mem_req.id;
-                assign xif_mem_if.mem_req.addr    = pipe_xif.mem_req.addr;
-                assign xif_mem_if.mem_req.mode    = pipe_xif.mem_req.mode;
-                assign xif_mem_if.mem_req.we      = pipe_xif.mem_req.we;
-                assign xif_mem_if.mem_req.be      = pipe_xif.mem_req.be;
-                assign xif_mem_if.mem_req.wdata   = pipe_xif.mem_req.wdata;
-                assign xif_mem_if.mem_req.last    = pipe_xif.mem_req.last;
-                assign xif_mem_if.mem_req.spec    = pipe_xif.mem_req.spec;
-                assign pipe_xif.mem_resp.exc      = xif_mem_if.mem_resp.exc;
-                assign pipe_xif.mem_resp.exccode  = xif_mem_if.mem_resp.exccode;
-                assign pipe_xif.mem_resp.dbg      = xif_mem_if.mem_resp.dbg;
-                assign pipe_xif.mem_result_valid  = xif_memres_if.mem_result_valid;
-                assign pipe_xif.mem_result.id     = xif_memres_if.mem_result.id;
-                assign pipe_xif.mem_result.rdata  = xif_memres_if.mem_result.rdata;
-                assign pipe_xif.mem_result.err    = xif_memres_if.mem_result.err;
-                assign pipe_xif.mem_result.dbg    = xif_memres_if.mem_result.dbg;
+
+                for (genvar j = 0; j < MEM_PORTS; j++) begin
+                    assign obi_bus[j].req               = pipe_obi_bus[j].req;
+                    assign obi_bus[j].reqpar            = pipe_obi_bus[j].reqpar;
+                    assign pipe_obi_bus[j].gnt          = obi_bus[j].gnt;
+                    assign pipe_obi_bus[j].gntpar       = obi_bus[j].gntpar;
+                    assign obi_bus[j].addr              = pipe_obi_bus[j].addr;
+                    assign obi_bus[j].we                = pipe_obi_bus[j].we;
+                    assign obi_bus[j].be                = pipe_obi_bus[j].be;
+                    assign obi_bus[j].wdata             = pipe_obi_bus[j].wdata;
+                    assign obi_bus[j].aid               = pipe_obi_bus[j].aid;
+                    assign obi_bus[j].a_optional        = pipe_obi_bus[j].a_optional;
+                    assign pipe_obi_bus[j].rvalid       = obi_bus[j].rvalid;
+                    assign pipe_obi_bus[j].rvalidpar    = obi_bus[j].rvalidpar;
+                    assign obi_bus[j].rready            = pipe_obi_bus[j].rready;
+                    assign obi_bus[j].rreadypar         = pipe_obi_bus[j].rreadypar;
+                    assign pipe_obi_bus[j].rdata        = obi_bus[j].rdata;
+                    assign pipe_obi_bus[j].rid          = obi_bus[j].rid;
+                    assign pipe_obi_bus[j].err          = obi_bus[j].err;
+                    assign pipe_obi_bus[j].r_optional   = obi_bus[j].r_optional;
+                end
+
                 assign lsu_trans_complete_valid   = trans_complete_valid;
                 assign trans_complete_ready       = lsu_trans_complete_ready;
                 assign lsu_trans_complete_id      = trans_complete_id;

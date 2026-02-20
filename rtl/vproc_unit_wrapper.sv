@@ -18,6 +18,8 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         parameter type                               CTRL_T          = logic,
         parameter type                               COUNTER_T       = logic,
         parameter int unsigned                       COUNTER_W       = 0,
+        parameter int unsigned                       MEM_PORTS       = 1,
+        parameter int unsigned                       PORT_QUEUE_DEPTH = 2,
         parameter bit                                DONT_CARE_ZERO  = 1'b0
     )
     (
@@ -50,8 +52,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
 
         input  instr_state [XIF_ID_CNT         -1:0] instr_state_i,
 
-        vproc_xif.coproc_mem                         xif_mem_if,
-        vproc_xif.coproc_mem_result                  xif_memres_if,
+        OBI_BUS.Manager                              obi_bus [MEM_PORTS-1:0],
 
         output logic                                 trans_complete_valid_o,
         input  logic                                 trans_complete_ready_i,
@@ -76,12 +77,14 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             logic [MAX_OP_W/8-1:0] unit_out_mask;
             vproc_lsu #(
                 .VMEM_W                   ( MAX_OP_W                                    ),
-                .VREG_W                   ( VREG_W                                    ),
+                .VREG_W                   ( VREG_W                                      ),
+                .MEM_PORTS                ( MEM_PORTS                                   ),
                 .CTRL_T                   ( CTRL_T                                      ),
                 .XIF_ID_W                 ( XIF_ID_W                                    ),
                 .XIF_ID_CNT               ( XIF_ID_CNT                                  ),
                 .VLSU_QUEUE_SZ            ( VLSU_QUEUE_SZ                               ),
                 .VLSU_FLAGS               ( VLSU_FLAGS                                  ),
+                .PORT_QUEUE_DEPTH         ( PORT_QUEUE_DEPTH                            ),
                 .DONT_CARE_ZERO           ( DONT_CARE_ZERO                              )
             ) lsu (
                 .clk_i                    ( clk_i                                       ),
@@ -108,8 +111,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 .trans_complete_id_o      ( trans_complete_id_o                         ),
                 .trans_complete_exc_o     ( trans_complete_exc_o                        ),
                 .trans_complete_exccode_o ( trans_complete_exccode_o                    ),
-                .xif_mem_if               ( xif_mem_if                                  ),
-                .xif_memres_if            ( xif_memres_if                               )
+                .obi_bus                  ( obi_bus                                     )
             );
             always_comb begin
                 pipe_out_instr_id_o = unit_out_ctrl.id;

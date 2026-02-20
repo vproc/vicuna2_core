@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
 
-module vproc_pipeline import vproc_pkg::*; #(
+module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned          VREG_W              = 128,  // width in bits of vector registers
         parameter int unsigned          CFG_VL_W            = 7,    // width of VL reg in bits (= log2(VREG_W))
         parameter int unsigned          XIF_ID_W            = 3,    // width in bits of instruction IDs
@@ -41,10 +41,13 @@ module vproc_pipeline import vproc_pkg::*; #(
         parameter bit [RES_CNT-1:0]     RES_ALWAYS_ELEMWISE = '0,   // result is 1 elem
         parameter bit [RES_CNT-1:0]     RES_ALWAYS_VREG     = '0,   // result is 1 elem
         parameter bit                   FIELD_COUNT_USED    = 1'b0,
-        parameter int unsigned           VLSU_QUEUE_SZ     = 4,
-        parameter bit [VLSU_FLAGS_W-1:0] VLSU_FLAGS        = '0,
-        parameter mul_type               MUL_TYPE          = MUL_GENERIC,
+        parameter int unsigned           VLSU_QUEUE_SZ      = 4,
+        parameter bit [VLSU_FLAGS_W-1:0] VLSU_FLAGS         = '0,
+        parameter mul_type               MUL_TYPE           = MUL_GENERIC,
         parameter type                  INIT_STATE_T        = logic,
+        parameter int unsigned          MEM_PORTS           = 1,
+        parameter obi_cfg_t             OBI_CFG             = ObiDefaultConfig,
+        parameter int unsigned          PORT_QUEUE_DEPTH    = 1,
         parameter bit                   DONT_CARE_ZERO      = 1'b0  // initialize don't care values to zero
     )(
         input  logic                    clk_i,
@@ -79,8 +82,7 @@ module vproc_pipeline import vproc_pkg::*; #(
         output logic                    pending_load_o,
         output logic                    pending_store_o,
 
-        vproc_xif.coproc_mem            xif_mem_if,
-        vproc_xif.coproc_mem_result     xif_memres_if,
+        OBI_BUS.Manager                 obi_bus [MEM_PORTS-1:0],
 
         output logic                    trans_complete_valid_o,
         input  logic                    trans_complete_ready_i,
@@ -1133,6 +1135,9 @@ module vproc_pipeline import vproc_pkg::*; #(
         .CTRL_T                    ( ctrl_t                   ),
         .COUNTER_T                 ( counter_t                ),
         .COUNTER_W                 ( COUNTER_W                ),
+        .MEM_PORTS                 ( MEM_PORTS                ),
+        .OBI_CFG                   ( OBI_CFG                  ),
+        .PORT_QUEUE_DEPTH          ( PORT_QUEUE_DEPTH         ),
         .DONT_CARE_ZERO            ( DONT_CARE_ZERO           )
     ) unit_mux (
         .clk_i                     ( clk_i                    ),
@@ -1159,8 +1164,7 @@ module vproc_pipeline import vproc_pkg::*; #(
         .pending_store_o           ( lsu_pending_store        ),
         .vreg_pend_rd_i            ( vreg_pend_rd_i           ),
         .instr_state_i             ( instr_state_i            ),
-        .xif_mem_if                ( xif_mem_if               ),
-        .xif_memres_if             ( xif_memres_if            ),
+        .obi_bus                   ( obi_bus                  ),
         .trans_complete_valid_o    ( trans_complete_valid_o   ),
         .trans_complete_ready_i    ( trans_complete_ready_i   ),
         .trans_complete_id_o       ( trans_complete_id_o      ),

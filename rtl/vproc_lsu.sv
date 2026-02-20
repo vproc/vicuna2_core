@@ -6,6 +6,7 @@
 module vproc_lsu import vproc_pkg::*; #(
         parameter int unsigned        VMEM_W          = 32,   // width in bits of the vector memory interface
         parameter int unsigned        VREG_W          = 128,   // width in bits of a vector register
+        parameter int unsigned        MEM_PORTS       = 1,
         parameter bit                 BUF_REQUEST     = 1'b1, // insert pipeline stage before issuing request
         parameter bit                 BUF_RDATA       = 1'b1, // insert pipeline stage after memory read
         parameter type                CTRL_T          = logic,
@@ -13,6 +14,7 @@ module vproc_lsu import vproc_pkg::*; #(
         parameter int unsigned        XIF_ID_CNT      = 8,    // total count of instruction IDs
         parameter int unsigned           VLSU_QUEUE_SZ = 4,
         parameter bit [VLSU_FLAGS_W-1:0] VLSU_FLAGS    = '0,
+        parameter int unsigned        PORT_QUEUE_DEPTH = 2,
         parameter bit                 DONT_CARE_ZERO  = 1'b0  // initialize don't care values to zero,
     )
     (
@@ -47,16 +49,13 @@ module vproc_lsu import vproc_pkg::*; #(
         output logic                  trans_complete_exc_o,
         output logic [5:0]            trans_complete_exccode_o,
 
-        vproc_xif.coproc_mem          xif_mem_if,
-        vproc_xif.coproc_mem_result   xif_memres_if
+        OBI_BUS.Manager               obi_bus [MEM_PORTS-1:0]
     );
 
     // reduced LSU state for passing through the queue
     typedef struct packed {
         logic                        state_req_valid_q;
         logic                        state_req_valid_d;
-        logic [2:0]                  nfields;
-        logic                        init_addr;
         logic                        first_cycle;
         logic                        last_cycle;
         logic [XIF_ID_W-1:0]         id;
@@ -243,8 +242,6 @@ module vproc_lsu import vproc_pkg::*; #(
         state_req_red              = DONT_CARE_ZERO ? '0 : 'x;
         state_req_red.state_req_valid_q = state_req_valid_q;
         state_req_red.state_req_valid_d = state_req_valid_d;
-        state_req_red.nfields      = state_req_q.nfields;
-        state_req_red.init_addr    = state_req_q.init_addr;
         state_req_red.first_cycle  = state_req_q.first_cycle;
         state_req_red.last_cycle   = state_req_q.last_cycle;
         state_req_red.id           = state_req_q.id;
@@ -257,8 +254,8 @@ module vproc_lsu import vproc_pkg::*; #(
         state_req_red.res_shift    = state_req_q.res_shift;
         state_req_red.vreg_idx     = state_req_q.vreg_idx;
         state_req_red.suppressed   = req_suppress;
-        state_req_red.exc          = xif_mem_if.mem_resp.exc & ~req_suppress;
-        state_req_red.exccode      = xif_mem_if.mem_resp.exccode;
+        state_req_red.exc          = '0; // xif_mem_if.mem_resp.exc & ~req_suppress; TODO handle exception
+        state_req_red.exccode      = '0; // xif_mem_if.mem_resp.exccode;
         state_req_red.req_addr_q   = req_addr_q[state_req_q.field_counter];
         state_req_red.wdata_buf_q  = wdata_buf_q;
         state_req_red.wmask_buf_q  = wmask_buf_q;
@@ -271,6 +268,7 @@ module vproc_lsu import vproc_pkg::*; #(
     vproc_lsu_extension #(
         .VMEM_W                   ( VMEM_W                                      ),
         .VREG_W                   ( VREG_W                                      ),
+        .MEM_PORTS                ( MEM_PORTS                                   ),
         .BUF_REQUEST              ( BUF_REQUEST                                 ),
         .BUF_RDATA                ( BUF_RDATA                                   ),
         .LSU_STATE_RED_T          ( lsu_state_red                               ),
@@ -278,6 +276,7 @@ module vproc_lsu import vproc_pkg::*; #(
         .XIF_ID_CNT               ( XIF_ID_CNT                                  ),
         .VLSU_QUEUE_SZ            ( VLSU_QUEUE_SZ                               ),
         .VLSU_FLAGS               ( VLSU_FLAGS                                  ),
+        .PORT_QUEUE_DEPTH         ( PORT_QUEUE_DEPTH                            ),
         .DONT_CARE_ZERO           ( DONT_CARE_ZERO                              )
     ) lsu_extension (
         .clk_i                    ( clk_i                                       ),
@@ -297,8 +296,7 @@ module vproc_lsu import vproc_pkg::*; #(
         .trans_complete_id_o      ( trans_complete_id_o                         ),
         .trans_complete_exc_o     ( trans_complete_exc_o                        ),
         .trans_complete_exccode_o ( trans_complete_exccode_o                    ),
-        .xif_mem_if               ( xif_mem_if                                  ),
-        .xif_memres_if            ( xif_memres_if                               )
+        .obi_bus                  ( obi_bus                                     )
     );
 
 
@@ -313,21 +311,21 @@ module vproc_lsu import vproc_pkg::*; #(
 
     always_comb begin
         pipe_out_ctrl_o              = DONT_CARE_ZERO ? '0 : 'x;
-        pipe_out_ctrl_o.first_cycle  = state_rdata_q.first_cycle;
+        pipe_out_ctrl_o.first_cycle  = state_rdata.first_cycle;
         // only assert last_cycle once at the end of the field
         // since it is used to dequeue the unit queue
-        pipe_out_ctrl_o.last_cycle   = state_rdata_q.last_cycle & (state_rdata_q.field_init_count == 0 | (state_rdata_q.field_counter == state_rdata_q.field_init_count));
-        pipe_out_ctrl_o.id           = state_rdata_q.id;
-        pipe_out_ctrl_o.mode.lsu     = state_rdata_q.mode;
-        pipe_out_ctrl_o.eew          = state_rdata_q.mode.eew;
-        pipe_out_ctrl_o.vl_part      = state_rdata_q.vl_part;
-        pipe_out_ctrl_o.vl_part_0    = state_rdata_q.vl_part_0;
-        pipe_out_ctrl_o.last_vl_part = state_rdata_q.last_vl_part & state_rdata_q.res_store; //only pass last_vl_part if storing to vreg
-        pipe_out_ctrl_o.vreg_idx     = state_rdata_q.vreg_idx;
-        pipe_out_ctrl_o.res_vaddr    = state_rdata_q.res_vaddr;
-        pipe_out_ctrl_o.res_store    = state_rdata_q.res_store & ~state_rdata_q.exc;
-        pipe_out_ctrl_o.res_shift    = state_rdata_q.res_shift;
-        pipe_out_ctrl_o.field_counter = state_rdata_q.field_counter;
+        pipe_out_ctrl_o.last_cycle   = state_rdata.last_cycle & (state_rdata.field_init_count == 0 | (state_rdata.field_counter == state_rdata.field_init_count));
+        pipe_out_ctrl_o.id           = state_rdata.id;
+        pipe_out_ctrl_o.mode.lsu     = state_rdata.mode;
+        pipe_out_ctrl_o.eew          = state_rdata.mode.eew;
+        pipe_out_ctrl_o.vl_part      = state_rdata.vl_part;
+        pipe_out_ctrl_o.vl_part_0    = state_rdata.vl_part_0;
+        pipe_out_ctrl_o.last_vl_part = state_rdata.last_vl_part & state_rdata.res_store; //only pass last_vl_part if storing to vreg
+        pipe_out_ctrl_o.vreg_idx     = state_rdata.vreg_idx;
+        pipe_out_ctrl_o.res_vaddr    = state_rdata.res_vaddr;
+        pipe_out_ctrl_o.res_store    = state_rdata.res_store & ~state_rdata.exc;
+        pipe_out_ctrl_o.res_shift    = state_rdata.res_shift;
+        pipe_out_ctrl_o.field_counter = state_rdata.field_counter;
     end
     assign pipe_out_pend_clr_o = state_rdata.res_store;
     

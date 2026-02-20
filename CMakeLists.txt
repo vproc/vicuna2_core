@@ -79,6 +79,8 @@ set(DESIGN_RTL_DIR_COMMON ${CMAKE_CURRENT_SOURCE_DIR}/pulp_common_cells)
 set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                               #Vicuna sources
                     ${DESIGN_RTL_DIR_VICUNA}/../vproc_config.sv 
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_xif.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/obi_pkg.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/obi_intf.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_core.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_vregpack.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_vregunpack.sv

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
 
-module vproc_pipeline_wrapper import vproc_pkg::*; #(
+module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned          VREG_W             = 128,  // width in bits of vector registers
         parameter int unsigned          CFG_VL_W           = 7,    // width of VL reg in bits (= log2(VREG_W))
         parameter int unsigned          XIF_ID_W           = 3,    // width in bits of instruction IDs
@@ -29,6 +29,9 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         parameter bit [VLSU_FLAGS_W-1:0] VLSU_FLAGS        = '0,
         parameter mul_type               MUL_TYPE          = MUL_GENERIC,
         parameter type                  DECODER_DATA_T     = logic,
+        parameter int unsigned          MEM_PORTS          = 1,
+        parameter obi_cfg_t             OBI_CFG            = ObiDefaultConfig,
+        parameter int unsigned          PORT_QUEUE_DEPTH   = 1,
         parameter bit                   DONT_CARE_ZERO     = 1'b0  // initialize don't care values to zero
     )(
         input  logic                    clk_i,
@@ -62,8 +65,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         output logic                    pending_load_o,
         output logic                    pending_store_o,
 
-        vproc_xif.coproc_mem            xif_mem_if,
-        vproc_xif.coproc_mem_result     xif_memres_if,
+        OBI_BUS.Manager                 obi_bus [MEM_PORTS-1:0],
 
         output logic                    trans_complete_valid_o,
         input  logic                    trans_complete_ready_i,
@@ -845,6 +847,9 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .MEM_PORTS           ( MEM_PORTS           ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
