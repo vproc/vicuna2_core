@@ -2,7 +2,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         parameter int unsigned        VMEM_W          = 32,   // width in bits of the vector memory interface
         parameter int unsigned        VREG_W          = 128,   // width in bits of a vector register
         parameter int unsigned        MEM_PORTS       = 1,
-        parameter bit                 BUF_REQUEST     = 1'b1, // insert pipeline stage before issuing request
         parameter bit                 BUF_RDATA       = 1'b1, // insert pipeline stage after memory read
         parameter type                LSU_STATE_RED_T = logic,
         parameter int unsigned        XIF_ID_W        = 3,    // width in bits of instruction IDs
@@ -77,14 +76,14 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     logic [VMEM_W-1:0] scratch_hit_data;
 
     typedef enum logic [2:0] {
-        IDLE,
-        LOAD,
-        PENDING_LOAD_STALL,
-        STORE_SCRATCH,
-        PENDING_STORE_STALL,
-        STORE_MEMORY,
-        LAST_CYCLE_LOAD,
-        LAST_CYCLE_STORE
+        IDLE                    = 3'b000,
+        LOAD                    = 3'b001,
+        PENDING_LOAD_STALL      = 3'b010,
+        STORE_SCRATCH           = 3'b011,
+        PENDING_STORE_STALL     = 3'b100,
+        STORE_MEMORY            = 3'b101,
+        LAST_CYCLE_LOAD         = 3'b110,
+        LAST_CYCLE_STORE        = 3'b111
     } scratch_fsm_state_t;
 
     typedef struct packed {
@@ -146,8 +145,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         logic                        scratch_pending;
         elem_cnt_t                   scratch_pending_index;
         logic [$clog2(VMEM_W/8)-1:0] scratch_pending_data_off;
-        logic [$clog2(VMEM_W/8)-1:0] rdata_off;
-        logic [       VMEM_W/8 -1:0] rmask_buf;
         LSU_STATE_RED_T              state_req_red;
     } output_queue_data_t;
 
@@ -205,36 +202,28 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         end
     endgenerate
 
-    generate
-        if (BUF_REQUEST) begin
-            always_ff @(posedge clk_i) begin : vproc_lsu_stage_req
-                if (state_req_ready & state_req_red.state_req_valid_d) begin
-                    mem_exc_q   <= mem_exc_d;
-                end
-            end
-            always_comb begin
-                state_req_ready = ~state_req_red.state_req_valid_q & ~state_req_stall;
-                for(int i = 0; i < MEM_PORTS; i++) begin
-                    if(scratch_state_q.current_input_port[i]) begin
-                        state_req_ready &= port_queue_ready_out[i];
-                    end
-                end
-            end
-        end else begin
-            always_ff @(posedge clk_i) begin
-                // always need a flip-flop for the exception flag
-                mem_exc_q <= mem_exc_d;
-            end
-            always_comb begin
-                state_req_ready = ~state_req_stall;
-                for(int i = 0; i < MEM_PORTS; i++) begin
-                    if(scratch_state_q.current_input_port[i]) begin
-                        state_req_ready &= port_queue_ready_out[i];
-                    end
-                end
-            end
-        end
 
+    always_ff @(posedge clk_i or negedge async_rst_ni) begin
+        if (~async_rst_ni) begin
+            scratch_state_q.fsm_state <= IDLE;
+        end
+        else if (~sync_rst_ni) begin
+            scratch_state_q.fsm_state <= IDLE;
+        end
+        else begin
+            scratch_state_q <= scratch_state_d;
+            scratch_memory_state_q <= scratch_memory_state_d;
+            scratch_memory_q <= scratch_memory_d;
+
+            mem_err_q     <= mem_err_d;
+            mem_any_err_q <= mem_any_err_d;
+            mem_exccode_q <= mem_exccode_d;
+        end
+    end
+
+    assign state_req_ready = ~state_req_stall & input_queue_ready_out;
+
+    generate
         // Note: The stages receiving memory data and writing it to vector
         // registers cannot stall, since there is no way to pause memory read
         // data once the memory requests have been issued.  Therefore, any
@@ -244,19 +233,13 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         if (BUF_RDATA) begin
             always_ff @(posedge clk_i or negedge async_rst_ni) begin : vproc_lsu_stage_rdata_valid
                 if (~async_rst_ni) begin
-                    state_rdata_valid_q <= 1'b0;
-                    scratch_state_q.fsm_state <= IDLE;
+                    state_rdata_valid_q <= 1'b0;  
                 end
                 else if (~sync_rst_ni) begin
                     state_rdata_valid_q <= 1'b0;
-                    scratch_state_q.fsm_state <= IDLE;
                 end
                 else begin
                     state_rdata_valid_q <= state_rdata_valid_d;
-
-                    scratch_state_q <= scratch_state_d;
-                    scratch_memory_state_q <= scratch_memory_state_d;
-                    scratch_memory_q <= scratch_memory_d;
                 end
             end
             always_ff @(posedge clk_i) begin : vproc_lsu_stage_rdata
@@ -278,22 +261,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 rdata_off_q         = rdata_off_d;
                 rmask_buf_q         = rmask_buf_d;
             end
-            always_ff @(posedge clk_i or negedge async_rst_ni) begin
-                if (~async_rst_ni) begin
-                    scratch_state_q.fsm_state <= IDLE;
-                end else if (~sync_rst_ni) begin
-                    scratch_state_q.fsm_state <= IDLE;
-                end else begin
-                    scratch_state_q <= scratch_state_d;
-                    scratch_memory_state_q <= scratch_memory_state_d;
-                    scratch_memory_q <= scratch_memory_d;
-
-                    // always need a flip-flop for the error flag and exception code
-                    mem_err_q     <= mem_err_d;
-                    mem_any_err_q <= mem_any_err_d;
-                    mem_exccode_q <= mem_exccode_d;
-                end
-            end
         end
     endgenerate
 
@@ -301,11 +268,10 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     // complete and while the instruction is speculative; for the LSU stalling
     // has to happen at the request stage, since later stalling is not possible
     // Also stall if incoming instruction is speculative OR a current instruction has not finished
-    assign state_req_stall = (~state_req_red.mode.store & state_req_red.res_store & vreg_pend_rd_i[state_req_red.res_vaddr]) |
-                             ((instr_state_i[state_req_red.id] == INSTR_SPECULATIVE) | ~(state_req_red.id == deq_state.id)) | 
-                             ~input_queue_ready_out | ~output_queue_ready_out;
+    assign state_req_stall = (~state_req_red_i.mode.store & state_req_red_i.res_store & vreg_pend_rd_i[state_req_red_i.res_vaddr]) |
+                             ((instr_state_i[state_req_red_i.id] == INSTR_SPECULATIVE) | ~(state_req_red_i.id == deq_state.id));
 
-    assign pending_req_stall = scratch_state_q.fsm_state != LOAD | scratch_state_q.fsm_state != STORE_SCRATCH |
+    assign pending_req_stall = (scratch_state_q.fsm_state != LOAD & scratch_state_q.fsm_state != STORE_SCRATCH) |
                                scratch_state_d.fsm_state == PENDING_LOAD_STALL | scratch_state_d.fsm_state == PENDING_STORE_STALL;             
 
     // memory request (keep requesting next access while addressing is not complete)
@@ -467,11 +433,14 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 scratch_state_d.portq_elem_cnt = '0;
                 scratch_state_d.outstanding_mem_req_cnt = 0;
 
+                scratch_state_d.current_input_port = MEM_PORTS'(1);
+                scratch_state_d.current_output_port = MEM_PORTS'(1);
+
                 for(int i = 0; i < SCRATCH_DEPTH; i++) begin
                     scratch_memory_state_d[i] = NOT_VALID;
                 end
 
-                if(input_queue_ready_in & input_queue_valid_out & state_req_red.first_cycle) begin
+                if(input_queue_valid_out & state_req_red.first_cycle) begin
                     // Reset error for new memory request
                     mem_any_err_d = 0;
 
@@ -553,7 +522,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                         
                     end
 
-                end else begin
+                end else if (~output_queue_ready_out) begin
                     // if queues are not ready, check if pending loads can be cleared
                     // take over valid memory result into scratch
                     for(int i = 0; i < MEM_PORTS; i++) begin
@@ -571,7 +540,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     input_queue_ready_in &
                     input_queue_valid_out &
                     state_req_red.last_cycle & 
-                    (state_req_red.field_init_count == 0 | state_req_red.field_init_count == state_req_red.field_counter) &
+                    (state_req_red.field_init_count == '0 | state_req_red.field_init_count == state_req_red.field_counter) &
                     ~pending_req_stall
                 ) begin
                     scratch_state_d.fsm_state = LAST_CYCLE_LOAD;
@@ -700,7 +669,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
                     end
 
-                end else begin
+                end else if (~state_req_red.suppressed) begin
                     // if queues are not ready, check if pending stores can be cleared
                     // take over valid error result
                     for(int i = 0; i < MEM_PORTS; i++) begin
@@ -718,7 +687,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     input_queue_ready_in &
                     input_queue_valid_out &
                     state_req_red.last_cycle & 
-                    (state_req_red.field_init_count == 0 | state_req_red.field_init_count == state_req_red.field_counter) &
+                    (state_req_red.field_init_count == '0 | state_req_red.field_init_count == state_req_red.field_counter) &
                     ~pending_req_stall
                 ) begin
                     scratch_state_d.fsm_state = LAST_CYCLE_STORE;
@@ -735,7 +704,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                         if(port_queue_valid_out[i]) begin
                             port_queue_ready_in[i] = 1;
                         end
+                    end
 
+                    if(scratch_state_q.current_input_port[i]) begin
                         unique case(scratch_state_q.pending_store_state_cb)
                             STORE_SCRATCH, STORE_MEMORY: begin 
                                 if(port_queue_ready_out[i]) begin
@@ -775,6 +746,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             end
                         end
                         
+                    end else begin
+                        scratch_state_d.fsm_state = PENDING_STORE_STALL;
+                        scratch_state_d.pending_store_state_cb = STORE_MEMORY;
                     end
 
                 end else begin
@@ -851,8 +825,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     assign output_queue_data_in.scratch_pending            = scratch_pending;
     assign output_queue_data_in.scratch_pending_index      = scratch_pending_index;
     assign output_queue_data_in.scratch_pending_data_off   = scratch_pending_data_off;
-    assign output_queue_data_in.rdata_off                  = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
-    assign output_queue_data_in.rmask_buf                  = state_req_red.vmsk_tmp_q;
     assign output_queue_data_in.state_req_red              = state_req_red;
 
     vproc_queue #(
@@ -864,7 +836,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         .async_rst_ni ( async_rst_ni                                                                                                    ),
         .sync_rst_ni  ( sync_rst_ni                                                                                                     ),
         .enq_ready_o  ( output_queue_ready_out                                                                                          ),
-        .enq_valid_i  ( state_req_red.state_req_valid_q & state_req_ready & input_queue_valid_out & ~pending_req_stall                  ),
+        .enq_valid_i  ( state_req_red.state_req_valid_q & input_queue_valid_out & ~pending_req_stall                                    ),
         .enq_data_i   ( output_queue_data_in                                                                                            ),
         .deq_ready_i  ( output_queue_ready_in                                                                                           ),
         .deq_valid_o  ( output_queue_valid_out                                                                                          ),
@@ -877,19 +849,19 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     assign scratch_queue_pending_out           = output_queue_data_out.scratch_pending;
     assign scratch_queue_pending_index_out     = output_queue_data_out.scratch_pending_index;
     assign scratch_queue_pending_data_off_out  = output_queue_data_out.scratch_pending_data_off;
-    assign rdata_off_d                         = output_queue_data_out.rdata_off;
-    assign rmask_buf_d                         = output_queue_data_out.rmask_buf;
     assign deq_state                           = output_queue_data_out.state_req_red;
+    assign rdata_off_d                         = output_queue_data_out.state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
+    assign rmask_buf_d                         = output_queue_data_out.state_req_red.vmsk_tmp_q;
 
 
 
     // Ready signals
     assign output_queue_ready_in = output_queue_valid_out & 
                                     (~deq_state.last_cycle | deq_state.field_counter != deq_state.field_init_count | scratch_state_q.fsm_state == IDLE) &
-                                    (scratch_queue_pending_out & scratch_pending_req_cleared) |
-                                    deq_state.suppressed | mem_err_d;
+                                    (~deq_state.mode.store & ~scratch_queue_pending_out | scratch_pending_req_cleared) |
+                                    deq_state.mode.store | deq_state.suppressed | mem_err_d;
 
-    assign input_queue_ready_in  = state_req_ready & output_queue_ready_out;
+    assign input_queue_ready_in  = output_queue_ready_out;
 
     // Valid signals
     assign state_rdata_valid_d = output_queue_valid_out & output_queue_ready_in;

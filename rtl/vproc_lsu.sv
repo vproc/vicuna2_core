@@ -269,7 +269,6 @@ module vproc_lsu import vproc_pkg::*; #(
         .VMEM_W                   ( VMEM_W                                      ),
         .VREG_W                   ( VREG_W                                      ),
         .MEM_PORTS                ( MEM_PORTS                                   ),
-        .BUF_REQUEST              ( BUF_REQUEST                                 ),
         .BUF_RDATA                ( BUF_RDATA                                   ),
         .LSU_STATE_RED_T          ( lsu_state_red                               ),
         .XIF_ID_W                 ( XIF_ID_W                                    ),
