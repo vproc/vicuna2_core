@@ -43,7 +43,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     typedef logic [$clog2(SCRATCH_DEPTH)-1 : 0] elem_cnt_t;
     typedef logic [$clog2(VLSU_QUEUE_SZ) : 0] pending_req_cnt_t;
     typedef logic [$clog2(PORT_QUEUE_DEPTH)-1 : 0] portq_elem_cnt_t;
-    typedef logic [$clog2(VREG_W)-1 : 0] outstanding_mem_req_t;
+    typedef logic [$clog2(VLSU_QUEUE_SZ) : 0] outstanding_mem_req_cnt_t;
 
     typedef enum logic [1:0] {
         VALID,
@@ -91,10 +91,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         scratch_fsm_state_t pending_store_state_cb;
         scratch_fsm_state_t pending_load_state_cb;
         elem_cnt_t write_index;
-        portq_elem_cnt_t [MEM_PORTS-1:0] portq_elem_cnt;
         logic [MEM_PORTS-1:0] current_input_port;
         logic [MEM_PORTS-1:0] current_output_port;
-        outstanding_mem_req_t outstanding_mem_req_cnt;
+        outstanding_mem_req_cnt_t outstanding_mem_req_cnt;
     } scratch_state_t;
 
     scratch_state_t scratch_state_q, scratch_state_d;
@@ -158,6 +157,13 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     logic [MEM_PORTS-1 : 0] port_queue_mem_err_out;
     elem_cnt_t [MEM_PORTS-1:0] port_queue_write_index_out;
 
+    typedef struct packed {
+        logic [MEM_PORTS-1 : 0] req_break;
+        portq_elem_cnt_t [MEM_PORTS-1:0] portq_elem_cnt;
+    } port_state_t;
+
+    port_state_t port_state_q, port_state_d;
+
 
     /////////////////////////////////Memory request////////////////////////////////
     logic           mem_req_switch;
@@ -214,7 +220,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             scratch_state_q <= scratch_state_d;
             scratch_memory_state_q <= scratch_memory_state_d;
             scratch_memory_q <= scratch_memory_d;
-
+            port_state_q <= port_state_d;
             mem_err_q     <= mem_err_d;
             mem_any_err_q <= mem_any_err_d;
             mem_exccode_q <= mem_exccode_d;
@@ -276,21 +282,38 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // memory request (keep requesting next access while addressing is not complete)
     logic selected_input_port_gnt;
+    logic selected_input_port_ready;
     always_comb begin
+        port_state_d = port_state_q;
+        selected_input_port_ready = 0;
         selected_input_port_gnt = 0;
 
+        port_state_d.req_break = '0;
+        if(scratch_state_q.fsm_state == IDLE) begin
+            port_state_d.portq_elem_cnt = '0;
+        end
+
         for(int i = 0; i < MEM_PORTS; i++) begin
-            obi_bus_req[i]   = mem_req_queue_valid_out & (~mem_exc_q | mem_req_queue_data_out.first_cycle);
+            obi_bus_req[i]   = mem_req_queue_valid_out & (~mem_exc_q | mem_req_queue_data_out.first_cycle) & ~port_state_q.req_break[i] & selected_input_port_ready;
             obi_bus_addr[i]  = VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE] ? {mem_req_queue_data_out.addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}} : mem_req_queue_data_out.addr;
             obi_bus_we[i]    = mem_req_queue_data_out.store;
             obi_bus_be[i]    = mem_req_queue_data_out.wmask;
             obi_bus_wdata[i] = mem_req_queue_data_out.wdata;
 
-
             if(mem_req_queue_data_out.selected_input_port[i]) begin
+                selected_input_port_ready = port_queue_ready_out[i];
                 selected_input_port_gnt = obi_bus_gnt[i];
+                port_state_d.req_break[i] = obi_bus_gnt[i];
             end else begin
                 obi_bus_req[i] = 0;
+            end
+
+            if(obi_bus_gnt[i] & port_queue_ready_in[i]) begin
+                port_state_d.portq_elem_cnt[i] = port_state_q.portq_elem_cnt[i];
+            end else if (obi_bus_gnt[i]) begin
+                port_state_d.portq_elem_cnt[i] = port_state_q.portq_elem_cnt[i] + 1;
+            end else if (port_queue_ready_in[i]) begin
+                port_state_d.portq_elem_cnt[i] = port_state_q.portq_elem_cnt[i] - 1;
             end
         end
     end
@@ -365,7 +388,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 .flags_all_o  (                                                               )
             );
 
-            assign port_queue_ready_out[i] = scratch_state_q.portq_elem_cnt[i] != '1;
+            assign port_queue_ready_out[i] = port_state_q.portq_elem_cnt[i] != '1;
 
             vproc_queue #(
                 .WIDTH        ( $bits(LSU_STATE_RED_T)                                                                                        ),
@@ -430,7 +453,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         
             IDLE: begin
                 scratch_state_d.write_index = 0;
-                scratch_state_d.portq_elem_cnt = '0;
                 scratch_state_d.outstanding_mem_req_cnt = 0;
 
                 scratch_state_d.current_input_port = MEM_PORTS'(1);
@@ -780,11 +802,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         if(mem_req_queue_valid_in) begin
             scratch_state_d.write_index = scratch_state_q.write_index + 1;
             scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt + 1;
-            for(int i = 0; i < MEM_PORTS; i++) begin
-                if(scratch_state_q.current_input_port[i]) begin
-                    scratch_state_d.portq_elem_cnt[i] = scratch_state_q.portq_elem_cnt[i] + 1;
-                end
-            end
             scratch_state_d.current_input_port = {scratch_state_q.current_input_port[MEM_PORTS-2:1], scratch_state_q.current_input_port[MEM_PORTS-1]};
         end
 
@@ -810,7 +827,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         for(int i = 0; i < MEM_PORTS; i++) begin
             if(port_queue_ready_in[i]) begin
                 mem_any_err_d |= port_queue_mem_err_out[i];
-                scratch_state_d.portq_elem_cnt[i] = scratch_state_q.portq_elem_cnt[i] - 1;
                 scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt - 1;
                 scratch_state_d.current_output_port = {scratch_state_q.current_output_port[MEM_PORTS-2:1], scratch_state_q.current_output_port[MEM_PORTS-1]};
             end
