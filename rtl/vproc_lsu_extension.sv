@@ -413,7 +413,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     always_comb begin
         logic [$clog2(VMEM_W/8):0] eew_in_bytes;
         logic [$clog2(VMEM_W/8)-1:0] scratch_data_offset;
-        logic [$clog2(VMEM_W/8)-1:0] scratch_wmask;
+        logic [VMEM_W/8-1:0] scratch_wmask;
         elem_cnt_t selected_index;
 
         scratch_state_d = scratch_state_q;
