@@ -413,6 +413,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     always_comb begin
         logic [$clog2(VMEM_W/8):0] eew_in_bytes;
         logic [$clog2(VMEM_W/8)-1:0] scratch_data_offset;
+        logic [VMEM_W-1:0] scratch_wdata;
         logic [VMEM_W/8-1:0] scratch_wmask;
         elem_cnt_t selected_index;
 
@@ -426,6 +427,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         scratch_pending_output = '0;
         scratch_pending_req_cleared = 0;
         scratch_data_offset = '0;
+        scratch_wdata = '0;
         scratch_wmask = '0;
 
         mem_req_switch = 0;
@@ -667,6 +669,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                 mem_req_queue_valid_in = 1;
                                 scratch_memory_d[selected_index].addr = state_req_red.req_addr_q;
                                 scratch_memory_d[selected_index].wmask = '0;
+                                scratch_data_offset = '0;
                             end else begin
                                 scratch_state_d.fsm_state = PENDING_STORE_STALL;
                                 scratch_state_d.pending_store_state_cb = STORE_SCRATCH;
@@ -675,6 +678,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     end
 
                     // shifted in case of ~VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE], otherwise offset is 0
+                    scratch_wdata = state_req_red.wdata_buf_q << VMEM_W'(scratch_data_offset << 8);
                     scratch_wmask = state_req_red.wmask_buf_q << scratch_data_offset; 
 
                     if(scratch_hit) begin
@@ -683,7 +687,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             VSEW_8: begin
                                 for (int j = 0; j < VMEM_W / 8 ; j++) begin
                                     if(scratch_wmask[j]) begin
-                                        scratch_memory_d[selected_index].data[8*j +: 8] = state_req_red.wdata_buf_q[8*j +: 8];
+                                        scratch_memory_d[selected_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
                                         scratch_memory_d[selected_index].wmask[j] = 1;
                                     end
                                 end
@@ -691,23 +695,22 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             VSEW_16: begin
                                 for (int j = 0; j < VMEM_W / 16 ; j++) begin
                                     if(scratch_wmask[j]) begin
-                                        scratch_memory_d[selected_index].data[16*j +: 16] = state_req_red.wdata_buf_q[16*j +: 16];
-                                        scratch_memory_d[selected_index].wmask[j] = 1;
+                                        scratch_memory_d[selected_index].data[16*j +: 16] = scratch_wdata[16*j +: 16];
+                                        scratch_memory_d[selected_index].wmask[2*j +: 2] = '1;
                                     end
                                 end
                             end
                             VSEW_32: begin
                                 for (int j = 0; j < VMEM_W / 32 ; j++) begin
                                     if(scratch_wmask[j]) begin
-                                        scratch_memory_d[selected_index].data[32*j +: 32] = state_req_red.wdata_buf_q[32*j +: 32];
-                                        scratch_memory_d[selected_index].wmask[j] = 1;
+                                        scratch_memory_d[selected_index].data[32*j +: 32] = scratch_wdata[32*j +: 32];
+                                        scratch_memory_d[selected_index].wmask[4*j +: 4] = '1;
                                     end
                                 end
                             end
                             default: begin
-                                scratch_memory_d[selected_index].data = state_req_red.wdata_buf_q;
+                                scratch_memory_d[selected_index].data = scratch_wdata;
                                 scratch_memory_d[selected_index].wmask = scratch_wmask;
-
                             end
                         endcase
 
