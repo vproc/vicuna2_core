@@ -659,12 +659,14 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             scratch_hit = 1;
                             scratch_memory_state_d[selected_index] = VALID;
                             scratch_memory_d[selected_index].addr = state_req_red.req_addr_q;
+                            scratch_memory_d[selected_index].wmask = '0;
                             scratch_data_offset = '0;
                         end else begin
                             if(mem_req_queue_ready_out) begin
                                 scratch_hit = 1;
                                 mem_req_queue_valid_in = 1;
                                 scratch_memory_d[selected_index].addr = state_req_red.req_addr_q;
+                                scratch_memory_d[selected_index].wmask = '0;
                             end else begin
                                 scratch_state_d.fsm_state = PENDING_STORE_STALL;
                                 scratch_state_d.pending_store_state_cb = STORE_SCRATCH;
