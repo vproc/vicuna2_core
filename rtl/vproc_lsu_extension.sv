@@ -422,6 +422,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
         scratch_hit = 0;
         scratch_hit_data = '0;
+        scratch_pending = 0;
         scratch_pending_output = '0;
         scratch_pending_req_cleared = 0;
         scratch_data_offset = '0;
