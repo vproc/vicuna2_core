@@ -664,6 +664,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             scratch_memory_d[selected_index].addr = state_req_red.req_addr_q;
                             scratch_memory_d[selected_index].wmask = '0;
                             scratch_data_offset = '0;
+                            scratch_state_d.write_index = scratch_state_q.write_index + 1;
                         end else begin
                             if(mem_req_queue_ready_out) begin
                                 scratch_hit = 1;
@@ -679,7 +680,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     end
 
                     // shifted in case of ~VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE], otherwise offset is 0
-                    scratch_wdata = state_req_red.wdata_buf_q << VMEM_W'(scratch_data_offset << 8);
+                    scratch_wdata = state_req_red.wdata_buf_q << VMEM_W'(scratch_data_offset << 3);
                     scratch_wmask = state_req_red.wmask_buf_q << scratch_data_offset; 
 
                     if(scratch_hit) begin
