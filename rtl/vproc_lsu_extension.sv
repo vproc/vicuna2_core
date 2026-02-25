@@ -91,6 +91,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         scratch_fsm_state_t pending_store_state_cb;
         scratch_fsm_state_t pending_load_state_cb;
         elem_cnt_t write_index;
+        elem_cnt_t store_end_index;
         logic [MEM_PORTS-1:0] current_input_port;
         logic [MEM_PORTS-1:0] current_output_port;
         outstanding_mem_req_cnt_t outstanding_mem_req_cnt;
@@ -684,27 +685,11 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     if(scratch_hit) begin
                         
                         unique case (scratch_state_q.current_eew)
-                            VSEW_8: begin
+                            VSEW_8, VSEW_16, VSEW_32: begin
                                 for (int j = 0; j < VMEM_W / 8 ; j++) begin
                                     if(scratch_wmask[j]) begin
                                         scratch_memory_d[selected_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
                                         scratch_memory_d[selected_index].wmask[j] = 1;
-                                    end
-                                end
-                            end
-                            VSEW_16: begin
-                                for (int j = 0; j < VMEM_W / 16 ; j++) begin
-                                    if(scratch_wmask[j]) begin
-                                        scratch_memory_d[selected_index].data[16*j +: 16] = scratch_wdata[16*j +: 16];
-                                        scratch_memory_d[selected_index].wmask[2*j +: 2] = '1;
-                                    end
-                                end
-                            end
-                            VSEW_32: begin
-                                for (int j = 0; j < VMEM_W / 32 ; j++) begin
-                                    if(scratch_wmask[j]) begin
-                                        scratch_memory_d[selected_index].data[32*j +: 32] = scratch_wdata[32*j +: 32];
-                                        scratch_memory_d[selected_index].wmask[4*j +: 4] = '1;
                                     end
                                 end
                             end
@@ -713,6 +698,37 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                 scratch_memory_d[selected_index].wmask = scratch_wmask;
                             end
                         endcase
+                        
+                        // unique case (scratch_state_q.current_eew)
+                        //     VSEW_8: begin
+                        //         for (int j = 0; j < VMEM_W / 8 ; j++) begin
+                        //             if(scratch_wmask[j]) begin
+                        //                 scratch_memory_d[selected_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
+                        //                 scratch_memory_d[selected_index].wmask[j] = 1;
+                        //             end
+                        //         end
+                        //     end
+                        //     VSEW_16: begin
+                        //         for (int j = 0; j < VMEM_W / 16 ; j++) begin
+                        //             if(scratch_wmask[j]) begin
+                        //                 scratch_memory_d[selected_index].data[16*j +: 16] = scratch_wdata[16*j +: 16];
+                        //                 scratch_memory_d[selected_index].wmask[2*j +: 2] = '1;
+                        //             end
+                        //         end
+                        //     end
+                        //     VSEW_32: begin
+                        //         for (int j = 0; j < VMEM_W / 32 ; j++) begin
+                        //             if(scratch_wmask[j]) begin
+                        //                 scratch_memory_d[selected_index].data[32*j +: 32] = scratch_wdata[32*j +: 32];
+                        //                 scratch_memory_d[selected_index].wmask[4*j +: 4] = '1;
+                        //             end
+                        //         end
+                        //     end
+                        //     default: begin
+                        //         scratch_memory_d[selected_index].data = scratch_wdata;
+                        //         scratch_memory_d[selected_index].wmask = scratch_wmask;
+                        //     end
+                        // endcase
 
                     end
                 end else if (input_queue_ready_in & input_queue_valid_out & state_req_red.suppressed) begin  
@@ -766,7 +782,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             if(scratch_state_q.current_input_port[i]) begin
                                 if(port_queue_ready_out[i]) begin
                                     mem_req_queue_valid_in = 1;
-                                    if(scratch_state_q.write_index == '1) begin
+                                    if(scratch_state_q.write_index == scratch_state_q.store_end_index) begin
                                         scratch_state_d.fsm_state = PENDING_STORE_STALL;
                                         scratch_state_d.pending_store_state_cb = IDLE;
                                     end
@@ -784,7 +800,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
                 end else begin
                     scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                    if(scratch_state_q.write_index == '1) begin
+                    if(scratch_state_q.write_index == scratch_state_q.store_end_index) begin
                         scratch_state_d.fsm_state = PENDING_STORE_STALL;
                         scratch_state_d.pending_store_state_cb = IDLE;
                     end
@@ -802,7 +818,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             LAST_CYCLE_STORE: begin
                 // state to circumvent pending stall (not needed -> symmetry)
                 scratch_state_d.fsm_state = STORE_MEMORY;
-                scratch_state_d.write_index = '0;
+                scratch_state_d.store_end_index = scratch_state_q.write_index - 1;
             end
 
         endcase
