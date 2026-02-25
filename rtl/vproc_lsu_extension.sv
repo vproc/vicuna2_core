@@ -413,15 +413,20 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     always_comb begin
         logic [$clog2(VMEM_W/8):0] eew_in_bytes;
+        logic scratch_read_hit;
+        logic scratch_write_hit;
         logic [$clog2(VMEM_W/8)-1:0] scratch_data_offset;
         logic [VMEM_W-1:0] scratch_wdata;
         logic [VMEM_W/8-1:0] scratch_wmask;
         elem_cnt_t selected_index;
+        elem_cnt_t selected_write_index;
 
         scratch_state_d = scratch_state_q;
         scratch_memory_state_d = scratch_memory_state_q;
         scratch_memory_d = scratch_memory_q;
 
+        scratch_read_hit = 0;
+        scratch_write_hit = 0;
         scratch_hit = 0;
         scratch_hit_data = '0;
         scratch_pending = 0;
@@ -435,6 +440,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         mem_req_queue_valid_in = 0;
 
         selected_index = '0;
+        selected_write_index = '0;
 
         for(int i = 0; i < MEM_PORTS; i++) begin
             port_queue_ready_in[i] = 0;
@@ -507,10 +513,10 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                 scratch_memory_state_q[selected_index] == PENDING
                             ) &
                             scratch_memory_q[selected_index].addr <= state_req_red.req_addr_q &
-                            scratch_memory_q[selected_index].addr + VMEM_W/8 >= state_req_red.req_addr_q + eew_in_bytes
+                            scratch_memory_q[selected_index].addr + VMEM_W/8 > state_req_red.req_addr_q + eew_in_bytes - 1
                         ) begin
                             
-                            scratch_hit = 1;
+                            scratch_read_hit = 1;
 
                             scratch_data_offset = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0] - scratch_memory_q[selected_index].addr[$clog2(VMEM_W/8)-1:0];   
 
@@ -537,6 +543,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
                         end
                     end
+
+                    scratch_hit = scratch_read_hit;
 
                     if(~scratch_hit) begin
                         selected_index = scratch_state_q.write_index;
@@ -643,34 +651,35 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed) begin
                     
                     for(int i = 0; i < HIT_DEPTH; i++) begin
+                        selected_index = scratch_state_q.write_index - 1 - i;
                         if(
-                            scratch_memory_state_q[scratch_state_q.write_index - 1 - i] == VALID &
-                            scratch_memory_q[scratch_state_q.write_index - 1 - i].addr <= state_req_red.req_addr_q &
-                            scratch_memory_q[scratch_state_q.write_index - 1 - i].addr + VMEM_W/8 >= state_req_red.req_addr_q + eew_in_bytes
+                            scratch_memory_state_q[selected_index] == VALID &
+                            scratch_memory_q[selected_index].addr <= state_req_red.req_addr_q &
+                            scratch_memory_q[selected_index].addr + VMEM_W/8 > state_req_red.req_addr_q + eew_in_bytes - 1
                         ) begin
-                            scratch_hit = 1;
-                            selected_index = scratch_state_q.write_index - 1 - i;
+                            scratch_read_hit = 1;
+                            selected_write_index = selected_index;
                         end
                     end
 
-                    scratch_data_offset = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0] - scratch_memory_q[selected_index].addr[$clog2(VMEM_W/8)-1:0];
+                    scratch_data_offset = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0] - scratch_memory_q[selected_write_index].addr[$clog2(VMEM_W/8)-1:0];
 
-                    if(~scratch_hit) begin
-                        selected_index = scratch_state_q.write_index;
+                    if(~scratch_read_hit) begin
+                        selected_write_index = scratch_state_q.write_index;
 
-                        if(scratch_memory_state_q[selected_index] == NOT_VALID) begin
-                            scratch_hit = 1;
-                            scratch_memory_state_d[selected_index] = VALID;
-                            scratch_memory_d[selected_index].addr = state_req_red.req_addr_q;
-                            scratch_memory_d[selected_index].wmask = '0;
+                        if(scratch_memory_state_q[selected_write_index] == NOT_VALID) begin
+                            scratch_write_hit = 1;
+                            scratch_memory_state_d[selected_write_index] = VALID;
+                            scratch_memory_d[selected_write_index].addr = state_req_red.req_addr_q;
+                            scratch_memory_d[selected_write_index].wmask = '0;
                             scratch_data_offset = '0;
                             scratch_state_d.write_index = scratch_state_q.write_index + 1;
                         end else begin
                             if(mem_req_queue_ready_out) begin
-                                scratch_hit = 1;
+                                scratch_write_hit = 1;
                                 mem_req_queue_valid_in = 1;
-                                scratch_memory_d[selected_index].addr = state_req_red.req_addr_q;
-                                scratch_memory_d[selected_index].wmask = '0;
+                                scratch_memory_d[selected_write_index].addr = state_req_red.req_addr_q;
+                                scratch_memory_d[selected_write_index].wmask = '0;
                                 scratch_data_offset = '0;
                             end else begin
                                 scratch_state_d.fsm_state = PENDING_STORE_STALL;
@@ -678,6 +687,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             end
                         end
                     end
+
+                    scratch_hit = scratch_read_hit | scratch_write_hit;
 
                     // shifted in case of ~VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE], otherwise offset is 0
                     scratch_wdata = state_req_red.wdata_buf_q << VMEM_W'(scratch_data_offset << 3);
@@ -689,14 +700,14 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             VSEW_8, VSEW_16, VSEW_32: begin
                                 for (int j = 0; j < VMEM_W / 8 ; j++) begin
                                     if(scratch_wmask[j]) begin
-                                        scratch_memory_d[selected_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
-                                        scratch_memory_d[selected_index].wmask[j] = 1;
+                                        scratch_memory_d[selected_write_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
+                                        scratch_memory_d[selected_write_index].wmask[j] = 1;
                                     end
                                 end
                             end
                             default: begin
-                                scratch_memory_d[selected_index].data = scratch_wdata;
-                                scratch_memory_d[selected_index].wmask = scratch_wmask;
+                                scratch_memory_d[selected_write_index].data = scratch_wdata;
+                                scratch_memory_d[selected_write_index].wmask = scratch_wmask;
                             end
                         endcase
                         
