@@ -1264,6 +1264,9 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .MEM_PORTS           ( MEM_PORTS           ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),

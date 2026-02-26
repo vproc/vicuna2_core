@@ -197,6 +197,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     logic [$bits(obi_bus[0].rvalid)-1:0]    obi_bus_rvalid [MEM_PORTS-1:0];
     logic [$bits(obi_bus[0].rdata)-1:0]     obi_bus_rdata [MEM_PORTS-1:0];
     logic [$bits(obi_bus[0].err)-1:0]       obi_bus_err [MEM_PORTS-1:0];
+    logic [$bits(obi_bus[0].aid)-1:0]       obi_bus_aid [MEM_PORTS-1:0];
     generate
         for(genvar i = 0; i < MEM_PORTS; i++) begin
             assign obi_bus[i].req    = obi_bus_req[i];
@@ -208,6 +209,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             assign obi_bus_rvalid[i] = obi_bus[i].rvalid;
             assign obi_bus_rdata[i]  = obi_bus[i].rdata;
             assign obi_bus_err[i]    = obi_bus[i].err;
+            assign obi_bus[i].aid    = obi_bus_aid[i];
         end
     endgenerate
 
@@ -302,6 +304,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             obi_bus_we[i]    = mem_req_queue_data_out.store;
             obi_bus_be[i]    = mem_req_queue_data_out.wmask;
             obi_bus_wdata[i] = mem_req_queue_data_out.wdata;
+            obi_bus_aid[i]   = i; // TODO: USE_XIF_MEM needs id from state_red_req
 
             if(obi_bus_gnt[i] & port_queue_ready_in[i]) begin
                 port_state_d.portq_elem_cnt[i] = port_state_q.portq_elem_cnt[i];
@@ -710,38 +713,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                 scratch_memory_d[selected_write_index].wmask = scratch_wmask;
                             end
                         endcase
-                        
-                        // unique case (scratch_state_q.current_eew)
-                        //     VSEW_8: begin
-                        //         for (int j = 0; j < VMEM_W / 8 ; j++) begin
-                        //             if(scratch_wmask[j]) begin
-                        //                 scratch_memory_d[selected_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
-                        //                 scratch_memory_d[selected_index].wmask[j] = 1;
-                        //             end
-                        //         end
-                        //     end
-                        //     VSEW_16: begin
-                        //         for (int j = 0; j < VMEM_W / 16 ; j++) begin
-                        //             if(scratch_wmask[j]) begin
-                        //                 scratch_memory_d[selected_index].data[16*j +: 16] = scratch_wdata[16*j +: 16];
-                        //                 scratch_memory_d[selected_index].wmask[2*j +: 2] = '1;
-                        //             end
-                        //         end
-                        //     end
-                        //     VSEW_32: begin
-                        //         for (int j = 0; j < VMEM_W / 32 ; j++) begin
-                        //             if(scratch_wmask[j]) begin
-                        //                 scratch_memory_d[selected_index].data[32*j +: 32] = scratch_wdata[32*j +: 32];
-                        //                 scratch_memory_d[selected_index].wmask[4*j +: 4] = '1;
-                        //             end
-                        //         end
-                        //     end
-                        //     default: begin
-                        //         scratch_memory_d[selected_index].data = scratch_wdata;
-                        //         scratch_memory_d[selected_index].wmask = scratch_wmask;
-                        //     end
-                        // endcase
-
                     end
                 end else if (input_queue_ready_in & input_queue_valid_out & state_req_red.suppressed) begin  
                     // nothing to do  
@@ -839,7 +810,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         if(mem_req_queue_valid_in) begin
             scratch_state_d.write_index = scratch_state_q.write_index + 1;
             scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt + 1;
-            scratch_state_d.current_input_port = {scratch_state_q.current_input_port[MEM_PORTS-2:1], scratch_state_q.current_input_port[MEM_PORTS-1]};
+            scratch_state_d.current_input_port = {scratch_state_q.current_input_port[MEM_PORTS-2:0], scratch_state_q.current_input_port[MEM_PORTS-1]};
         end
 
         if(mem_req_switch) begin
@@ -865,7 +836,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             if(port_queue_ready_in[i]) begin
                 mem_any_err_d |= port_queue_mem_err_out[i];
                 scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt - 1;
-                scratch_state_d.current_output_port = {scratch_state_q.current_output_port[MEM_PORTS-2:1], scratch_state_q.current_output_port[MEM_PORTS-1]};
+                scratch_state_d.current_output_port = {scratch_state_q.current_output_port[MEM_PORTS-2:0], scratch_state_q.current_output_port[MEM_PORTS-1]};
             end
         end
 
