@@ -28,7 +28,7 @@ ifeq ($(VPROC_CONFIG), compact)
   VPORT_POLICY    ?= some
   VMEM_W          ?= 32
   VREG_W          ?= $(VREG_W)
-  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VALU,VMUL,VSLD,VELEM
+  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VALU,VMUL,VSLD,VELEM,VZVBB,VZVBC
 else
 ifeq ($(VPROC_CONFIG), dual)
   VPORT_POLICY    ?= some
@@ -116,7 +116,7 @@ $(VPROC_CONFIG_PKG):
 	    width=`echo $$pipe | cut -d ":" -f 1`;                                                    \
 	    unit_str=`echo $$pipe | cut -d ":" -f 2 | sed 's/,/, /g'`;                                \
 	    unit_mask=`echo $$pipe | cut -d ":" -f 2 | sed 's/,/ | /g' |                              \
-	               sed "s/V\(LSU\|ALU\|MUL\|SLD\|ELEM\|DIV\|FPU\)/(UNIT_CNT'(1) << UNIT_\1)/g"`;  \
+	               sed "s/V\(LSU\|ALU\|MUL\|SLD\|ELEM\|DIV\|FPU\|ZVBB\|ZVBC\)/(UNIT_CNT'(1) << UNIT_\1)/g"`;  \
 	    vport_cnt=1;                                                                              \
 	    if echo "$$pipe" | grep -q "VMUL" && [ $$(($$width * 4)) -gt "$(VREG_W)" ]; then          \
 	        vport_cnt=2;                                                                          \

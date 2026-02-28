@@ -24,7 +24,7 @@ message(STATUS "CMake Version ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CM
 
 
 
-#Currently Supported: rv32im_zve32x, rv32imf_zve32f, rv32imf_zfh_zve32f_zvfh
+#Currently Supported: rv32im_zve32x, rv32imf_zve32f, rv32imf_zfh_zve32f_zvfh, rv32im_zve32x_zvbb, rv32im_zve32x_zvbc, rv32im_zve32x_zvbb_zvbc
 #Defaults are overwritten with user configurations defined on command line
 set(RISCV_ARCH rv32im_zve32x CACHE STRING "Specify the configuration")
 set(VREG_W 128 CACHE STRING "VREG_W")
@@ -39,19 +39,49 @@ if(${RISCV_ARCH} STREQUAL "rv32im_zve32x")
     set(RISCV_ZVE32X "-DRISCV_ZVE32X" )
     set(RISCV_ZVE32F "" )
     set(RISCV_ZVFH "" )
+    set(RISCV_ZVBB "" )
+    set(RISCV_ZVBC "" )
     set(VPROC_CONFIG dual-zve32x)
     
 elseif(${RISCV_ARCH} STREQUAL "rv32imf_zve32f")
     set(RISCV_ZVE32X "-DRISCV_ZVE32X" )
     set(RISCV_ZVE32F "-DRISCV_ZVE32F" )
     set(RISCV_ZVFH "" )
+    set(RISCV_ZVBB "" )
+    set(RISCV_ZVBC "" )
     set(VPROC_CONFIG dual-zve32f)
     
 elseif(${RISCV_ARCH} STREQUAL "rv32imf_zfh_zve32f_zvfh") #Build CV32E40X with Vicuna (+floating point + half precision float) and FPU on the Xif interface
     set(RISCV_ZVE32X "-DRISCV_ZVE32X" )
     set(RISCV_ZVE32F "-DRISCV_ZVE32F" )
     set(RISCV_ZVFH "-DRISCV_ZVFH" )
+    set(RISCV_ZVBB "" )
+    set(RISCV_ZVBC "" )
     set(VPROC_CONFIG dual-zve32f) #pipeline configuration same as Zve32f.  VICUNA_FLAGS provides configuration for half float support
+
+elseif(${RISCV_ARCH} STREQUAL "rv32im_zve32x_zvbb") # Zvbb Crypto extension included
+    set(RISCV_ZVE32X "-DRISCV_ZVE32X" )
+    set(RISCV_ZVE32F "" )
+    set(RISCV_ZVFH "" )
+    set(RISCV_ZVBB "-DRISCV_ZVBB" )
+    set(RISCV_ZVBC "" )
+    set(VPROC_CONFIG dual-zve32x)
+
+elseif(${RISCV_ARCH} STREQUAL "rv32im_zve32x_zvbc") # Zvbc Crypto extension included
+    set(RISCV_ZVE32X "-DRISCV_ZVE32X" )
+    set(RISCV_ZVE32F "" )
+    set(RISCV_ZVFH "" )
+    set(RISCV_ZVBB "" )
+    set(RISCV_ZVBC "-DRISCV_ZVBC" )
+    set(VPROC_CONFIG dual-zve32x)
+
+elseif(${RISCV_ARCH} STREQUAL "rv32im_zve32x_zvbb_zvbc") # Zvbb and Zvbc Crypto extension included
+    set(RISCV_ZVE32X "-DRISCV_ZVE32X" )
+    set(RISCV_ZVE32F "" )
+    set(RISCV_ZVFH "" )
+    set(RISCV_ZVBB "-DRISCV_ZVBB" )
+    set(RISCV_ZVBC "-DRISCV_ZVBC" )
+    set(VPROC_CONFIG dual-zve32x)
 
 else()
     #message(FATAL_ERROR "Unsupported RISCV_ARCH selected for Vicuna Co-processor") #TODO: Scalar Selections don't need to cause a fatal error
@@ -92,6 +122,8 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_lsu.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul_block.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_zvbb.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_zvbc.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pending_wr.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline_wrapper.sv

@@ -52,7 +52,7 @@ module vproc_vregunpack
         input  logic                                  pipe_in_valid_i,
         output logic                                  pipe_in_ready_o,
         input  logic               [CTRL_DATA_W-1:0]  pipe_in_ctrl_i,       // pipeline control sigs
-        input  op_unit                                pipe_in_unit_i,
+        input  vproc_pkg::op_unit                     pipe_in_unit_i,
         input  vproc_pkg::cfg_vsew                    pipe_in_alt_eew_i,
         input  vproc_pkg::cfg_vsew                    pipe_in_eew_i,        // current element width
         input  logic   [OP_CNT-1:0]                   pipe_in_op_load_i,    // load signals of ops
