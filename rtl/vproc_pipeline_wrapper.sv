@@ -519,7 +519,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             unit_elem: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.elem.masked;
             unit_zvbb: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbb.masked;
             unit_zvbc: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbc.masked;
-            unit_zvlc: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvlc.masked;
             default: ;
         endcase
 

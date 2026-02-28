@@ -8,7 +8,7 @@ module vproc_zvbb #(
         parameter bit                   BUF_OPERANDS     = 1'b1, // insert pipeline stage after operand extraction
         parameter bit                   BUF_INTERMEDIATE = 1'b1, // insert pipeline stage for for intermediate results
         parameter bit                   BUF_RESULTS      = 1'b1, // insert pipeline stage after computing result
-        parameter type                  CTRL_T           = ctrl_t,
+        parameter type                  CTRL_T           = logic,
         parameter bit                   DONT_CARE_ZERO   = 1'b0, // initialize don't care values to zero
         parameter bit                   ZKT_ACTIVE       = 1'b0  // flag to enforce data independent runtime
     )(
