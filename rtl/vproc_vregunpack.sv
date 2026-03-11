@@ -190,6 +190,8 @@ module vproc_vregunpack
     always_comb begin
         stage_valid_d = stage_valid_q;
         stage_state_d = stage_state_q;
+        field_buffer_d = field_buffer_q;
+        
         for (int i = 1; i < UNPACK_STAGES + 1; i++) begin
             if (stage_ready[i]) begin
                 `ifdef OLD_VICUNA
