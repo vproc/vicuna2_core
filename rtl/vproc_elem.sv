@@ -157,8 +157,10 @@ module vproc_elem #(
 
     logic        v0msk;
     logic [31:0] reduct_val;
+    logic mask_active;
     assign v0msk      = v0msk_q | ~pipe_in_ctrl_i.mode.elem.masked;
     assign reduct_val = pipe_in_ctrl_i.first_cycle ? elem2 : result_q;
+    assign mask_active = mask_q & v0msk;
     always_comb begin
         counter_inc    = DONT_CARE_ZERO ? '0 : 'x;
         result_d       = DONT_CARE_ZERO ? '0 : 'x;
@@ -196,8 +198,21 @@ module vproc_elem #(
             // vfirst finds the index of the first set bit in a mask vreg and
             // returns -1 if there is none; can be masked by v0
             ELEM_VFIRST: begin
-                counter_inc    = pipe_in_ctrl_i.first_cycle | (result_q[31] & ~mask_q);
-                result_d       = pipe_in_ctrl_i.first_cycle ? {32{~mask_q}} : (result_q[31] & ~mask_q) ? '1 : counter_q;
+                counter_inc    = ~pipe_in_ctrl_i.vl_part_0 & (pipe_in_ctrl_i.first_cycle | result_q[31]) & (~mask_q | ~v0msk);
+   
+                result_d = result_q;
+
+                if (pipe_in_ctrl_i.vl_0) begin
+                    result_d = '1;
+
+                end else if (pipe_in_ctrl_i.first_cycle) begin
+                    result_d = {32{~mask_active}};
+
+                end else if (~pipe_in_ctrl_i.vl_part_0 & result_q[31] & mask_active) begin
+                    result_d = counter_q;
+
+                end
+
                 result_mask_d  = ~pipe_in_ctrl_i.vl_part_0 & v0msk;
                 result_valid_d = 1'b1;
             end
