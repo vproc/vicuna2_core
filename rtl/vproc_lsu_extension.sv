@@ -39,6 +39,17 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         OBI_BUS.Manager              obi_bus [MEM_PORTS-1:0]
     );
 
+    function automatic logic [MEM_PORTS-1:0] rotate_left(input logic [MEM_PORTS-1:0] port_in);
+        // By using shift operators instead of indexed part-selects, 
+        // we bypass the negative index elaboration error completely.
+        // 
+        // For MEM_PORTS > 1: It shifts left by 1 and brings the MSB to the LSB.
+        // For MEM_PORTS = 1: (port_in << 1) becomes 0, and (port_in >> 0) remains port_in. 
+        //                    The bitwise OR safely returns the original 1-bit value.
+        
+        return (port_in << 1) | (port_in >> (MEM_PORTS - 1));
+    endfunction
+
     /////////////////////////////////scratch memory//////////////////////////////// 
     typedef logic [$clog2(SCRATCH_DEPTH)-1 : 0] elem_cnt_t;
     typedef logic [$clog2(VLSU_QUEUE_SZ) : 0] pending_req_cnt_t;
@@ -810,7 +821,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         if(mem_req_queue_valid_in) begin
             scratch_state_d.write_index = scratch_state_q.write_index + 1;
             scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt + 1;
-            scratch_state_d.current_input_port = {scratch_state_q.current_input_port[MEM_PORTS-2:0], scratch_state_q.current_input_port[MEM_PORTS-1]};
+            scratch_state_d.current_input_port = rotate_left(scratch_state_q.current_input_port);
         end
 
         if(mem_req_switch) begin
@@ -836,7 +847,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             if(port_queue_ready_in[i]) begin
                 mem_any_err_d |= port_queue_mem_err_out[i];
                 scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt - 1;
-                scratch_state_d.current_output_port = {scratch_state_q.current_output_port[MEM_PORTS-2:0], scratch_state_q.current_output_port[MEM_PORTS-1]};
+                scratch_state_d.current_output_port = rotate_left(scratch_state_q.current_output_port);
             end
         end
 
