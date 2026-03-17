@@ -27,9 +27,26 @@ message(STATUS "CMake Version ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CM
 #Currently Supported: rv32im_zve32x, rv32imf_zve32f, rv32imf_zfh_zve32f_zvfh
 #Defaults are overwritten with user configurations defined on command line
 set(RISCV_ARCH rv32im_zve32x CACHE STRING "Specify the configuration")
-set(VREG_W 128 CACHE STRING "VREG_W")
-set(VMEM_W 32 CACHE STRING "VMEM_W")
-set(VLANE_W 32 CACHE STRING "VLANE_W")
+# --- VREG_W ---
+if(DEFINED ENV{VREG_W})
+    set(VREG_W "$ENV{VREG_W}" CACHE STRING "VREG_W")
+else()
+    set(VREG_W "128" CACHE STRING "VREG_W")
+endif()
+
+# --- VMEM_W ---
+if(DEFINED ENV{VMEM_W})
+    set(VMEM_W "$ENV{VMEM_W}" CACHE STRING "VMEM_W")
+else()
+    set(VMEM_W "32" CACHE STRING "VMEM_W")
+endif()
+
+# --- VLANE_W ---
+if(DEFINED ENV{VLANE_W})
+    set(VLANE_W "$ENV{VLANE_W}" CACHE STRING "VLANE_W")
+else()
+    set(VLANE_W "32" CACHE STRING "VLANE_W")
+endif()
 
 ##############
 # Configuration Selection
@@ -183,8 +200,6 @@ set(ENV{VLANE_W} ${VLANE_W})
 execute_process(COMMAND rm -f vproc_config.sv
                 COMMAND make -f config.mk VPROC_CONFIG_PKG=vproc_config.sv
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-
-
 
 
 ##############
