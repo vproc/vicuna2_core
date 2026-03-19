@@ -931,7 +931,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         unpack_ctrl.init_addr       = state_q.init_addr;
         unpack_ctrl.requires_flush  = state_q.requires_flush;
         unpack_ctrl.alt_count_valid = DONT_CARE_ZERO ? '0 : 'x;
-        if (state_q.unit != UNIT_LSU) begin
+        if (state_q.unit != UNIT_LSU) begin // TODO check if if-statement is necessary
             unique case (state_q.emul)
                 EMUL_1: unpack_ctrl.alt_count_valid =   state_q.alt_count.val[COUNTER_W-1 -: 4]             == '0;
                 EMUL_2: unpack_ctrl.alt_count_valid = ((state_q.alt_count.val[COUNTER_W-1 -: 4]) & 4'b1110) == '0;
@@ -1227,7 +1227,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .instr_done_valid_o          ( instr_done_valid_o      ),
         .instr_done_id_o             ( instr_done_id_o         )
     );
-
+    
 
 `ifdef VPROC_SVA
 `include "vproc_pipeline_sva.svh"

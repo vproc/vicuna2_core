@@ -261,7 +261,7 @@ module vproc_vregpack #(
                     endcase
                 end
                 always_comb begin
-                    msk_buffer_next[i] = '0;
+                    msk_buffer_next[i] = pipe_in_res_flags_i[i].first_cycle ? DONT_CARE_ZERO ? '0 : 'x : msk_buffer[i];
 
                     unique case (pipe_in_eew_i)
                         VSEW_8:  begin
@@ -279,7 +279,7 @@ module vproc_vregpack #(
                         msk_idx_next[i] = DONT_CARE_ZERO ? '0 : 'x;
                     end
 
-                    msk_buffer_next[i] = (VPORT_W/8)'({(MSK_MUL[i]){1'b1}}) << (msk_idx[i] >> 3);
+                    msk_buffer_next[i] |= (VPORT_W/8)'({(MSK_MUL[i]){1'b1}}) << (msk_idx[i] >> 3);
                 end
                 assign res_saturated[i] = '0;
 
