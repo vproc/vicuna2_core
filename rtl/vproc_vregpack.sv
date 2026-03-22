@@ -221,60 +221,49 @@ module vproc_vregpack #(
                 // the higher parts are filled with 1s, depending on the MUL index, since in that
                 // case these parts cannot be written individually.
                 always_comb begin
-                    res_buffer_next[i] = DONT_CARE_ZERO ? '0 : 'x;
+                    res_buffer_next[i] = pipe_in_res_flags_i[i].first_cycle ? DONT_CARE_ZERO ? '0 : 'x : res_buffer[i];
                     unique case (pipe_in_eew_i)
                         VSEW_8: begin
-                            res_buffer_next[i][0              +: VPORT_W/8 ] = {
+                            res_buffer_next[i][(VPORT_W/8)*pipe_in_res_flags_i[i].mul_idx +: VPORT_W/8] = {
                                 res_elem,
-                                res_buffer[i][ VPORT_W/8        -1 -: VPORT_W/8 -RES_W[i]  ]
+                                res_buffer[i][(VPORT_W/8)*(pipe_in_res_flags_i[i].mul_idx+1)-1 -: VPORT_W/8-RES_W[i]]
                             };
-                            //  unique case (pipe_in_res_flags_i[i].vreg_idx)
-                            //      0: begin
-                            //          res_buffer_next[i] = res_elem;
-                            //      end
-                            //      default: begin
-                            //          res_buffer_next[i] = res_buffer[i] | (res_elem << ((pipe_in_res_flags_i[i].vreg_idx) * VPORT_W/16));
-                            //      end
-                            //  endcase
                         end
-                        VSEW_16: for (int j = 0; j < 2; j++) begin
-                            res_buffer_next[i][(VPORT_W/16)*j +: VPORT_W/16] = {
+                        VSEW_16: begin
+                            res_buffer_next[i][(VPORT_W/16)*pipe_in_res_flags_i[i].mul_idx +: VPORT_W/16] = {
                                 res_elem[RES_W[i]/2-1:0],
-                                res_buffer[i][(VPORT_W/16)*(j+1)-1 -: VPORT_W/16-RES_W[i]/2]
+                                res_buffer[i][(VPORT_W/32)*(pipe_in_res_flags_i[i].mul_idx+1)-1 -: VPORT_W/16-RES_W[i]/2]
                             };
-                            if ((VPORT_W < 128) & j[0] & ~pipe_in_res_flags_i[i].mul_idx[0]) begin
-                                res_buffer_next[i][(VPORT_W/16)*j +: VPORT_W/16] = '1;
-                            end
                         end
-                        VSEW_32: for (int j = 0; j < 4; j++) begin
-                            res_buffer_next[i][(VPORT_W/32)*j +: VPORT_W/32] = {
+                        VSEW_32: begin
+                            res_buffer_next[i][(VPORT_W/32)*pipe_in_res_flags_i[i].mul_idx +: VPORT_W/32] = {
                                 res_elem[RES_W[i]/4-1:0],
-                                res_buffer[i][(VPORT_W/32)*(j+1)-1 -: VPORT_W/32-RES_W[i]/4]
+                                res_buffer[i][(VPORT_W/32)*(pipe_in_res_flags_i[i].mul_idx+1)-1 -: VPORT_W/32-RES_W[i]/4]
                             };
-                            if ((VPORT_W < 256) & j[0] & ~pipe_in_res_flags_i[i].mul_idx[0]) begin
-                                res_buffer_next[i][(VPORT_W/32)*j +: VPORT_W/32] = '1;
-                            end
-                            if ((VPORT_W < 128) & j[1] & ~pipe_in_res_flags_i[i].mul_idx[1]) begin
-                                res_buffer_next[i][(VPORT_W/32)*j +: VPORT_W/32] = '1;
-                            end
                         end
                         default: ;
                     endcase
                 end
                 always_comb begin
-                    msk_buffer_next[i] = '0;
+                    msk_buffer_next[i] = pipe_in_res_flags_i[i].first_cycle ? DONT_CARE_ZERO ? '0 : 'x : msk_buffer[i];
+
                     unique case (pipe_in_eew_i)
-                        VSEW_8:  for (int j = 0; j < (VPORT_W + 32 ) / 64 ; j++) begin
-                            msk_buffer_next[i][pipe_in_res_flags_i[i].mul_idx*(VPORT_W/64 )+j] = '1;
+                        VSEW_8:  begin
+                            msk_idx_next[i] = msk_idx[i] + RES_W[i];
                         end
-                        VSEW_16: for (int j = 0; j < (VPORT_W + 64 ) / 128; j++) begin
-                            msk_buffer_next[i][pipe_in_res_flags_i[i].mul_idx*(VPORT_W/128)+j] = '1;
+                        VSEW_16: begin
+                            msk_idx_next[i] = msk_idx[i] + RES_W[i]/2;
                         end
-                        VSEW_32: for (int j = 0; j < (VPORT_W + 128) / 256; j++) begin
-                            msk_buffer_next[i][pipe_in_res_flags_i[i].mul_idx*(VPORT_W/256)+j] = '1;
+                        VSEW_32: begin
+                            msk_idx_next[i] = msk_idx[i] + RES_W[i]/4;
                         end
                         default: ;
                     endcase
+                    if(pipe_in_res_flags_i[i].first_cycle) begin 
+                        msk_idx_next[i] = DONT_CARE_ZERO ? '0 : 'x;
+                    end
+
+                    msk_buffer_next[i] |= (VPORT_W/8)'({(MSK_MUL[i]){1'b1}}) << (msk_idx[i] >> 3);
                 end
                 assign res_saturated[i] = '0;
 
