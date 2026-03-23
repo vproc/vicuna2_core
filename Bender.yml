@@ -1,0 +1,46 @@
+package:
+  name: vicuna2
+  authors: ["Beat Muheim", "OpenHW Group"]
+
+# Define dependencies to be fetched by Bender
+dependencies:
+  common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.39.0 }
+  fpnew:        { git: "https://github.com/pulp-platform/cvfpu.git", rev: pulp-v0.2.3 }
+  obi:          { git: "https://github.com/pulp-platform/obi.git", version: 0.1.7 }
+
+export_include_dirs:
+  - rtl
+  - sva
+  # common_cells and cvfpu includes are handled by their own Bender files
+
+sources:
+  # Level 0: Packages and Configurations
+  - rtl/vproc_pkg.sv
+  - vproc_config.sv
+
+  # Level 1: Interfaces and Core Logic
+  - rtl/vproc_xif.sv
+  - rtl/vproc_core.sv
+  - rtl/vproc_vregpack.sv
+  - rtl/vproc_vregunpack.sv
+  - rtl/vproc_alu.sv
+  - rtl/vproc_decoder.sv
+  - rtl/vproc_dispatcher.sv
+  - rtl/vproc_div.sv
+  - rtl/vproc_div_shift_clz.sv
+  - rtl/vproc_elem.sv
+  - rtl/vproc_fpu.sv
+  - rtl/vproc_lsu.sv
+  - rtl/vproc_lsu_extension.sv
+  - rtl/vproc_mul.sv
+  - rtl/vproc_mul_block.sv
+  - rtl/vproc_pending_wr.sv
+  - rtl/vproc_pipeline.sv
+  - rtl/vproc_pipeline_wrapper.sv
+  - rtl/vproc_queue.sv
+  - rtl/vproc_result.sv
+  - rtl/vproc_sld.sv
+  - rtl/vproc_unit_mux.sv
+  - rtl/vproc_unit_wrapper.sv
+  - rtl/vproc_vregfile.sv
+  - rtl/vproc_vreg_wr_mux.sv
