@@ -72,17 +72,26 @@ module vproc_vregpack #(
     // vector register addresses)
     localparam int unsigned PEND_CLEAR_CNT_W = $clog2(VADDR_W-1);
 
-    typedef int unsigned msk_mul_array_t [RES_CNT-1:0];
+    typedef int unsigned msk_byte_array_t [7:0];
 
-    function automatic msk_mul_array_t calc_msk_mul();
-        msk_mul_array_t tmp;
-        for (int i = 0; i < RES_CNT; i++) begin
-            tmp[i] = (RES_W[i] < 8) ? 1 : (RES_W[i] / 8);
+    function automatic msk_byte_array_t calc_msk_byte(input int VSEW);
+        msk_byte_array_t tmp;
+        
+        tmp = '{default: 0}; 
+        
+        for(int i = 0; i < 8; i++) begin
+            int unsigned val;
+            val = (((VPORT_W / VSEW)) * (i + 1)) / 8;
+            tmp[i] = (val > 0) ? val : 1; 
         end
         return tmp;
     endfunction
 
-    localparam int unsigned MSK_MUL[RES_CNT-1:0] = calc_msk_mul();
+    localparam msk_byte_array_t MSK_BYTE_8  = calc_msk_byte(8);
+    localparam msk_byte_array_t MSK_BYTE_16 = calc_msk_byte(16);
+    localparam msk_byte_array_t MSK_BYTE_32 = calc_msk_byte(32);
+
+    
 
     typedef struct packed {
         logic   [INSTR_ID_W            -1:0] instr_id;
@@ -95,7 +104,6 @@ module vproc_vregpack #(
         logic                                pend_clr;
         logic   [PEND_CLEAR_CNT_W      -1:0] pend_clr_cnt;
         logic                                instr_done;
-        logic   [RES_CNT-1:0][$clog2(VPORT_W)-1:0] msk_idx;
     } vregpack_state_t;
 
     logic            stage_valid_q, stage_valid_d;
@@ -119,10 +127,8 @@ module vproc_vregpack #(
 
     logic [RES_CNT-1:0][VPORT_W  -1:0] res_buffer, res_buffer_next;
     logic [RES_CNT-1:0][VPORT_W/8-1:0] msk_buffer, msk_buffer_next;
-    logic [RES_CNT-1:0][$clog2(VPORT_W)-1:0] msk_idx, msk_idx_next;
     assign res_buffer = stage_state_q.res_buffer;
     assign msk_buffer = stage_state_q.msk_buffer;
-    assign msk_idx = stage_state_q.msk_idx;
     always_comb begin
         stage_valid_d = stage_valid_q;
         stage_state_d = stage_state_q;
@@ -140,7 +146,6 @@ module vproc_vregpack #(
                 if (pipe_in_res_valid_i[i]) begin
                     stage_state_d.res_buffer[i] = res_buffer_next[i];
                     stage_state_d.msk_buffer[i] = msk_buffer_next[i];
-                    stage_state_d.msk_idx[i] = msk_idx_next[i];
                 end
             end
         end
@@ -264,22 +269,18 @@ module vproc_vregpack #(
                     msk_buffer_next[i] = pipe_in_res_flags_i[i].first_cycle ? DONT_CARE_ZERO ? '0 : 'x : msk_buffer[i];
 
                     unique case (pipe_in_eew_i)
-                        VSEW_8:  begin
-                            msk_idx_next[i] = msk_idx[i] + RES_W[i];
+                        VSEW_8: begin
+                            msk_buffer_next[i] = (((VPORT_W/8)'(1)) << MSK_BYTE_8[pipe_in_res_flags_i[i].mul_idx]) - 1;
                         end
                         VSEW_16: begin
-                            msk_idx_next[i] = msk_idx[i] + RES_W[i]/2;
+                            msk_buffer_next[i] = (((VPORT_W/8)'(1)) << MSK_BYTE_16[pipe_in_res_flags_i[i].mul_idx]) - 1;
                         end
                         VSEW_32: begin
-                            msk_idx_next[i] = msk_idx[i] + RES_W[i]/4;
+                            msk_buffer_next[i] = (((VPORT_W/8)'(1)) << MSK_BYTE_32[pipe_in_res_flags_i[i].mul_idx]) - 1;
                         end
                         default: ;
                     endcase
-                    if(pipe_in_res_flags_i[i].first_cycle) begin 
-                        msk_idx_next[i] = DONT_CARE_ZERO ? '0 : 'x;
-                    end
-
-                    msk_buffer_next[i] |= (VPORT_W/8)'({(MSK_MUL[i]){1'b1}}) << (msk_idx[i] >> 3);
+                    
                 end
                 assign res_saturated[i] = '0;
 
