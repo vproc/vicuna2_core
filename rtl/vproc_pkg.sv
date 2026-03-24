@@ -374,6 +374,7 @@ typedef enum logic [3:0] {
 typedef struct packed {
     logic masked;
     opcode_zvbb op; 
+    logic [12:0] unused;
 } op_mode_zvbb;
 
 // ZVBC Structs
@@ -386,6 +387,7 @@ typedef enum logic {
 typedef struct packed {
     logic masked;
     opcode_zvbc op; 
+    logic [15:0] unused;
 } op_mode_zvbc;
 
 `ifdef VPROC_OP_MODE_UNION

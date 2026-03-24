@@ -28,7 +28,7 @@ ifeq ($(VPROC_CONFIG), compact)
   VPORT_POLICY    ?= some
   VMEM_W          ?= 32
   VREG_W          ?= $(VREG_W)
-  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VALU,VMUL,VSLD,VELEM,VZVBB,VZVBC
+  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VALU,VMUL,VSLD,VELEM
 else
 ifeq ($(VPROC_CONFIG), dual)
   VPORT_POLICY    ?= some
