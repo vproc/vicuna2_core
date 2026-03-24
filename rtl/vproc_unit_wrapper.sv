@@ -188,6 +188,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
 
                 pipe_out_res_flags_o[1].mul_idx         = unit_out_ctrl.count_mul;
                 pipe_out_res_flags_o[1].vreg_idx        = unit_out_ctrl.vreg_idx;
+                pipe_out_res_flags_o[1].first_cycle     = unit_out_ctrl.first_cycle;
                 pipe_out_res_store_o[1]                 = unit_out_ctrl.res_store & unit_out_ctrl.mode.alu.cmp;
                 pipe_out_res_valid_o[1]                 = pipe_out_valid_o;
                 pipe_out_res_data_o [1][MAX_OP_W/8-1:0] = unit_out_res_cmp;
@@ -742,5 +743,94 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 end
             end
         end
+        else if (UNIT == UNIT_ZVBB) begin
+            CTRL_T                 unit_out_ctrl;
+            logic [MAX_OP_W  -1:0] unit_out_res;
+            logic [MAX_OP_W/8-1:0] unit_out_mask;
+            vproc_zvbb #(
+                .ZVBB_OP_W        ( MAX_OP_W                                    ),
+                .CTRL_T           ( CTRL_T                                      ),
+                .DONT_CARE_ZERO   ( DONT_CARE_ZERO                              )
+            ) zvbb (
+                .clk_i            ( clk_i                                       ),
+                .async_rst_ni     ( async_rst_ni                                ),
+                .sync_rst_ni      ( sync_rst_ni                                 ),
+                .pipe_in_valid_i  ( pipe_in_valid_i                             ),
+                .pipe_in_ready_o  ( pipe_in_ready_o                             ),
+                .pipe_in_ctrl_i   ( pipe_in_ctrl_i                              ),
+                .pipe_in_op1_i    ( pipe_in_op_data_i[1]                        ),
+                .pipe_in_op2_i    ( pipe_in_op_data_i[0]                        ),
+                .pipe_in_mask_i   ( pipe_in_op_data_i[OP_CNT-1][MAX_OP_W/8-1:0] ),
+                .pipe_out_valid_o ( pipe_out_valid_o                            ),
+                .pipe_out_ready_i ( pipe_out_ready_i                            ),
+                .pipe_out_ctrl_o  ( unit_out_ctrl                               ),
+                .pipe_out_res_o   ( unit_out_res                                ),
+                .pipe_out_mask_o  ( unit_out_mask                               )
+            );
+            always_comb begin
+                pipe_out_instr_id_o = unit_out_ctrl.id;
+                pipe_out_eew_o      = unit_out_ctrl.eew;
+                pipe_out_vaddr_o    = unit_out_ctrl.res_vaddr;
+                pipe_out_res_store_o = '0;
+                pipe_out_res_valid_o = '0;
+                pipe_out_res_flags_o = '{default: pack_flags'('0)};
+                pipe_out_res_data_o  = '0;
+                pipe_out_res_mask_o  = '0;
+                pipe_out_res_flags_o[0].shift           = 1'b1;
+                pipe_out_res_store_o[0]                 = unit_out_ctrl.res_store;
+                pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
+                pipe_out_res_data_o [0]                 = unit_out_res;
+                pipe_out_res_mask_o [0][MAX_OP_W/8-1:0] = unit_out_mask;
+                pipe_out_res_flags_o[0].vreg_idx        = unit_out_ctrl.vreg_idx;
+            end
+            assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
+            assign pipe_out_pend_clear_cnt_o = '0;
+            assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
+        end
+        else if (UNIT == UNIT_ZVBC) begin
+            CTRL_T                 unit_out_ctrl;
+            logic [MAX_OP_W  -1:0] unit_out_res;
+            logic [MAX_OP_W/8-1:0] unit_out_mask;
+            vproc_zvbc #(
+                .ZVBC_OP_W        ( MAX_OP_W                                    ),
+                .CTRL_T           ( CTRL_T                                      ),
+                .DONT_CARE_ZERO   ( DONT_CARE_ZERO                              )
+            ) zvbc (
+                .clk_i            ( clk_i                                       ),
+                .async_rst_ni     ( async_rst_ni                                ),
+                .sync_rst_ni      ( sync_rst_ni                                 ),
+                .pipe_in_valid_i  ( pipe_in_valid_i                             ),
+                .pipe_in_ready_o  ( pipe_in_ready_o                             ),
+                .pipe_in_ctrl_i   ( pipe_in_ctrl_i                              ),
+                .pipe_in_op1_i    ( pipe_in_op_data_i[1]                        ),
+                .pipe_in_op2_i    ( pipe_in_op_data_i[0]                        ),
+                .pipe_in_mask_i   ( pipe_in_op_data_i[OP_CNT-1][MAX_OP_W/8-1:0] ),
+                .pipe_out_valid_o ( pipe_out_valid_o                            ),
+                .pipe_out_ready_i ( pipe_out_ready_i                            ),
+                .pipe_out_ctrl_o  ( unit_out_ctrl                               ),
+                .pipe_out_res_o   ( unit_out_res                                ),
+                .pipe_out_mask_o  ( unit_out_mask                               )
+            );
+            always_comb begin
+                pipe_out_instr_id_o = unit_out_ctrl.id;
+                pipe_out_eew_o      = unit_out_ctrl.eew;
+                pipe_out_vaddr_o    = unit_out_ctrl.res_vaddr;
+                pipe_out_res_store_o = '0;
+                pipe_out_res_valid_o = '0;
+                pipe_out_res_flags_o = '{default: pack_flags'('0)};
+                pipe_out_res_data_o  = '0;
+                pipe_out_res_mask_o  = '0;
+                pipe_out_res_flags_o[0].shift           = 1'b1;
+                pipe_out_res_store_o[0]                 = unit_out_ctrl.res_store;
+                pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
+                pipe_out_res_data_o [0]                 = unit_out_res;
+                pipe_out_res_mask_o [0][MAX_OP_W/8-1:0] = unit_out_mask;
+                pipe_out_res_flags_o[0].vreg_idx        = unit_out_ctrl.vreg_idx;
+            end
+            assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
+            assign pipe_out_pend_clear_cnt_o = '0;
+            assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
+        end
+        // TODO: Add new units here to pipeline
     endgenerate
 endmodule
