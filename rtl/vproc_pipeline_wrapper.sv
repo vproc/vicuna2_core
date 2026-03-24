@@ -224,7 +224,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
     } state_t;
 
     // identify the unit of the supplied instruction
-    logic unit_lsu, unit_alu, unit_mul, unit_sld, unit_elem, unit_div, unit_fpu;
+    logic unit_lsu, unit_alu, unit_mul, unit_sld, unit_elem, unit_div, unit_fpu, unit_zvbb, unit_zvbc;
     assign unit_lsu  = UNITS[UNIT_LSU ] & (pipe_in_data_i.unit == UNIT_LSU );
     assign unit_alu  = UNITS[UNIT_ALU ] & (pipe_in_data_i.unit == UNIT_ALU );
     assign unit_mul  = UNITS[UNIT_MUL ] & (pipe_in_data_i.unit == UNIT_MUL );
@@ -232,6 +232,8 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
     assign unit_elem = UNITS[UNIT_ELEM] & (pipe_in_data_i.unit == UNIT_ELEM);
     assign unit_div  = UNITS[UNIT_DIV]  & (pipe_in_data_i.unit == UNIT_DIV);
     assign unit_fpu  = UNITS[UNIT_FPU]  & (pipe_in_data_i.unit == UNIT_FPU);
+    assign unit_zvbb  = UNITS[UNIT_ZVBB]  & (pipe_in_data_i.unit == UNIT_ZVBB);
+    assign unit_zvbc  = UNITS[UNIT_ZVBC]  & (pipe_in_data_i.unit == UNIT_ZVBC);
 
     // identify the type of data that vs2 supplies for ELEM instructions
     logic elem_flush, elem_vs2_data, elem_vs2_mask, elem_vs2_dyn_addr;
@@ -515,6 +517,8 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             unit_fpu:  state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.div.masked;
             unit_sld:  state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.sld.masked;
             unit_elem: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.elem.masked;
+            unit_zvbb: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbb.masked;
+            unit_zvbc: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbc.masked;
             default: ;
         endcase
 

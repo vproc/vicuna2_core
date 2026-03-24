@@ -99,7 +99,7 @@ typedef enum logic [1:0] {
     VXRM_ROD = 2'b11    // round-to-odd
 } cfg_vxrm;
 
-typedef enum logic [2:0] {
+typedef enum logic [3:0] {
     UNIT_LSU,
     UNIT_ALU,
     UNIT_MUL,
@@ -107,12 +107,14 @@ typedef enum logic [2:0] {
     UNIT_FPU,
     UNIT_SLD,
     UNIT_ELEM,
+    UNIT_ZVBB,
+    UNIT_ZVBC,
     // pseudo-units (used for instructions that require no unit):
     UNIT_CFG
 } op_unit;
 
 // The number of different types of execution units (excludes pseudo-units)
-parameter int unsigned UNIT_CNT = 7;
+parameter int unsigned UNIT_CNT = 10;
 
 typedef enum logic [1:0] {
     COUNT_INC_1 = 2'b00,
@@ -354,6 +356,40 @@ typedef struct packed {
 `endif
 } op_mode_cfg;
 
+// ZVBB Structs
+
+typedef enum logic [3:0] { 
+    ZVBB_VANDN = 4'b0000,
+    ZVBB_VBREV = 4'b0001,
+    ZVBB_VBREV8 = 4'b0010,
+    ZVBB_VREV8 = 4'b0011,
+    ZVBB_VCLZ = 4'b0100,
+    ZVBB_VCTZ = 4'b0101,
+    ZVBB_VCPOP = 4'b0110,
+    ZVBB_VROL = 4'b0111,
+    ZVBB_VROR = 4'b1000,
+    ZVBB_VWSLL = 4'b1001
+} opcode_zvbb;
+
+typedef struct packed {
+    logic masked;
+    opcode_zvbb op; 
+    logic [12:0] unused;
+} op_mode_zvbb;
+
+// ZVBC Structs
+
+typedef enum logic { 
+    ZVBC_VCLMUL = 1'b0,
+    ZVBC_VCLMULH = 1'b1
+} opcode_zvbc;
+
+typedef struct packed {
+    logic masked;
+    opcode_zvbc op; 
+    logic [15:0] unused;
+} op_mode_zvbc;
+
 `ifdef VPROC_OP_MODE_UNION
 typedef union packed {
     logic [17:0]  unused;
@@ -368,6 +404,8 @@ typedef struct packed {
     op_mode_cfg  cfg;
     op_mode_div  div;
     op_mode_fpu  fpu;
+    op_mode_zvbb zvbb;
+    op_mode_zvbc zvbc;
 } op_mode;
 
 // source register type:

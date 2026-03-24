@@ -348,7 +348,24 @@ module vproc_decoder #(
                     3'b011: begin   // OPIVI
                         rs1_o.vreg    = 1'b0; // rs1 field contains immediate (sign extend for all except slide instructions)
                         rs1_o.xreg    = 1'b0;
-                        rs1_o.r.xval  = ((instr_i[31:26] == 6'b001110) | (instr_i[31:26] == 6'b001111)) ? {{27{1'b0}}, instr_vs1} : {{27{instr_vs1[4]}}, instr_vs1};
+                        unique case(instr_i[31:26])
+                            
+                            6'b001110, // Slide instructions
+                            6'b001111, // Slide instructions
+                            6'b110101 : begin // VWSLL
+                                rs1_o.r.xval = {{27{1'b0}}, instr_vs1};
+                            end
+                            // VROR immeadiate has an immediate of size 6
+                            6'b010100,
+                            6'b010101: begin
+                                rs1_o.r.xval = {{26{1'b0}}, instr_i[26], instr_vs1};
+                            end
+                            // All other instruction are sign extended
+                            default: begin
+                                rs1_o.r.xval = {{27{instr_vs1[4]}}, instr_vs1};
+                            end
+                        endcase
+                        //rs1_o.r.xval  = ((instr_i[31:26] == 6'b001110) | (instr_i[31:26] == 6'b001111)) ? {{27{1'b0}}, instr_vs1} : {{27{instr_vs1[4]}}, instr_vs1};
                         rs2_o.vreg    = 1'b1; // rs2 is a vector register
                         rs2_o.r.vaddr = instr_vs2;
                     end
@@ -737,31 +754,67 @@ module vproc_decoder #(
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
                         end
-                        {6'b010010, 3'b010}: begin  // v[z|s]ext.[vf2/vf4] VV
-                            unit_o              = UNIT_ALU;
-                            mode_o.alu.opx2.res = ALU_VSEL;
-                            mode_o.alu.opx1.sel = ALU_SEL_MASK;
-                            mode_o.alu.shift_op = 1'b0;
-                            mode_o.alu.inv_op1  = 1'b0;
-                            mode_o.alu.inv_op2  = 1'b0;
-                            mode_o.alu.sat_res  = 1'b0;
-                            mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
-                            mode_o.alu.cmp      = 1'b0;
-                            mode_o.alu.sigext   = instr_vs1[0];
-                            rs1_o.vreg          = 1'b0;
-                            unique case (instr_vs1[4:1])
-                                4'b0011 : begin
-                                    instr_illegal       = 1'b0;
-                                    widenarrow_o        = OP_WIDENING_EXT2;
+                        {6'b010010, 3'b010}: begin  // VXUNARY0
+                            rs1_o.vreg          = 1'b0; // No vector register
+                            unique case (instr_vs1[4:3])
+                                2'b00 : begin // v[z|s]ext.[vf2/vf4] VV
+                                    unit_o              = UNIT_ALU;
+                                    mode_o.alu.opx2.res = ALU_VSEL;
+                                    mode_o.alu.opx1.sel = ALU_SEL_MASK;
+                                    mode_o.alu.shift_op = 1'b0;
+                                    mode_o.alu.inv_op1  = 1'b0;
+                                    mode_o.alu.inv_op2  = 1'b0;
+                                    mode_o.alu.sat_res  = 1'b0;
+                                    mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
+                                    mode_o.alu.cmp      = 1'b0;
+                                    mode_o.alu.sigext   = instr_vs1[0];
+                                    unique case (instr_vs1[2:1])
+                                        2'b11 : begin
+                                            instr_illegal       = 1'b0;
+                                            widenarrow_o        = OP_WIDENING_EXT2;
+                                        end
+                                        2'b10 : begin
+                                            instr_illegal       = 1'b0;
+                                            widenarrow_o        = OP_WIDENING_EXT4;
+                                        end
+                                        default : begin
+                                            instr_illegal       = 1'b1;
+                                        end
+                                    endcase
+                                end 
+                                `ifdef RISCV_ZVBB
+                                2'b01 : begin
+                                    unit_o = UNIT_ZVBB;
+                                    mode_o.zvbb.masked = instr_masked;
+                                    unique case (instr_vs1[2:0])
+                                        3'b000 : begin // VBREV8
+                                            mode_o.zvbb.op = ZVBB_VBREV8;
+                                        end
+                                        3'b001 : begin // VREV8
+                                            mode_o.zvbb.op = ZVBB_VREV8;
+                                        end
+                                        3'b010 : begin // VBREV
+                                            mode_o.zvbb.op = ZVBB_VBREV;
+                                        end
+                                        3'b100 : begin // VCLZ
+                                            mode_o.zvbb.op = ZVBB_VCLZ;
+                                        end
+                                        3'b101 : begin // VCTZ
+                                            mode_o.zvbb.op = ZVBB_VCTZ;
+                                        end
+                                        3'b110 : begin // VCPOP
+                                            mode_o.zvbb.op = ZVBB_VCPOP;
+                                        end
+                                        default : begin
+                                            instr_illegal = 1'b1;
+                                        end
+                                    endcase
                                 end
-                                4'b0010 : begin
-                                    instr_illegal       = 1'b0;
-                                    widenarrow_o        = OP_WIDENING_EXT4;
-                                end
+                                `endif
                                 default : begin
-                                    instr_illegal       = 1'b1;
-                                end
-                           endcase
+                                    instr_illegal = 1'b1;
+                                end 
+                            endcase
                         end
                         {6'b011000, 3'b010}: begin  // vmandnot VV
                             emul_override       = 1'b1;
@@ -2228,6 +2281,56 @@ module vproc_decoder #(
                                 rs2_o.vreg         = ~instr_vs1[0]; // vid has no source reg
                             end
                         end
+
+                        `ifdef RISCV_ZVBB
+                        // ZVBB
+                        {6'b000001, 3'b000},
+                        {6'b000001, 3'b100} : begin // VANDN
+                            unit_o          = UNIT_ZVBB;
+                            mode_o.zvbb.op  = ZVBB_VANDN;
+                            mode_o.zvbb.masked = instr_masked;
+                        end
+                        // VBREV8, VREV8, VBREV, VCLZ, VCTL, VCPOP are VXUNARY0 and thus decoded above
+                        {6'b010101, 3'b000},
+                        {6'b010101, 3'b100} : begin // VROL
+                            unit_o          = UNIT_ZVBB;
+                            mode_o.zvbb.op  = ZVBB_VROL;
+                            mode_o.zvbb.masked = instr_masked;
+                        end
+                        {6'b010100, 3'b000},
+                        {6'b010100, 3'b100},
+                        {6'b010100, 3'b011},
+                        {6'b010101, 3'b011} : begin // VROR
+                            unit_o          = UNIT_ZVBB;
+                            mode_o.zvbb.op  = ZVBB_VROR;
+                            mode_o.zvbb.masked = instr_masked;
+                        end
+                        {6'b110101, 3'b000},
+                        {6'b110101, 3'b100},
+                        {6'b110101, 3'b011} : begin // VWSLL
+                            unit_o          = UNIT_ZVBB;
+                            mode_o.zvbb.op  = ZVBB_VWSLL;
+                            mode_o.zvbb.masked = instr_masked;
+                            widenarrow_o    = OP_WIDENING;
+                        end
+                        `endif
+
+                        `ifdef RISCV_ZVBC
+                        // ZVBC
+                        {6'b001100, 3'b010},
+                        {6'b001100, 3'b110} : begin // VCLMUL
+                            unit_o          = UNIT_ZVBC;
+                            mode_o.zvbc.op  = ZVBC_VCLMUL;
+                            mode_o.zvbc.masked = instr_masked;
+                        end
+                        {6'b001101, 3'b010},
+                        {6'b001101, 3'b110} : begin // VCLMULH
+                            unit_o          = UNIT_ZVBC;
+                            mode_o.zvbc.op  = ZVBC_VCLMULH;
+                            mode_o.zvbc.masked = instr_masked;
+                        end
+                        `endif
+                        // TODO: Add new instructions here
 
                         default: begin
                             instr_illegal = 1'b1;
