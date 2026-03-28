@@ -8,8 +8,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         parameter int unsigned        XIF_ID_CNT      = 8,    // total count of instruction IDs
         parameter int unsigned           VLSU_QUEUE_SZ = 4,
         parameter bit [VLSU_FLAGS_W-1:0] VLSU_FLAGS    = '0,
-        parameter int unsigned        PORT_QUEUE_DEPTH = 2,  // must be power of 2
-        parameter int unsigned        SCRATCH_DEPTH    = 2,  // must be power of 2
+        parameter int unsigned        PORT_QUEUE_DEPTH = 2,  // must be power of 2, greater equal 2
+        parameter int unsigned        SCRATCH_DEPTH    = 2,  // must be power of 2, greater equal 2
         parameter int unsigned        HIT_DEPTH        = 1,
         parameter bit                 DONT_CARE_ZERO  = 1'b0  // initialize don't care values to zero
     )
