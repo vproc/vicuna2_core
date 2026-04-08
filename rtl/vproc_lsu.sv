@@ -128,7 +128,7 @@ module vproc_lsu import vproc_pkg::*; #(
                     mem_exc_q   <= mem_exc_d;
                 end
             end
-            assign state_req_ready = ~state_req_valid_q | (xif_mem_if.mem_valid & xif_mem_if.mem_ready) | (~state_req_stall & ~xif_mem_if.mem_valid);
+            assign state_req_ready = (~state_req_valid_q & vcore_xif.mem_ready) | (xif_mem_if.mem_valid & xif_mem_if.mem_ready) | (~state_req_stall & ~xif_mem_if.mem_valid & vcore_xif.mem_ready);
         end else begin
             always_comb begin
                 state_req_valid_q = state_req_valid_d;
