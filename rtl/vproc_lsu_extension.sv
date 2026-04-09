@@ -99,8 +99,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     typedef struct packed {
         scratch_fsm_state_t fsm_state;
-        scratch_fsm_state_t pending_store_state_cb;
-        scratch_fsm_state_t pending_load_state_cb;
         elem_cnt_t write_index;
         elem_cnt_t store_end_index;
         logic [MEM_PORTS-1:0] current_input_port;
@@ -172,7 +170,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     elem_cnt_t [MEM_PORTS-1:0] port_queue_write_index_out;
 
     typedef struct packed {
-        logic [MEM_PORTS-1 : 0] req_break;
         portq_elem_cnt_t [MEM_PORTS-1:0] portq_elem_cnt;
     } port_state_t;
 
@@ -304,15 +301,13 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         port_state_d = port_state_q;
         input_port_any_gnt = 0;
 
-        port_state_d.req_break = '0;
         if(scratch_state_q.fsm_state == IDLE) begin
             port_state_d.portq_elem_cnt = '0;
         end
 
         for(int i = 0; i < MEM_PORTS; i++) begin
             obi_bus_req[i]   = mem_req_queue_valid_out & (~mem_exc_q | mem_req_queue_data_out.first_cycle) & 
-                              ~port_state_q.req_break[i] & mem_req_queue_data_out.selected_input_port[i]   &
-                              port_queue_ready_out[i];
+                               mem_req_queue_data_out.selected_input_port[i] & port_queue_ready_out[i];
             obi_bus_addr[i]  = VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE] ? {mem_req_queue_data_out.addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}} : mem_req_queue_data_out.addr;
             obi_bus_we[i]    = mem_req_queue_data_out.store;
             obi_bus_be[i]    = mem_req_queue_data_out.wmask;
@@ -328,7 +323,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             end
 
             input_port_any_gnt |= obi_bus_gnt[i];
-            port_state_d.req_break[i] = obi_bus_gnt[i];
         end
     end
 
@@ -742,23 +736,32 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 end
 
                 if (output_queue_valid_out & scratch_queue_pending_out) begin
+                    logic [VMEM_W-1:0] temp_scratch_memory_mux = '0;
                     if(scratch_memory_state_q[scratch_queue_pending_index_out] == VALID) begin
-                        scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt = scratch_memory_q[scratch_queue_pending_index_out].pending_req_cnt - 1;
+                        scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt = scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt - 1; // read from d since it could have been incremented before
                         scratch_pending_req_cleared = 1;
 
-                        unique case (scratch_state_q.current_eew)
-                            VSEW_8:
-                                scratch_pending_output[7 :0] = scratch_memory_q[scratch_queue_pending_index_out].data[{3'b000, scratch_queue_pending_data_off_out                                  } * 8 +: 8 ];
-                            VSEW_16: 
-                                scratch_pending_output[15:0] = scratch_memory_q[scratch_queue_pending_index_out].data[{3'b000, scratch_queue_pending_data_off_out & ({$clog2(VMEM_W/8){1'b1}} << 1)} * 8 +: 16];
-                            VSEW_32: 
-                                scratch_pending_output[31:0] = scratch_memory_q[scratch_queue_pending_index_out].data[{3'b000, scratch_queue_pending_data_off_out & ({$clog2(VMEM_W/8){1'b1}} << 2)} * 8 +: 32];
-                            default: 
-                                scratch_pending_output = scratch_memory_q[scratch_queue_pending_index_out].data;
-                        endcase
-                        if (VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE]) begin
-                            scratch_pending_output = scratch_memory_q[scratch_queue_pending_index_out].data;
-                        end
+                        temp_scratch_memory_mux = scratch_memory_q[scratch_queue_pending_index_out].data;
+
+                    end else if(scratch_memory_state_d[scratch_queue_pending_index_out] == VALID) begin
+                        scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt = scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt - 1; // read from d since it could have been incremented before
+                        scratch_pending_req_cleared = 1;
+
+                        temp_scratch_memory_mux = scratch_memory_d[scratch_queue_pending_index_out].data;
+                    end
+
+                    unique case (scratch_state_q.current_eew)
+                        VSEW_8:
+                            scratch_pending_output[7 :0] = temp_scratch_memory_mux[{3'b000, scratch_queue_pending_data_off_out                                  } * 8 +: 8 ];
+                        VSEW_16: 
+                            scratch_pending_output[15:0] = temp_scratch_memory_mux[{3'b000, scratch_queue_pending_data_off_out & ({$clog2(VMEM_W/8){1'b1}} << 1)} * 8 +: 16];
+                        VSEW_32: 
+                            scratch_pending_output[31:0] = temp_scratch_memory_mux[{3'b000, scratch_queue_pending_data_off_out & ({$clog2(VMEM_W/8){1'b1}} << 2)} * 8 +: 32];
+                        default: 
+                            scratch_pending_output = temp_scratch_memory_mux;
+                    endcase
+                    if (VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE]) begin
+                        scratch_pending_output = temp_scratch_memory_mux;
                     end
                 end
                 
