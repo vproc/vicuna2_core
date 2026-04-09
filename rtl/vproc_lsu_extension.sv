@@ -53,8 +53,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     /////////////////////////////////scratch memory//////////////////////////////// 
     typedef logic [$clog2(SCRATCH_DEPTH)-1 : 0] elem_cnt_t;
     typedef logic [$clog2(VLSU_QUEUE_SZ) : 0] pending_req_cnt_t;
-    typedef logic [$clog2(PORT_QUEUE_DEPTH)-1 : 0] portq_elem_cnt_t;
-    typedef logic [$clog2(VLSU_QUEUE_SZ) : 0] outstanding_mem_req_cnt_t;
+    typedef logic [$clog2(PORT_QUEUE_DEPTH) : 0] portq_elem_cnt_t;
+    typedef logic [$clog2(VLSU_QUEUE_SZ + (MEM_PORTS*PORT_QUEUE_DEPTH)) : 0] outstanding_mem_req_cnt_t;
 
     typedef enum logic [1:0] {
         VALID,
@@ -398,7 +398,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 .flags_all_o  (                                                               )
             );
 
-            assign port_queue_ready_out[i] = port_state_q.portq_elem_cnt[i] != '1;
+            assign port_queue_ready_out[i] = port_state_q.portq_elem_cnt[i] != PORT_QUEUE_DEPTH;
 
             vproc_queue #(
                 .WIDTH        ( $bits(LSU_STATE_RED_T)                                                                                        ),
@@ -736,7 +736,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 end
 
                 if (output_queue_valid_out & scratch_queue_pending_out) begin
-                    logic [VMEM_W-1:0] temp_scratch_memory_mux = '0;
+                    logic [VMEM_W-1:0] temp_scratch_memory_mux;
+                    temp_scratch_memory_mux = '0;
                     if(scratch_memory_state_q[scratch_queue_pending_index_out] == VALID) begin
                         scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt = scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt - 1; // read from d since it could have been incremented before
                         scratch_pending_req_cleared = 1;
