@@ -102,7 +102,6 @@ module vproc_lsu import vproc_pkg::*; #(
     logic [VMEM_W/8-1:0] vmsk_tmp_q, vmsk_tmp_d;
 
     logic [       VMEM_W   -1:0] rdata_buf;
-    logic [$clog2(VMEM_W/8)-1:0] rdata_off;
     logic [       VMEM_W/8 -1:0] rmask_buf;
 
     generate
@@ -198,33 +197,13 @@ module vproc_lsu import vproc_pkg::*; #(
             wdata_buf_d = vs3_data[VMEM_W-1:0];
             wmask_buf_d = (pipe_in_ctrl_i.mode.lsu.masked ? vmsk_data : '1) & wdata_unit_vl_mask;
         end else begin
+            wdata_buf_d = vs3_data[VMEM_W-1:0];
             unique case (pipe_in_ctrl_i.mode.lsu.eew)
-                VSEW_8: begin
-                    for (int i = 0; i < VMEM_W / 8 ; i++)
-                        wdata_buf_d[i*8  +: 8 ] = vs3_data[7 :0];
-                    wmask_buf_d = {{VMEM_W/8-1{1'b0}},    wdata_stri_mask  } <<  req_addr_d[pipe_in_ctrl_i.field_counter][$clog2(VMEM_W/8)-1:0]                                    ;
-                end
-                VSEW_16: begin
-                    for (int i = 0; i < VMEM_W / 16; i++)
-                        wdata_buf_d[i*16 +: 16] = vs3_data[15:0];
-                    wmask_buf_d = {{VMEM_W/8-2{1'b0}}, {2{wdata_stri_mask}}} << (req_addr_d[pipe_in_ctrl_i.field_counter][$clog2(VMEM_W/8)-1:0] & ({$clog2(VMEM_W/8){1'b1}} << 1));
-                end
-                VSEW_32: begin
-                    for (int i = 0; i < VMEM_W / 32; i++)
-                        wdata_buf_d[i*32 +: 32] = vs3_data[31:0];
-                    wmask_buf_d = {{VMEM_W/8-4{1'b0}}, {4{wdata_stri_mask}}} << (req_addr_d[pipe_in_ctrl_i.field_counter][$clog2(VMEM_W/8)-1:0] & ({$clog2(VMEM_W/8){1'b1}} << 2));
-                end
+                VSEW_8:  wmask_buf_d = {{VMEM_W/8-1{1'b0}},    wdata_stri_mask  };
+                VSEW_16: wmask_buf_d = {{VMEM_W/8-2{1'b0}}, {2{wdata_stri_mask}}};
+                VSEW_32: wmask_buf_d = {{VMEM_W/8-4{1'b0}}, {4{wdata_stri_mask}}};
                 default: ;
             endcase
-            if (~VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE]) begin
-                wdata_buf_d = vs3_data[VMEM_W-1:0];
-                unique case (pipe_in_ctrl_i.mode.lsu.eew)
-                    VSEW_8:  wmask_buf_d = {{VMEM_W/8-1{1'b0}},    wdata_stri_mask  };
-                    VSEW_16: wmask_buf_d = {{VMEM_W/8-2{1'b0}}, {2{wdata_stri_mask}}};
-                    VSEW_32: wmask_buf_d = {{VMEM_W/8-4{1'b0}}, {4{wdata_stri_mask}}};
-                    default: ;
-                endcase
-            end
         end
     end
 
@@ -286,7 +265,6 @@ module vproc_lsu import vproc_pkg::*; #(
         .state_rdata_valid_o      ( state_rdata_valid                           ),
         .state_req_ready_o        ( state_req_ready                             ),
         .rdata_buf_o              ( rdata_buf                                   ),
-        .rdata_off_o              ( rdata_off                                   ),
         .rmask_buf_o              ( rmask_buf                                   ),
         .state_rdata_o            ( state_rdata                                 ),
         .instr_state_i            ( instr_state_i                               ),
@@ -333,15 +311,7 @@ module vproc_lsu import vproc_pkg::*; #(
             pipe_out_res_o = rdata_buf;
         end else begin
             pipe_out_res_o = DONT_CARE_ZERO ? '0 : 'x;
-            unique case (state_rdata.mode.eew)
-                VSEW_8:  pipe_out_res_o[7 :0] = rdata_buf[{3'b000, rdata_off                                  } * 8 +: 8 ];
-                VSEW_16: pipe_out_res_o[15:0] = rdata_buf[{3'b000, rdata_off & ({$clog2(VMEM_W/8){1'b1}} << 1)} * 8 +: 16];
-                VSEW_32: pipe_out_res_o[31:0] = rdata_buf[{3'b000, rdata_off & ({$clog2(VMEM_W/8){1'b1}} << 2)} * 8 +: 32];
-                default: ;
-            endcase
-            if (~VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE]) begin
-                pipe_out_res_o = rdata_buf;
-            end
+            pipe_out_res_o = rdata_buf;
         end
         pipe_out_mask_o = (state_rdata.mode.stride == LSU_UNITSTRIDE) ? rdata_unit_vdmsk : {(VMEM_W/8){rdata_stri_vdmsk}};
     end
