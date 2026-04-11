@@ -752,21 +752,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     scratch_wmask = state_req_red.wmask_buf_q << scratch_data_offset; 
 
                     if(scratch_hit) begin
-                        
-                        /*unique case (scratch_state_q.current_eew)
-                            VSEW_8, VSEW_16, VSEW_32: begin
-                                for (int j = 0; j < VMEM_W / 8 ; j++) begin
-                                    if(scratch_wmask[j]) begin
-                                        scratch_memory_d[selected_write_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
-                                        scratch_memory_d[selected_write_index].wmask[j] = 1;
-                                    end
-                                end
-                            end
-                            default: begin
-                                scratch_memory_d[selected_write_index].data = scratch_wdata; // TODO: DELETE
-                                scratch_memory_d[selected_write_index].wmask = scratch_wmask;// TODO: DELETE
-                            end
-                        endcase*/
 
                         for (int j = 0; j < VMEM_W / 8 ; j++) begin
                             if(scratch_wmask[j]) begin
@@ -843,21 +828,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     scratch_wmask = state_req_red.wmask_buf_q >> scratch_data_offset; 
 
                     if(scratch_hit) begin
-                        
-                        /*unique case (scratch_state_q.current_eew)
-                            VSEW_8, VSEW_16, VSEW_32: begin
-                                for (int j = 0; j < VMEM_W / 8 ; j++) begin
-                                    if(scratch_wmask[j]) begin
-                                        scratch_memory_d[selected_write_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
-                                        scratch_memory_d[selected_write_index].wmask[j] = 1;
-                                    end
-                                end
-                            end
-                            default: begin
-                                scratch_memory_d[selected_write_index].data = scratch_wdata; // TODO: DELETE
-                                scratch_memory_d[selected_write_index].wmask = scratch_wmask; // TODO: DELETE
-                            end
-                        endcase*/
 
                         for (int j = 0; j < VMEM_W / 8 ; j++) begin
                             if(scratch_wmask[j]) begin
