@@ -422,6 +422,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         end
     endgenerate
     
+    logic force_hit;
 
     always_comb begin
         logic [$clog2(VMEM_W/8):0] eew_in_bytes;
@@ -478,6 +479,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             default: 
                 eew_in_bytes = VMEM_W/8;
         endcase
+
+        //force_hit = scratch_memory_state_q[1] == PENDING | scratch_memory_state_q[0] == PENDING;
+        force_hit = '0;
 
         unique case (scratch_state_q.fsm_state)
         
@@ -806,7 +810,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                         if(scratch_memory_state_q[selected_write_index] == NOT_VALID) begin
                             scratch_write_hit = 1;
                             scratch_memory_state_d[selected_write_index] = VALID;
-                            scratch_memory_d[selected_write_index].addr = state_req_red.req_addr_q;
+                            scratch_memory_d[selected_write_index].addr = {end_of_addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
                             scratch_memory_d[selected_write_index].wmask = '0;
                             scratch_state_d.write_index = scratch_state_q.write_index + 1;
                         end else begin
@@ -814,7 +818,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                 scratch_write_hit = 1;
                                 mem_req_queue_valid_in = 1;
                                 scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                                scratch_memory_d[selected_write_index].addr = state_req_red.req_addr_q;
+                                scratch_memory_d[selected_write_index].addr = {end_of_addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
                                 scratch_memory_d[selected_write_index].wmask = '0;
                             end else begin
                                 pending_req_stall = 1;
@@ -835,6 +839,10 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                 scratch_memory_d[selected_write_index].wmask[j] = 1;
                             end
                         end
+                    end
+
+                    if(~pending_req_stall) begin
+                        scratch_state_d.fsm_state = STORE_SCRATCH;
                     end
                 end
 
@@ -857,6 +865,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
             STORE_MEMORY: begin
                 mem_req_switch = 1;
+                pending_req_stall = 1;
 
                 if(scratch_memory_state_q[scratch_state_q.write_index] == VALID) begin
 
@@ -885,12 +894,14 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             end
 
             LAST_CYCLE_LOAD: begin
+                pending_req_stall = 1;
                 if(scratch_state_q.outstanding_mem_req_cnt == '0 & ~output_queue_valid_out) begin
                     scratch_state_d.fsm_state = IDLE;
                 end
             end
 
             LAST_CYCLE_STORE: begin
+                pending_req_stall = 1;
                 if(scratch_state_q.outstanding_mem_req_cnt == '0) begin
                     scratch_state_d.fsm_state = IDLE;
                 end
@@ -901,6 +912,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         // handling of pending loads/stores
         unique case (scratch_state_q.fsm_state)
             LOAD,
+            LOAD_MISALIGNMENT,
             LAST_CYCLE_LOAD: begin
                 // PENDING_LOAD_STALL - deal with pending loads
 
@@ -913,6 +925,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     end
                 end
 
+                // pending case
                 if (output_queue_valid_out & scratch_queue_pending_out) begin
 
                     logic [VMEM_W-1:0] temp_scratch_memory_mux;
@@ -944,10 +957,24 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     end
 
                 end
+
+                // hit case
+                if (output_queue_valid_out & ~scratch_queue_pending_out) begin
+
+                    if(misalignment_request_out) begin
+                        scratch_state_d.misalignment_request = 1;
+                        scratch_state_d.misalignment_data = scratch_queue_data_out;
+                    end
+
+                    if(scratch_state_q.misalignment_request) begin
+                        scratch_pending_output = scratch_queue_data_out | scratch_state_q.misalignment_data;
+                    end
+                end
                 
             end
 
             STORE_SCRATCH,
+            STORE_SCRATCH_MISALIGNMENT,
             STORE_MEMORY,
             LAST_CYCLE_STORE: begin
                 // PENDING_STORE_STALL - deal with pending stores
@@ -985,7 +1012,11 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             mem_req_queue_data_in.selected_input_port = scratch_state_q.current_input_port;
             mem_req_queue_data_in.first_cycle = state_req_red.first_cycle;
             mem_req_queue_data_in.store = 0;
-            mem_req_queue_data_in.addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+            if(scratch_state_q.fsm_state == LOAD_MISALIGNMENT) begin
+                mem_req_queue_data_in.addr = {end_of_addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+            end else begin
+                mem_req_queue_data_in.addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+            end
             mem_req_queue_data_in.wmask = state_req_red.wmask_buf_q;
             mem_req_queue_data_in.wdata = state_req_red.wdata_buf_q;
             mem_req_queue_data_in.port_write_index = scratch_state_q.write_index;
@@ -1012,10 +1043,11 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     assign output_queue_data_in.state_req_red              = state_req_red;
     assign output_queue_data_in.misalignment_request       = misalignment_request;
 
+    // flow turned off since otherwise requests will be handled before the scratch was able to process them 
     vproc_queue #(
         .WIDTH        ( $bits(output_queue_data_t)                                                                                      ),
         .DEPTH        ( VLSU_QUEUE_SZ                                                                                                   ),
-        .FLOW         ( 1'b1                                                                                                            )
+        .FLOW         ( 1'b0                                                                                                            )
     ) output_queue (
         .clk_i        ( clk_i                                                                                                           ),
         .async_rst_ni ( async_rst_ni                                                                                                    ),
@@ -1045,7 +1077,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                     (~deq_state.mode.store | ~deq_state.last_cycle | deq_state.field_counter != deq_state.field_init_count | scratch_state_q.fsm_state == IDLE) &
                                     ((~deq_state.mode.store & ~scratch_queue_pending_out | scratch_pending_req_cleared) | deq_state.mode.store | deq_state.suppressed | mem_err_d);
 
-    assign input_queue_ready_in  = output_queue_ready_out;
+    assign input_queue_ready_in  = output_queue_ready_out & ~force_hit;
 
     // Valid signals
     assign state_rdata_valid_d = output_queue_valid_out & output_queue_ready_in & ~misalignment_request_out;
@@ -1067,7 +1099,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // LSU transaction complete queue, result indicates potential exceptions
     logic trans_complete_valid, trans_complete_ready;
-    assign trans_complete_valid = output_queue_valid_out & output_queue_ready_in & deq_state.last_cycle &
+    assign trans_complete_valid = state_rdata_valid_d & deq_state.last_cycle &
                                   (deq_state.field_init_count == 0 | (deq_state.field_counter == deq_state.field_init_count)) &
                                   (instr_state_i[deq_state.id] == INSTR_COMMITTED);
 
@@ -1096,7 +1128,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     end
 
     // load data:
-    assign rdata_buf_d = output_queue_ready_in & scratch_queue_pending_out ? scratch_pending_output : scratch_queue_data_out;
+    assign rdata_buf_d = output_queue_ready_in & (scratch_queue_pending_out | scratch_state_q.misalignment_request) ? scratch_pending_output : scratch_queue_data_out;
 
     assign state_rdata_valid_o = state_rdata_valid_q;
     assign state_req_ready_o = state_req_ready;
