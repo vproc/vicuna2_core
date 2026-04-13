@@ -106,6 +106,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         cfg_vsew current_eew;
         logic misalignment_request;
         logic [VMEM_W-1 : 0] misalignment_data;
+        logic store;
+        logic [XIF_ID_W-1:0] id;
     } scratch_state_t;
 
     scratch_state_t scratch_state_q, scratch_state_d;
@@ -487,6 +489,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         
             IDLE: begin
                 pending_req_stall = 1;
+
+                scratch_state_d.id = state_req_red.id;
+                scratch_state_d.store = state_req_red.mode.store;
                 
                 scratch_state_d.write_index = 0;
                 scratch_state_d.outstanding_mem_req_cnt = 0;
@@ -1143,7 +1148,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // Ready signals
     assign output_queue_ready_in = output_queue_valid_out & 
-                                    (~deq_state.mode.store | ~deq_state.last_cycle | deq_state.field_counter != deq_state.field_init_count | scratch_state_q.fsm_state == IDLE) &
                                     ((~deq_state.mode.store & ~scratch_queue_pending_out | scratch_pending_req_cleared) | deq_state.mode.store | deq_state.suppressed | mem_err_d);
 
     assign input_queue_ready_in  = output_queue_ready_out & ~force_hit;
@@ -1168,9 +1172,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // LSU transaction complete queue, result indicates potential exceptions
     logic trans_complete_valid, trans_complete_ready;
-    assign trans_complete_valid = state_rdata_valid_d & deq_state.last_cycle &
-                                  (deq_state.field_init_count == 0 | (deq_state.field_counter == deq_state.field_init_count)) &
-                                  (instr_state_i[deq_state.id] == INSTR_COMMITTED);
+    assign trans_complete_valid = ((~scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_LOAD & scratch_state_d.fsm_state == IDLE) &
+                                  (instr_state_i[scratch_state_q.id] == INSTR_COMMITTED)) |
+                                  (scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_STORE & scratch_state_d.fsm_state == IDLE);
 
     vproc_queue #(
         .WIDTH        ( XIF_ID_W + 7                                                          ),
@@ -1181,7 +1185,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         .sync_rst_ni  ( sync_rst_ni                                                           ),
         .enq_ready_o  ( trans_complete_ready                                                  ),
         .enq_valid_i  ( trans_complete_valid                                                  ),
-        .enq_data_i   ( {deq_state.id, mem_err_d, mem_exccode_d}                              ),
+        .enq_data_i   ( {scratch_state_q.id, mem_err_d, mem_exccode_d}                        ),
         .deq_ready_i  ( trans_complete_ready_i                                                ),
         .deq_valid_o  ( trans_complete_valid_o                                                ),
         .deq_data_o   ( {trans_complete_id_o, trans_complete_exc_o, trans_complete_exccode_o} ),
