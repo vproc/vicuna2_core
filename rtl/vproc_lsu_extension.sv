@@ -297,7 +297,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     // has to happen at the request stage, since later stalling is not possible
     // Also stall if incoming instruction is speculative OR a current instruction has not finished
     assign state_req_stall = (~state_req_red_i.mode.store & state_req_red_i.res_store & vreg_pend_rd_i[state_req_red_i.res_vaddr]) |
-                             ((instr_state_i[state_req_red_i.id] == INSTR_SPECULATIVE) | ~(state_req_red_i.id == deq_state.id));          
+                             (instr_state_i[state_req_red_i.id] == INSTR_SPECULATIVE);          
 
     // memory request (keep requesting next access while addressing is not complete)
     logic input_port_any_gnt;
@@ -1118,14 +1118,15 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     assign output_queue_data_in.misalignment_request       = misalignment_request;
 
     // flow turned off since otherwise requests will be handled before the scratch was able to process them 
-    vproc_queue #(
+    vproc_queue_dyn_flow #(
         .WIDTH        ( $bits(output_queue_data_t)                                                                                      ),
-        .DEPTH        ( VLSU_QUEUE_SZ                                                                                                   ),
-        .FLOW         ( 1'b0                                                                                                            )
+        .DEPTH        ( VLSU_QUEUE_SZ                                                                                                   )
+        //.FLOW         ( 1'b0                                                                                                            )
     ) output_queue (
         .clk_i        ( clk_i                                                                                                           ),
         .async_rst_ni ( async_rst_ni                                                                                                    ),
         .sync_rst_ni  ( sync_rst_ni                                                                                                     ),
+        .flow_i       ( scratch_state_d.store                                                                                           ),
         .enq_ready_o  ( output_queue_ready_out                                                                                          ),
         .enq_valid_i  ( input_queue_ready_in & input_queue_valid_out & ~pending_req_stall                                               ),
         .enq_data_i   ( output_queue_data_in                                                                                            ),
@@ -1172,6 +1173,12 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // LSU transaction complete queue, result indicates potential exceptions
     logic trans_complete_valid, trans_complete_ready;
+    /*assign trans_complete_valid = ((~scratch_state_q.store & state_rdata_valid_d & deq_state.last_cycle & 
+                                 (deq_state.field_init_count == '0 | deq_state.field_init_count == deq_state.field_counter)) &
+                                  (instr_state_i[scratch_state_q.id] == INSTR_COMMITTED)) |
+                                  (scratch_state_q.store & state_rdata_valid_d & deq_state.last_cycle & 
+                                 (deq_state.field_init_count == '0 | deq_state.field_init_count == deq_state.field_counter));*/
+
     assign trans_complete_valid = ((~scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_LOAD & scratch_state_d.fsm_state == IDLE) &
                                   (instr_state_i[scratch_state_q.id] == INSTR_COMMITTED)) |
                                   (scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_STORE & scratch_state_d.fsm_state == IDLE);

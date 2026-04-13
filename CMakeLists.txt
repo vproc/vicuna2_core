@@ -116,6 +116,7 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline_wrapper.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_queue.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_queue_dyn_flow.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_result.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_sld.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_unit_mux.sv
