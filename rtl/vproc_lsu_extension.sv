@@ -500,19 +500,84 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
                 scratch_state_d.misalignment_request = 0;
 
-                if(input_queue_valid_out & state_req_red.first_cycle) begin
-                    // Reset error for new memory request
-                    mem_any_err_d = 0;
+                // Reset error for new memory request
+                mem_any_err_d = 0;
 
-                    scratch_state_d.current_eew = state_req_red.mode.eew;
-                    if(state_req_red.mode.stride == LSU_UNITSTRIDE) begin
-                        scratch_state_d.current_eew = VSEW_INVALID;
+                scratch_state_d.current_eew = state_req_red.mode.eew;
+                if(state_req_red.mode.stride == LSU_UNITSTRIDE) begin
+                    scratch_state_d.current_eew = VSEW_INVALID;
+                end
+
+                end_of_addr = state_req_red.req_addr_q + eew_in_bytes - 1;
+
+                if(input_queue_ready_in & input_queue_valid_out & state_req_red.first_cycle & state_req_red.suppressed) begin
+                    if(state_req_red.mode.store) begin
+                        scratch_state_d.fsm_state = STORE_SCRATCH;
+                        pending_req_stall = 0;
+                    end else begin
+                        scratch_state_d.fsm_state = LOAD;
+                        pending_req_stall = 0;
                     end
+
+                end else if(input_queue_ready_in & input_queue_valid_out & state_req_red.first_cycle) begin
+                    
 
                     if(state_req_red.mode.store) begin
                         scratch_state_d.fsm_state = STORE_SCRATCH;
+                        pending_req_stall = 0;
+                        mem_req_switch = 1;
+
+                        scratch_memory_state_d[0] = VALID;
+                        scratch_memory_d[0].addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+                        scratch_memory_d[0].wmask = '0;
+                        scratch_state_d.write_index = 1;
+
+                        scratch_data_offset = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
+
+                        if(scratch_memory_d[0].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
+                            misalignment_request = 1;
+                        end
+
+                        if(~pending_req_stall & misalignment_request) begin
+                            scratch_state_d.fsm_state = STORE_SCRATCH_MISALIGNMENT;
+                        end
+
+                        scratch_wdata = state_req_red.wdata_buf_q << VMEM_W'(scratch_data_offset << 3);
+                        scratch_wmask = state_req_red.wmask_buf_q << scratch_data_offset;
+
+                        for (int j = 0; j < VMEM_W / 8 ; j++) begin
+                            if(scratch_wmask[j]) begin
+                                scratch_memory_d[0].data[8*j +: 8] = scratch_wdata[8*j +: 8];
+                                scratch_memory_d[0].wmask[j] = 1;
+                            end
+                        end
+
+
                     end else begin
                         scratch_state_d.fsm_state = LOAD;
+                        pending_req_stall = 0;
+
+                        if(mem_req_queue_ready_out) begin
+                            mem_req_queue_valid_in = 1;
+                            scratch_state_d.write_index = 1;
+                            scratch_memory_state_d[0] = PENDING;
+                            scratch_memory_d[0].addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+                            scratch_memory_d[0].pending_req_cnt = 1;
+                            scratch_pending = 1;
+                            scratch_pending_index = 0;
+                            scratch_pending_data_off = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
+
+                            if(scratch_memory_d[0].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
+                                misalignment_request = 1;
+                            end
+                        end else begin
+                            pending_req_stall = 1;
+                        end
+
+                        if(~pending_req_stall & misalignment_request) begin
+                            scratch_state_d.fsm_state = LOAD_MISALIGNMENT;
+                        end
+
                     end
                 end
             end    
@@ -897,6 +962,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 pending_req_stall = 1;
                 if(scratch_state_q.outstanding_mem_req_cnt == '0 & ~output_queue_valid_out) begin
                     scratch_state_d.fsm_state = IDLE;
+                    scratch_state_d.current_input_port = MEM_PORTS'(1);
+                    scratch_state_d.current_output_port = MEM_PORTS'(1);
                 end
             end
 
@@ -904,6 +971,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 pending_req_stall = 1;
                 if(scratch_state_q.outstanding_mem_req_cnt == '0) begin
                     scratch_state_d.fsm_state = IDLE;
+                    scratch_state_d.current_input_port = MEM_PORTS'(1);
+                    scratch_state_d.current_output_port = MEM_PORTS'(1);
                 end
             end
 
