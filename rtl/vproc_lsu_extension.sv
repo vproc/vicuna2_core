@@ -35,8 +35,14 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         output logic                  trans_complete_exc_o,
         output logic [5:0]            trans_complete_exccode_o,
 
-        OBI_BUS.Manager              obi_bus [MEM_PORTS-1:0]
+        OBI_BUS.Manager              obi_bus [MEM_PORTS-1:0],
+
+        output logic                  fsm_load_o,
+        output logic                  fsm_store_o
     );
+
+    assign fsm_load_o = scratch_state_q.fsm_state != IDLE & ~scratch_state_q.store;
+    assign fsm_store_o = scratch_state_q.fsm_state != IDLE & scratch_state_q.store;
 
     function automatic logic [MEM_PORTS-1:0] rotate_left(input logic [MEM_PORTS-1:0] port_in);
         // By using shift operators instead of indexed part-selects, 
@@ -969,6 +975,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     scratch_state_d.fsm_state = IDLE;
                     scratch_state_d.current_input_port = MEM_PORTS'(1);
                     scratch_state_d.current_output_port = MEM_PORTS'(1);
+                    scratch_state_d.write_index = 0;
                 end
             end
 
@@ -978,6 +985,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     scratch_state_d.fsm_state = IDLE;
                     scratch_state_d.current_input_port = MEM_PORTS'(1);
                     scratch_state_d.current_output_port = MEM_PORTS'(1);
+                    scratch_state_d.write_index = 0;
                 end
             end
 
@@ -1173,15 +1181,15 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // LSU transaction complete queue, result indicates potential exceptions
     logic trans_complete_valid, trans_complete_ready;
-    /*assign trans_complete_valid = ((~scratch_state_q.store & state_rdata_valid_d & deq_state.last_cycle & 
+    assign trans_complete_valid = ((~scratch_state_q.store & state_rdata_valid_d & deq_state.last_cycle & 
                                  (deq_state.field_init_count == '0 | deq_state.field_init_count == deq_state.field_counter)) &
                                   (instr_state_i[scratch_state_q.id] == INSTR_COMMITTED)) |
                                   (scratch_state_q.store & state_rdata_valid_d & deq_state.last_cycle & 
-                                 (deq_state.field_init_count == '0 | deq_state.field_init_count == deq_state.field_counter));*/
+                                 (deq_state.field_init_count == '0 | deq_state.field_init_count == deq_state.field_counter));
 
-    assign trans_complete_valid = ((~scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_LOAD & scratch_state_d.fsm_state == IDLE) &
+    /*assign trans_complete_valid = ((~scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_LOAD & scratch_state_d.fsm_state == IDLE) &
                                   (instr_state_i[scratch_state_q.id] == INSTR_COMMITTED)) |
-                                  (scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_STORE & scratch_state_d.fsm_state == IDLE);
+                                  (scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_STORE & scratch_state_d.fsm_state == IDLE);*/
 
     vproc_queue #(
         .WIDTH        ( XIF_ID_W + 7                                                          ),

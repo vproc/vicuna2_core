@@ -87,8 +87,10 @@ module vproc_lsu import vproc_pkg::*; #(
     CTRL_T        state_req_q,       state_req_d;
     lsu_state_red state_rdata;
 
-    assign pending_load_o  = state_req_valid_q & ~state_req_q.mode.lsu.store;
-    assign pending_store_o = state_req_valid_q &  state_req_q.mode.lsu.store;
+    logic fsm_load, fsm_store;
+
+    assign pending_load_o  = (state_req_valid_q & ~state_req_q.mode.lsu.store) | fsm_load;
+    assign pending_store_o = (state_req_valid_q &  state_req_q.mode.lsu.store) | fsm_store;
 
     // request address:
     logic [31:0] req_addr_q [7:0];
@@ -273,7 +275,9 @@ module vproc_lsu import vproc_pkg::*; #(
         .trans_complete_id_o      ( trans_complete_id_o                         ),
         .trans_complete_exc_o     ( trans_complete_exc_o                        ),
         .trans_complete_exccode_o ( trans_complete_exccode_o                    ),
-        .obi_bus                  ( obi_bus                                     )
+        .obi_bus                  ( obi_bus                                     ),
+        .fsm_load_o               ( fsm_load                                    ),
+        .fsm_store_o              ( fsm_store                                   )
     );
 
 
