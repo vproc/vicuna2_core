@@ -519,6 +519,17 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     scratch_state_d.current_eew = VSEW_INVALID;
                 end
 
+                unique case (scratch_state_d.current_eew)
+                    VSEW_8:
+                        eew_in_bytes = 1;
+                    VSEW_16:
+                        eew_in_bytes = 2;
+                    VSEW_32: 
+                        eew_in_bytes = 4;
+                    default: 
+                        eew_in_bytes = VMEM_W/8;
+                endcase
+
                 end_of_addr = state_req_red.req_addr_q + eew_in_bytes - 1;
 
                 if(input_queue_ready_in & input_queue_valid_out & state_req_red.first_cycle & state_req_red.suppressed) begin
