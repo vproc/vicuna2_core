@@ -401,6 +401,7 @@ typedef struct packed {
     logic sigext;
     logic lsu_instr;
     logic field_instr;
+    logic unit_stride;
 } unpack_flags;
 
 // result store info structure

@@ -61,8 +61,8 @@ module vproc_lsu import vproc_pkg::*; #(
         logic                        last_cycle;
         logic [XIF_ID_W-1:0]         id;
         op_mode_lsu                  mode;
-        logic [$clog2(VMEM_W/8)-1:0] vl_part [MEM_PORTS-1:0];
-        logic [MEM_PORTS-1:0]        vl_part_0;
+        logic [$clog2(VMEM_W/8)-1:0] vl_part;
+        logic                        vl_part_0;
         logic                        last_vl_part;
         logic [4:0]                  res_vaddr;
         logic                        res_store;
@@ -71,14 +71,14 @@ module vproc_lsu import vproc_pkg::*; #(
         logic                        exc;
         logic [5:0]                  exccode;
         logic [5:0]                  vreg_idx; //Needed for PACK
-        logic [31:0]                 req_addr_q [MEM_PORTS-1:0];
+        logic [MEM_PORTS-1:0][31:0]  req_addr_q;
         logic [MAX_OP_W-1:0]         wdata_buf_q;
         logic [MAX_OP_W/8-1:0]       wmask_buf_q;
         logic [MAX_OP_W/8-1:0]       vmsk_tmp_q;
         
         logic [2:0]                  field_init_count;
-        logic [2:0]                  field_counter [MEM_PORTS-1:0];
-        logic [$clog2(VMEM_W/8)-1:0] mem_req_vl_part [MEM_PORTS-1:0];
+        logic [MEM_PORTS-1:0][2:0]   field_counter;
+        logic [MEM_PORTS-1:0][$clog2(VMEM_W/8)-1:0] mem_req_vl_part;
         logic [MEM_PORTS-1:0]        mem_req_vl_part_0;
         logic [MEM_PORTS-1:0]        mem_req_valid;
     } lsu_state_red;

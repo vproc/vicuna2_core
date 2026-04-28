@@ -675,17 +675,17 @@ module vproc_vregunpack
                         unique case (op_extract_eew[i])
                             VSEW_8: begin
                                 if(op_extract_field_counter[i][j] > 0) begin
-                                    op_data[i][8*(j+1)-1:8*j] = field_buffer_q[op_extract_field_counter[i][j] - 1][7:0];
+                                    op_data[i][8*j +: 8] = field_buffer_q[op_extract_field_counter[i][j] - 1][7:0];
                                 end
                             end
                             VSEW_16: begin
                                 if(op_extract_field_counter[i][j] > 0) begin
-                                    op_data[i][16*(j+1)-1:16*j] = field_buffer_q[op_extract_field_counter[i][j] - 1][15:0];
+                                    op_data[i][16*j +: 16] = field_buffer_q[op_extract_field_counter[i][j] - 1][15:0];
                                 end
                             end
                             VSEW_32: begin
                                 if(op_extract_field_counter[i][j] > 0) begin
-                                    op_data[i][32*(j+1)-1:32*j] = field_buffer_q[op_extract_field_counter[i][j] - 1][31:0];
+                                    op_data[i][32*j +: 32] = field_buffer_q[op_extract_field_counter[i][j] - 1][31:0];
                                 end
                             end
                             default: ;
@@ -693,7 +693,7 @@ module vproc_vregunpack
 
                         if(op_extract_flags[i].unit_stride) begin
                             if(op_extract_field_counter[i][j] > 0) begin
-                                op_data[i][MEM_W*(j+1)-1:MEM_W*j] = field_buffer_q[op_extract_field_counter[i][j] - 1][MEM_W-1:0];
+                                op_data[i][MEM_W*j +: MEM_W] = field_buffer_q[op_extract_field_counter[i][j] - 1][MEM_W-1:0];
                             end
                         end
                     end

@@ -1004,13 +1004,13 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         logic                          pend_store;
         logic                     [$clog2(VREG_W/MAX_OP_W)-1 :0] vreg_idx; //TODO: This should be defined per pipeline as log2(VREG_W/MAX_OP_W) bits wide.  Needed by PACK to write results to correct locations
         logic [2:0]                    field_init_count;
-        logic [2:0]                    field_counter [MEM_PORTS-1:0];
-        logic [$clog2(MAX_OP_W/8)-1:0] mem_req_vl_part [MEM_PORTS-1:0];
+        logic [MEM_PORTS-1:0][2:0]     field_counter;
+        logic [MEM_PORTS-1:0][$clog2(MAX_OP_W/8)-1:0] mem_req_vl_part;
         logic [MEM_PORTS-1:0]          mem_req_vl_part_0;
         logic [MEM_PORTS-1:0]          mem_req_valid;
     } ctrl_t;
 
-    logic [$clog2(MAX_OP_W/8)-1:0] mem_req_vl_part [MEM_PORTS-1:0];
+    logic [MEM_PORTS-1:0][$clog2(MAX_OP_W/8)-1:0] mem_req_vl_part;
     logic [MEM_PORTS-1:0] mem_req_vl_part_0;
     logic [MEM_PORTS-1:0] mem_req_valid;
 

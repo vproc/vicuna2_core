@@ -11,6 +11,8 @@ module vproc_vregpack #(
 
         // vector register result configuration
         parameter int unsigned                      MAX_RES_W           = 64,
+        parameter int unsigned                      MEM_W               = 0,
+        parameter int unsigned                      MEM_PORTS           = 1,
         parameter int unsigned                      RES_CNT             = 1,
         parameter int unsigned                      RES_W[RES_CNT]      = '{0}, // result width
         parameter bit [RES_CNT-1:0]                 RES_MASK            = '0,   // result is a mask
