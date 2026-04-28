@@ -113,11 +113,12 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     generate
         for (genvar i = 0; i < PIPE_CNT; i++) begin
-            if (PIPE_UNITS[i][UNIT_LSU] & (PIPE_W[i] != XIF_MEM_W)) begin
+            if (PIPE_UNITS[i][UNIT_LSU] & (PIPE_W[i] != MEM_PORTS*XIF_MEM_W)) begin
                 $fatal(1, "The vector pipeline containing the VLSU must have a datapath width ",
-                          "equal to the memory interface width.  However, pipeline %d ", i,
+                          "equal to the memory interface width divided by memory ports.  However, pipeline %d ", i,
                           "containing the VLSU has a width of %d bits ", PIPE_W[i],
-                          "while the memory interface is %d bits wide.", XIF_MEM_W);
+                          "while the memory interface is %d bits wide ", XIF_MEM_W,
+                          "and we have %d memory port.", MEM_PORTS);
             end
             if ((PIPE_VPORT_IDX[i] >= VPORT_RD_CNT) |
                 (PIPE_VPORT_IDX[i] + PIPE_VPORT_CNT[i] > VPORT_RD_CNT)
@@ -1031,6 +1032,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .VPORT_BUFFER             ( PIPE_VPORT_BUFFER          ),
                 .VPORT_V0                 ( 1'b1                       ),
                 .MAX_OP_W                 ( PIPE_W[i]                  ),
+                .MEM_W                    ( XIF_MEM_W                  ),
                 .VLSU_QUEUE_SZ            ( VLSU_QUEUE_SZ              ),
                 .VLSU_FLAGS               ( VLSU_FLAGS                 ),
                 .MUL_TYPE                 ( MUL_TYPE                   ),

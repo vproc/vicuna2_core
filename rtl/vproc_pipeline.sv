@@ -16,6 +16,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned          VADDR_W [VPORT_CNT] = '{0},
         parameter bit [VPORT_CNT-1:0]   VPORT_BUFFER        = '0,   // buffer port
         parameter int unsigned          MAX_OP_W            = 64,
+        parameter int unsigned          MEM_W               = 0,
         parameter int unsigned          OP_CNT              = 1,
         parameter int unsigned          OP_W    [OP_CNT   ] = '{0}, // op widths
         parameter int unsigned          OP_STAGE[OP_CNT   ] = '{0}, // op load stage
@@ -148,7 +149,6 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         cfg_vxrm                         vxrm;
         logic        [CFG_VL_W     -1:0] vl;
         logic                            vl_0;
-        logic                     [31:0] xval_init;
         logic                     [31:0] xval;
         unpack_flags [OP_CNT -1:0]       op_flags;
         logic        [OP_CNT -1:0]       op_load;
@@ -203,7 +203,6 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
             state_d.op_load        = op_load_next;
 
             for (int i = 0; i < OP_CNT; i++) begin
-                state_d.op_flags[i].field_instr = state_next.field_init_count > 0;
                 state_d.op_flags[i].shift = op_shift_next[i];
             end
 
@@ -271,7 +270,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 end
             end
             state_next.field_init_count        = pipe_in_state_i.field_init_count;
-            state_next.field_counter           = '0;
+            state_next.field_counter           = pipe_in_state_i.field_init_count > 0 ? MEM_PORTS-1 : '0;
             state_next.field_done              = 0;
             state_next.first_cycle             = 1'b1;
             state_next.init_addr               = 1'b1;
@@ -293,7 +292,6 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
             state_next.vxrm                    = pipe_in_state_i.vxrm;
             state_next.vl                      = pipe_in_state_i.vl;
             state_next.vl_0                    = pipe_in_state_i.vl_0;
-            state_next.xval_init               = pipe_in_state_i.xval;
             state_next.xval                    = pipe_in_state_i.xval;
             state_next.op_flags                = pipe_in_state_i.op_flags;
             state_next.op_init_vaddr           = pipe_in_state_i.op_vaddr;
@@ -314,15 +312,26 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 // since we use the last_cycle signal to clear pending writes
                 // in the lsu unit
                 state_next.first_cycle = '0;
-
-                state_next.field_counter = state_q.field_counter + 3'b001;
-                state_next.xval        = DONT_CARE_ZERO ? '0 : 'x;
-                unique case (state_q.eew)
-                    VSEW_8:  state_next.xval = state_q.xval + 32'h1;
-                    VSEW_16: state_next.xval = state_q.xval + 32'h2;
-                    VSEW_32: state_next.xval = state_q.xval + 32'h4;
-                    default: ;
-                endcase
+                
+                for(int i = 0; i < OP_CNT; i++) begin
+                    if(OP_FIELD[i]) begin
+                        if(op_load[i] | res_store) begin
+                            state_next.field_counter = state_q.field_counter + 3'b001;
+                        end else begin
+                            if(5'(state_q.field_counter + MEM_PORTS) >= state_q.field_init_count) begin
+                                state_next.field_counter = 3'b000;
+                                state_next.first_cycle = '0;
+                                state_next.init_addr = '0;
+                                state_next.count     = count_next_inc;
+                                state_next.alt_count = alt_count_next_inc;
+                                state_next.op_vaddr = state_q.op_init_vaddr;
+                                state_next.res_vaddr = state_q.res_init_vaddr;
+                            end else begin
+                                state_next.field_counter = state_q.field_counter + 3'(MEM_PORTS);
+                            end
+                        end
+                    end
+                end
 
                 for(int i = 0; i < OP_CNT; i++) begin
                     if(OP_FIELD[i]) begin
@@ -345,7 +354,8 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                     default: ;
                 endcase
 
-                state_next.field_done = state_next.field_init_count == state_next.field_counter & state_q.last_cycle;
+                state_next.field_done = (state_next.field_init_count == state_next.field_counter | state_next.field_counter == 3'b000) 
+                                        & state_q.last_cycle;
                 unique case (state_q.emul)
                     EMUL_1: state_next.field_done &= state_q.count.part.mul == 3'(000);
                     EMUL_2: state_next.field_done &= state_q.count.part.mul == 3'(001);
@@ -363,7 +373,6 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 state_next.field_counter = '0;
                 state_next.op_vaddr = state_q.op_init_vaddr;
                 state_next.res_vaddr = state_q.res_init_vaddr;
-                state_next.xval = state_q.xval_init;
                 state_next.field_done = state_q.field_done;
 
                 if (aux_count_used) begin
@@ -396,6 +405,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 end
                 COUNT_INC_MAX: begin
                     count_next_inc.val     = state_q.count.val     + (1 << $clog2(MAX_OP_W/COUNTER_OP_W));
+                    if(UNITS[UNIT_LSU] & state_q.unit == UNIT_LSU & state_q.field_init_count > 0) begin
+                        count_next_inc.val     = state_q.count.val     + (1 << $clog2(MEM_W/COUNTER_OP_W));
+                    end
                 end
                 default: ;
             endcase
@@ -412,16 +424,61 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 end
                 COUNT_INC_MAX: begin
                     alt_count_next_inc.val = state_q.alt_count.val + (1 << $clog2(MAX_OP_W/COUNTER_OP_W));
+                    if(UNITS[UNIT_LSU] & state_q.unit == UNIT_LSU & state_q.field_init_count > 0) begin
+                        alt_count_next_inc.val     = state_q.alt_count.val     + (1 << $clog2(MEM_W/COUNTER_OP_W));
+                    end
                 end
                 default: ;
             endcase
+
+
+            if(UNITS[UNIT_LSU] & state_q.unit == UNIT_LSU & MEM_PORTS > 1 & state_q.field_init_count == 0) begin
+
+                unique case (state_q.count_inc)
+                    COUNT_INC_1: begin
+                        count_next_inc.val     = state_q.count.val     + COUNTER_W'(1 * MEM_PORTS);
+                    end
+                    COUNT_INC_2: begin
+                        count_next_inc.val     = state_q.count.val     + COUNTER_W'(2 * MEM_PORTS);
+                    end
+                    COUNT_INC_4: begin
+                        count_next_inc.val     = state_q.count.val     + COUNTER_W'(4 * MEM_PORTS);
+                    end
+                    COUNT_INC_MAX: begin
+                        count_next_inc.val     = state_q.count.val     + (1 << $clog2(MAX_OP_W/COUNTER_OP_W));
+                    end
+                    default: ;
+                endcase
+
+                unique case (state_q.alt_count_inc)
+                    COUNT_INC_1: begin
+                        alt_count_next_inc.val = state_q.alt_count.val + COUNTER_W'(1 * MEM_PORTS);
+                    end
+                    COUNT_INC_2: begin
+                        alt_count_next_inc.val = state_q.alt_count.val + COUNTER_W'(2 * MEM_PORTS);
+                    end
+                    COUNT_INC_4: begin
+                        alt_count_next_inc.val = state_q.alt_count.val + COUNTER_W'(4 * MEM_PORTS);
+                    end
+                    COUNT_INC_MAX: begin
+                        alt_count_next_inc.val = state_q.alt_count.val + (1 << $clog2(MAX_OP_W/COUNTER_OP_W));
+                    end
+                    default: ;
+                endcase
+            end
         end
     end
 
     // Last cycle logic
     always_comb begin
+        counter_t temp_counter;
+        counter_t temp_alt_counter;
+
         last_cycle_next     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         alt_last_cycle_next = DONT_CARE_ZERO ? 1'b0 : 1'bx;
+
+        temp_counter.val = '0;
+        temp_alt_counter.val = '0;
 
         // first cycle is not last cycle unless EMUL is 1 and the counter has no low part
         if (~state_valid_q | state_done) begin
@@ -456,7 +513,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                COUNT_INC_4: for (int i = 2; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
                    last_cycle_next     &=     count_next_inc.val[i];
                end
-               default: ;
+               default: ; //TODO: might be a issue for unitstride field instruction 
             endcase
 
             unique case (state_q.alt_count_inc)
@@ -471,6 +528,38 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                end
                default: ;
             endcase
+
+            if(UNITS[UNIT_LSU] & state_q.unit == UNIT_LSU & MEM_PORTS > 1 & state_q.field_init_count == 0) begin
+                last_cycle_next     =     count_next_inc.val[COUNTER_W-5:$clog2(MAX_OP_W/COUNTER_OP_W)] == '1;
+                alt_last_cycle_next = alt_count_next_inc.val[COUNTER_W-5:$clog2(MAX_OP_W/COUNTER_OP_W)] == '1;
+
+                //clear last cycle in case lower bits are not set for lower counter increments
+                unique case (state_q.count_inc)
+                    COUNT_INC_1: for (int i = $clog2(MEM_PORTS); i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
+                        last_cycle_next     &=     count_next_inc.val[i];
+                    end
+                    COUNT_INC_2: for (int i = $clog2(MEM_PORTS) + 1; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
+                        last_cycle_next     &=     count_next_inc.val[i];
+                    end
+                    COUNT_INC_4: for (int i = $clog2(MEM_PORTS) + 2; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
+                        last_cycle_next     &=     count_next_inc.val[i];
+                    end
+                    default: ;
+                endcase
+
+                unique case (state_q.alt_count_inc)
+                    COUNT_INC_1: for (int i = $clog2(MEM_PORTS); i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
+                        alt_last_cycle_next &= alt_count_next_inc.val[i];
+                    end
+                    COUNT_INC_2: for (int i = $clog2(MEM_PORTS) + 1; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
+                        alt_last_cycle_next &= alt_count_next_inc.val[i];
+                    end
+                    COUNT_INC_4: for (int i = $clog2(MEM_PORTS) + 2; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
+                        alt_last_cycle_next &= alt_count_next_inc.val[i];
+                    end
+                    default: ;
+                endcase
+            end
 
             //clear last cycle based on EMUL (note: the alt_last_cycle signal is not cleared here
             //as that is only required to indicate completion of one vreg cycle)
@@ -904,6 +993,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         logic                          last_vl_part;    // last VL part that is not 0
         logic                          vl_0;
         logic [31:0]                   xval;
+        logic [31:0]                   op_xval;
         //logic [RES_CNT-1:0]            res_vreg;
         logic [RES_CNT-1:0]            res_narrow;
         logic                          res_narrow_frac;
@@ -914,8 +1004,60 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         logic                          pend_store;
         logic                     [$clog2(VREG_W/MAX_OP_W)-1 :0] vreg_idx; //TODO: This should be defined per pipeline as log2(VREG_W/MAX_OP_W) bits wide.  Needed by PACK to write results to correct locations
         logic [2:0]                    field_init_count;
-        logic [2:0]                    field_counter;
+        logic [2:0]                    field_counter [MEM_PORTS-1:0];
+        logic [$clog2(MAX_OP_W/8)-1:0] mem_req_vl_part [MEM_PORTS-1:0];
+        logic [MEM_PORTS-1:0]          mem_req_vl_part_0;
+        logic [MEM_PORTS-1:0]          mem_req_valid;
     } ctrl_t;
+
+    logic [$clog2(MAX_OP_W/8)-1:0] mem_req_vl_part [MEM_PORTS-1:0];
+    logic [MEM_PORTS-1:0] mem_req_vl_part_0;
+    logic [MEM_PORTS-1:0] mem_req_valid;
+
+    generate
+        if (UNITS[UNIT_LSU]) begin
+            always_comb begin
+                counter_t temp_counter = state_q.count;
+
+                for(int i = 0; i < MEM_PORTS; i++) begin
+
+                    unique case (state_q.count_inc)
+                        COUNT_INC_1: begin
+                            temp_counter.val     = state_q.count.val     + COUNTER_W'(1 * i);
+                        end
+                        COUNT_INC_2: begin
+                            temp_counter.val     = state_q.count.val     + COUNTER_W'(2 * i);
+                        end
+                        COUNT_INC_4: begin
+                            temp_counter.val     = state_q.count.val     + COUNTER_W'(4 * i);
+                        end
+                        COUNT_INC_MAX: begin
+                            temp_counter.val     = state_q.count.val     + (1 << $clog2(MAX_OP_W/COUNTER_OP_W)) * i;
+                        end
+                        default: ;
+                    endcase
+
+                    mem_req_vl_part[i]      = (temp_counter.val[COUNTER_W-2:$clog2(MAX_OP_W/COUNTER_OP_W)] == state_q.vl[CFG_VL_W-1:$clog2(MAX_OP_W/8)]) ?  state_q.vl[$clog2(MAX_OP_W/8)-1:0] : '1;
+                    mem_req_vl_part_0[i]    = (temp_counter.val[COUNTER_W-2:$clog2(MAX_OP_W/COUNTER_OP_W)] >  state_q.vl[CFG_VL_W-1:$clog2(MAX_OP_W/8)]) |  state_q.vl_0;
+
+                    if (UNITS[UNIT_LSU ] & (state_q.unit == UNIT_LSU ) & (state_q.mode.lsu.stride != LSU_UNITSTRIDE)) begin
+                        mem_req_vl_part_0[i] = (temp_counter.val[COUNTER_W-2:0] >  state_q.vl[CFG_VL_W-1:$clog2(COUNTER_OP_W/8)]) |  state_q.vl_0;
+                    end
+
+                    mem_req_valid[i] = state_q.field_init_count > 0 &
+                                       (5'(state_q.field_counter + i) >  state_q.field_init_count |
+                                       5'(state_q.field_counter + i) > 7) ? 0 : 1;
+
+                    for(int j = 0; j < OP_CNT; j++) begin
+                        if(((OP_FIELD[i] & op_load[i]) | res_store) & i != 0) begin
+                            mem_req_valid[i] = 0;
+                        end
+                    end
+
+                end
+            end
+        end
+    endgenerate
 
     logic  unpack_valid;
     ctrl_t unpack_ctrl;
@@ -961,16 +1103,14 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
             unpack_ctrl.vl_part_0 = (state_q.count.val[COUNTER_W-2:0] >  state_q.vl[CFG_VL_W-1:$clog2(COUNTER_OP_W/8)]) |  state_q.vl_0;
         end
         unpack_ctrl.vl_0 = state_q.vl_0;
+        
+        unpack_ctrl.mem_req_vl_part = mem_req_vl_part;
+        unpack_ctrl.mem_req_vl_part_0 = mem_req_vl_part_0;
+
+        unpack_ctrl.mem_req_valid = mem_req_valid;
 
         unpack_ctrl.xval = state_q.xval;
-        if (UNITS[UNIT_LSU] & (state_q.unit == UNIT_LSU) & ~state_q.init_addr) begin
-            unpack_ctrl.xval = DONT_CARE_ZERO ? '0 : 'x;
-            unique case (state_q.mode.lsu.stride)
-                LSU_STRIDED: unpack_ctrl.xval = state_q.op_xval[0];
-                LSU_INDEXED: unpack_ctrl.xval = state_q.xval;
-                default: ;
-            endcase
-        end
+        unpack_ctrl.op_xval = state_q.op_xval[0];
 
         //unpack_ctrl.res_vreg   = state_q.res_vreg;
         unpack_ctrl.res_narrow = state_q.res_narrow;
@@ -1013,7 +1153,13 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         unpack_ctrl.pend_store = UNITS[UNIT_LSU] & (state_q.unit == UNIT_LSU) &  state_q.mode.lsu.store;
 
         unpack_ctrl.field_init_count = state_q.field_init_count;
-        unpack_ctrl.field_counter = state_q.field_counter;
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            unpack_ctrl.field_counter[i] = 0;
+
+            if(state_q.field_init_count > 0) begin
+                unpack_ctrl.field_counter[i] = 5'(state_q.field_counter + i) > 7 ? 7 : state_q.field_counter + i;
+            end
+        end
     end
 
 
@@ -1054,6 +1200,8 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .VPORT_BUFFER         ( VPORT_BUFFER                 ),
         .VPORT_V0_W           ( VREG_W                       ),
         .MAX_OP_W             ( MAX_OP_W                     ),
+        .MEM_W                ( MEM_W                        ),
+        .MEM_PORTS            ( MEM_PORTS                    ),
         .OP_CNT               ( OP_CNT                       ),
         .OP_W                 ( OP_W                         ),
         .OP_STAGE             ( OP_STAGE                     ),
@@ -1074,31 +1222,32 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .OP_FIELD             ( OP_FIELD                     ),
         .DONT_CARE_ZERO       ( DONT_CARE_ZERO               )
     ) unpack (
-        .clk_i                ( clk_i                        ),
-        .async_rst_ni         ( async_rst_ni                 ),
-        .sync_rst_ni          ( sync_rst_ni                  ),
-        .vreg_rd_addr_o       ( vreg_rd_addr_o               ),
-        .vreg_rd_data_i       ( vreg_rd_data_i               ),
-        .vreg_rd_v0_i         ( vreg_rd_v0_i                 ),
-        .pipe_in_valid_i      ( unpack_valid                 ),
-        .pipe_in_ready_o      ( unpack_ready                 ),
-        .pipe_in_ctrl_i       ( unpack_ctrl                  ),
-        .pipe_in_unit_i       ( unpack_ctrl.unit             ),
-        .pipe_in_alt_eew_i    ( unpack_ctrl.mode.lsu.alt_eew ),
-        .pipe_in_eew_i        ( unpack_ctrl.eew              ),
-        .pipe_in_op_load_i    ( op_load                      ),
-        .pipe_in_op_vaddr_i   ( op_vaddr                     ),
-        .pipe_in_op_flags_i   ( op_flags                     ),
-        .pipe_in_op_xval_i    ( op_xval                      ),
-        .pipe_in_field_counter_i    ( unpack_ctrl.field_counter                      ),
-        .pipe_out_valid_o     ( unpack_out_valid             ),
-        .pipe_out_ready_i     ( unpack_out_ready             ),
-        .pipe_out_ctrl_o      ( unpack_out_ctrl              ),
-        .pipe_out_op_data_o   ( unpack_out_ops               ),
-        .pending_vreg_reads_o ( unpack_pend_rd               ),
-        .stage_valid_any_o    (                              ),
-        .ctrl_flags_any_o     ( unpack_ctrl_flags            ),
-        .ctrl_flags_all_o     (                              )
+        .clk_i                      ( clk_i                        ),
+        .async_rst_ni               ( async_rst_ni                 ),
+        .sync_rst_ni                ( sync_rst_ni                  ),
+        .vreg_rd_addr_o             ( vreg_rd_addr_o               ),
+        .vreg_rd_data_i             ( vreg_rd_data_i               ),
+        .vreg_rd_v0_i               ( vreg_rd_v0_i                 ),
+        .pipe_in_valid_i            ( unpack_valid                 ),
+        .pipe_in_ready_o            ( unpack_ready                 ),
+        .pipe_in_ctrl_i             ( unpack_ctrl                  ),
+        .pipe_in_unit_i             ( unpack_ctrl.unit             ),
+        .pipe_in_alt_eew_i          ( unpack_ctrl.mode.lsu.alt_eew ),
+        .pipe_in_eew_i              ( unpack_ctrl.eew              ),
+        .pipe_in_op_load_i          ( op_load                      ),
+        .pipe_in_op_vaddr_i         ( op_vaddr                     ),
+        .pipe_in_op_flags_i         ( op_flags                     ),
+        .pipe_in_op_xval_i          ( op_xval                      ),
+        .pipe_in_mem_req_valid_i    ( unpack_ctrl.mem_req_valid    ),
+        .pipe_in_field_counter_i    ( unpack_ctrl.field_counter    ),
+        .pipe_out_valid_o           ( unpack_out_valid             ),
+        .pipe_out_ready_i           ( unpack_out_ready             ),
+        .pipe_out_ctrl_o            ( unpack_out_ctrl              ),
+        .pipe_out_op_data_o         ( unpack_out_ops               ),
+        .pending_vreg_reads_o       ( unpack_pend_rd               ),
+        .stage_valid_any_o          (                              ),
+        .ctrl_flags_any_o           ( unpack_ctrl_flags            ),
+        .ctrl_flags_all_o           (                              )
     );
 
     assign op_addr_offset_pend_reads_clear = unpack_out_valid & unpack_out_ctrl.last_cycle;
@@ -1127,6 +1276,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .VREG_W                    ( VREG_W                   ),
         .OP_CNT                    ( OP_CNT                   ),
         .MAX_OP_W                  ( MAX_OP_W                 ),
+        .MEM_W                     ( MEM_W                    ),
         .RES_CNT                   ( RES_CNT                  ),
         .MAX_RES_W                 ( MAX_RES_W                ),
         .VLSU_QUEUE_SZ             ( VLSU_QUEUE_SZ            ),
@@ -1187,6 +1337,8 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .VPORT_W                     ( VREG_W                  ),
         .VADDR_W                     ( 5                       ),
         .MAX_RES_W                   ( MAX_RES_W               ),
+        .MEM_W                       ( MEM_W                   ),
+        .MEM_PORTS                   ( MEM_PORTS               ),
         .RES_CNT                     ( RES_CNT                 ),
         .RES_W                       ( RES_W                   ),
         .RES_MASK                    ( RES_MASK                ),

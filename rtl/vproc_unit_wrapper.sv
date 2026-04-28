@@ -10,6 +10,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         parameter int unsigned                       VREG_W          = 128,
         parameter int unsigned                       OP_CNT          = 2,
         parameter int unsigned                       MAX_OP_W        = 32,
+        parameter int unsigned                       MEM_W           = 0,
         parameter int unsigned                       RES_CNT         = 2,
         parameter int unsigned                       MAX_RES_W       = 32,
         parameter int unsigned                       VLSU_QUEUE_SZ   = 4,
@@ -76,7 +77,8 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             logic [MAX_OP_W  -1:0] unit_out_res;
             logic [MAX_OP_W/8-1:0] unit_out_mask;
             vproc_lsu #(
-                .VMEM_W                   ( MAX_OP_W                                    ),
+                .MAX_OP_W                 ( MAX_OP_W                                    )
+                .VMEM_W                   ( MEM_W                                       ),
                 .VREG_W                   ( VREG_W                                      ),
                 .MEM_PORTS                ( MEM_PORTS                                   ),
                 .CTRL_T                   ( CTRL_T                                      ),
@@ -93,7 +95,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 .pipe_in_valid_i          ( pipe_in_valid_i                             ),
                 .pipe_in_ready_o          ( pipe_in_ready_o                             ),
                 .pipe_in_ctrl_i           ( pipe_in_ctrl_i                              ),
-                .pipe_in_op1_i            ( pipe_in_op_data_i[0][31:0]                  ),
+                .pipe_in_op1_i            ( pipe_in_op_data_i[0]                        ),
                 .pipe_in_op2_i            ( pipe_in_op_data_i[1]                        ),
                 .pipe_in_mask_i           ( pipe_in_op_data_i[OP_CNT-1][MAX_OP_W/8-1:0] ),
                 .pipe_out_valid_o         ( pipe_out_valid_o                            ),
@@ -120,22 +122,24 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_flags_o = '{default: pack_flags'('0)};
                 pipe_out_res_mask_o  = '0;
                 for(int i = 0; i < RES_CNT; i++) begin
-                    if(i == unit_out_ctrl.field_counter) begin
-                        pipe_out_res_store_o[i] = unit_out_ctrl.res_store;
-                        pipe_out_res_data_o[i] = unit_out_res;
-                        pipe_out_res_valid_o[i] = pipe_out_valid_o;
-                        pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = unit_out_mask;
-                        pipe_out_res_flags_o[i].shift           = unit_out_ctrl.res_shift;
-                        pipe_out_res_flags_o[i].elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
-                        pipe_out_res_flags_o[i].vreg_idx        = unit_out_ctrl.vreg_idx;
-                    end else begin
-                        pipe_out_res_store_o[i] = 0;
-                        pipe_out_res_data_o[i] = '0;
-                        pipe_out_res_valid_o[i] = 0;
-                        pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = '0;
-                        pipe_out_res_flags_o[i].shift           = 0;
-                        pipe_out_res_flags_o[i].elemwise        = 0;
-                         pipe_out_res_flags_o[i].vreg_idx       = '0;
+                    for(int j = 0; j < MEM_PORTS; j++) begin
+                        if(i == unit_out_ctrl.field_counter[j]) begin
+                            pipe_out_res_store_o[i] = unit_out_ctrl.res_store;
+                            pipe_out_res_data_o[i] = unit_out_res[j];
+                            pipe_out_res_valid_o[i] = pipe_out_valid_o[j];
+                            pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = unit_out_mask[j];
+                            pipe_out_res_flags_o[i].shift           = unit_out_ctrl.res_shift;
+                            pipe_out_res_flags_o[i].elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
+                            pipe_out_res_flags_o[i].vreg_idx        = unit_out_ctrl.vreg_idx;
+                        end else begin
+                            pipe_out_res_store_o[i] = 0;
+                            pipe_out_res_data_o[i] = '0;
+                            pipe_out_res_valid_o[i] = 0;
+                            pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = '0;
+                            pipe_out_res_flags_o[i].shift           = 0;
+                            pipe_out_res_flags_o[i].elemwise        = 0;
+                            pipe_out_res_flags_o[i].vreg_idx       = '0;
+                        end
                     end
                 end
             end
