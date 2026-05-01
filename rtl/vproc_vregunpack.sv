@@ -454,8 +454,13 @@ module vproc_vregunpack
                                    op_buffer[i][ OP_W[i]     -1:OP_W[i]/4];
                             default: ;
                         endcase
-                        if(op_load_flags[i].lsu_instr & ~op_load_flags[i].field_instr) begin
+                        if(op_load_flags[i].lsu_instr) begin
                             //TODO: might be a issue for unitstride field instruction
+                            if(~op_load_flags[i].field_instr) begin
+                                op_default[MEM_PORTS*MEM_W/8 : 0] = op_buffer[i][MEM_PORTS*MEM_W/8 +: MEM_PORTS*MEM_W/8];
+                            end else begin
+                                op_default[MEM_W/8 : 0] = op_buffer[i][MEM_W/8 +: MEM_W/8];
+                            end
                         end
                         if (OP_ALLOW_ELEMWISE[i] & op_load_flags[i].elemwise) begin
                             unique case (op_load_flags[i].lsu_instr & ~op_load_flags[i].field_instr)
@@ -691,7 +696,7 @@ module vproc_vregunpack
                             default: ;
                         endcase
 
-                        if(op_extract_flags[i].unit_stride) begin
+                        if(~op_extract_flags[i].elemwise) begin
                             if(op_extract_field_counter[i][j] > 0) begin
                                 op_data[i][MEM_W*j +: MEM_W] = field_buffer_q[op_extract_field_counter[i][j] - 1][MEM_W-1:0];
                             end

@@ -513,7 +513,15 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                COUNT_INC_4: for (int i = 2; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
                    last_cycle_next     &=     count_next_inc.val[i];
                end
-               default: ; //TODO: might be a issue for unitstride field instruction 
+               COUNT_INC_MAX: begin
+                    //TODO: might be a issue for unitstride field instruction
+                    if(UNITS[UNIT_LSU] & state_q.unit == UNIT_LSU & MEM_PORTS > 1 & state_q.field_init_count > 0) begin
+                        for (int i = $clog2(MEM_W/COUNTER_OP_W); i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
+                            last_cycle_next     &=     count_next_inc.val[i];
+                        end
+                    end
+               end
+               default: ;
             endcase
 
             unique case (state_q.alt_count_inc)
@@ -525,6 +533,14 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                end
                COUNT_INC_4: for (int i = 2; i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
                    alt_last_cycle_next &= alt_count_next_inc.val[i];
+               end
+               COUNT_INC_MAX: begin
+                    //TODO: might be a issue for unitstride field instruction
+                    if(UNITS[UNIT_LSU] & state_q.unit == UNIT_LSU & MEM_PORTS > 1 & state_q.field_init_count > 0) begin
+                        for (int i = $clog2(MEM_W/COUNTER_OP_W); i < $clog2(MAX_OP_W/COUNTER_OP_W); i++) begin
+                            alt_last_cycle_next &= alt_count_next_inc.val[i];
+                        end
+                    end
                end
                default: ;
             endcase
@@ -1020,19 +1036,30 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 counter_t temp_counter = state_q.count;
 
                 for(int i = 0; i < MEM_PORTS; i++) begin
-
-                    unique case (state_q.count_inc)
-                        COUNT_INC_1: begin
+                    unique case ({state_q.count_inc, state_q.field_init_count > 0})
+                        {COUNT_INC_1, 1'b0}: begin
                             temp_counter.val     = state_q.count.val     + COUNTER_W'(1 * i);
                         end
-                        COUNT_INC_2: begin
+                        {COUNT_INC_2, 1'b0}: begin
                             temp_counter.val     = state_q.count.val     + COUNTER_W'(2 * i);
                         end
-                        COUNT_INC_4: begin
+                        {COUNT_INC_4, 1'b0}: begin
                             temp_counter.val     = state_q.count.val     + COUNTER_W'(4 * i);
                         end
-                        COUNT_INC_MAX: begin
+                        {COUNT_INC_MAX, 1'b0}: begin
                             temp_counter.val     = state_q.count.val     + (1 << $clog2(MAX_OP_W/COUNTER_OP_W)) * i;
+                        end
+                        {COUNT_INC_1, 1'b1}: begin
+                            temp_counter.val     = state_q.count.val     + COUNTER_W'(1);
+                        end
+                        {COUNT_INC_2, 1'b1}: begin
+                            temp_counter.val     = state_q.count.val     + COUNTER_W'(2);
+                        end
+                        {COUNT_INC_4, 1'b1}: begin
+                            temp_counter.val     = state_q.count.val     + COUNTER_W'(4);
+                        end
+                        {COUNT_INC_MAX, 1'b1}: begin
+                            temp_counter.val     = state_q.count.val     + (1 << $clog2(MEM_W/COUNTER_OP_W));
                         end
                         default: ;
                     endcase

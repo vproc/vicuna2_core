@@ -1,4 +1,4 @@
-// Auto-generated on Wed Mar 18 02:05:17 PM CET 2026
+// Auto-generated on Fri May  1 11:14:56 AM CEST 2026
 
 // Vector coprocessor default configuration package
 //
@@ -13,7 +13,7 @@
 // Configuration details:
 // - Vector register width: 128 bits
 // - Vector pipelines:
-//   * Pipeline 0: 32 bits wide, contains VLSU
+//   * Pipeline 0: 64 bits wide, contains VLSU
 //     Uses 1 128-bit vreg read ports and write port 0
 //   * Pipeline 1: 32 bits wide, contains VELEM, VSLD, VDIV, VALU, VMUL
 //     Uses 1 128-bit vreg read ports and write port 0
@@ -36,7 +36,7 @@ package vproc_config;
     parameter bit [UNIT_CNT-1:0] PIPE_UNITS [PIPE_CNT] = '{
         (UNIT_CNT'(1) << UNIT_LSU), (UNIT_CNT'(1) << UNIT_ELEM) | (UNIT_CNT'(1) << UNIT_SLD) | (UNIT_CNT'(1) << UNIT_DIV) | (UNIT_CNT'(1) << UNIT_ALU) | (UNIT_CNT'(1) << UNIT_MUL)
     };
-    parameter int unsigned PIPE_W           [PIPE_CNT] = '{32, 32};
+    parameter int unsigned PIPE_W           [PIPE_CNT] = '{64, 32};
     parameter int unsigned PIPE_VPORT_CNT   [PIPE_CNT] = '{1, 1};
     parameter int unsigned PIPE_VPORT_IDX   [PIPE_CNT] = '{1, 2};
     parameter int unsigned PIPE_VPORT_WR    [PIPE_CNT] = '{0, 0};

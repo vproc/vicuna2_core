@@ -72,9 +72,9 @@ module vproc_lsu import vproc_pkg::*; #(
         logic [5:0]                  exccode;
         logic [5:0]                  vreg_idx; //Needed for PACK
         logic [MEM_PORTS-1:0][31:0]  req_addr_q;
-        logic [MAX_OP_W-1:0]         wdata_buf_q;
-        logic [MAX_OP_W/8-1:0]       wmask_buf_q;
-        logic [MAX_OP_W/8-1:0]       vmsk_tmp_q;
+        logic [MEM_PORTS-1:0][VMEM_W-1:0]         wdata_buf_q;
+        logic [MEM_PORTS-1:0][VMEM_W/8-1:0]       wmask_buf_q;
+        logic [MEM_PORTS-1:0][VMEM_W/8-1:0]       vmsk_tmp_q;
         
         logic [2:0]                  field_init_count;
         logic [MEM_PORTS-1:0][2:0]   field_counter;
@@ -104,11 +104,14 @@ module vproc_lsu import vproc_pkg::*; #(
     logic [31:0] req_addr_d [MEM_PORTS-1:0];
 
     // store data and mask buffers:
-    logic [MAX_OP_W-1:0] wdata_buf_q, wdata_buf_d;
-    logic [MAX_OP_W/8-1:0] wmask_buf_q, wmask_buf_d;
+    logic [MEM_PORTS-1:0][VMEM_W-1:0] wdata_buf_q; 
+    logic [MEM_PORTS-1:0][VMEM_W-1:0] wdata_buf_d;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] wmask_buf_q;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] wmask_buf_d;
 
     // temporary buffer for byte mask during request:
-    logic [MAX_OP_W/8-1:0] vmsk_tmp_q, vmsk_tmp_d;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] vmsk_tmp_q;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] vmsk_tmp_d;
 
     logic [VMEM_W   -1:0] rdata_buf [MEM_PORTS-1:0];
     logic [VMEM_W/8 -1:0] rmask_buf [MEM_PORTS-1:0];
@@ -159,14 +162,15 @@ module vproc_lsu import vproc_pkg::*; #(
 
     logic [MAX_OP_W-1:0] vs2_data;
     logic [MAX_OP_W-1:0] vs3_data;
-    logic [MAX_OP_W/8-1:0] vmsk_data;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] vmsk_data;
     assign vs2_data  = pipe_in_op1_i;
     assign vs3_data  = pipe_in_op2_i;
-    assign vmsk_data = pipe_in_mask_i;
 
     // compose memory address:
     always_comb begin
         req_addr_d = req_addr_q;
+        req_addr_save_d = req_addr_save_q;
+
         unique case (pipe_in_ctrl_i.mode.lsu.stride)
 
             LSU_UNITSTRIDE: begin
@@ -209,7 +213,7 @@ module vproc_lsu import vproc_pkg::*; #(
                         if(pipe_in_ctrl_i.init_addr & i == 0) begin
                             req_addr_d[i] = pipe_in_ctrl_i.xval;
                         end else if (i == 0) begin
-                            req_addr_d[i] = req_addr_save_q;
+                            req_addr_d[i] = req_addr_save_q[0];
                         end else begin
                             req_addr_d[i] = req_addr_d[i-1] + pipe_in_ctrl_i.op_xval;
                         end
@@ -259,8 +263,6 @@ module vproc_lsu import vproc_pkg::*; #(
         endcase
     end
 
-    assign vmsk_tmp_d = vmsk_data;
-
     generate
         for (genvar i = 0; i < MEM_PORTS; i++) begin
             // write data conversion and masking:
@@ -274,32 +276,40 @@ module vproc_lsu import vproc_pkg::*; #(
 
                 wdata_unit_vl_mask = ~pipe_in_ctrl_i.mem_req_vl_part_0[i] ? ({(VMEM_W/8){1'b1}} >> (~pipe_in_ctrl_i.mem_req_vl_part[i])) : '0;
 
-                unique case (pipe_in_ctrl_i.mode.lsu.eew)
-                    VSEW_8:  element_active = vmsk_data[i];
-                    VSEW_16: element_active = vmsk_data[2*i];
-                    VSEW_32: element_active = vmsk_data[4*i];
-                    default: ;
-                endcase
+                vmsk_data[i] = pipe_in_mask_i[VMEM_W-1:0];
+
+                if(pipe_in_ctrl_i.field_init_count == 0 & pipe_in_ctrl_i.mode.lsu.stride != LSU_UNITSTRIDE) begin
+                    unique case (pipe_in_ctrl_i.mode.lsu.eew)
+                        VSEW_8:  vmsk_data[i][0] = pipe_in_mask_i[i];
+                        VSEW_16: vmsk_data[i][1:0] = pipe_in_mask_i[2*i +: 2];
+                        VSEW_32: vmsk_data[i][3:0] = pipe_in_mask_i[4*i +: 4];
+                        default: ;
+                    endcase
+                end else if(pipe_in_ctrl_i.field_init_count == 0) begin
+                    vmsk_data[i][VMEM_W/8-1:0] = pipe_in_mask_i[VMEM_W/8*i +: VMEM_W/8];
+                end
+
+                element_active = vmsk_data[i];
 
                 wdata_stri_mask    = ~pipe_in_ctrl_i.mem_req_vl_part_0[i] &
                                         (pipe_in_ctrl_i.mode.lsu.masked ? element_active : 1'b1);
 
 
                 if (pipe_in_ctrl_i.mode.lsu.stride == LSU_UNITSTRIDE) begin
-                    wdata_buf_d[i] = vs3_data[i*VMEM_W+VMEM_W-1:i*VMEM_W];
-                    wmask_buf_d[i] = (pipe_in_ctrl_i.mode.lsu.masked ? vmsk_data : '1) & wdata_unit_vl_mask;
+                    wdata_buf_d[i] = vs3_data[i*VMEM_W +: VMEM_W];
+                    wmask_buf_d[i] = (pipe_in_ctrl_i.mode.lsu.masked ? vmsk_data[i] : '1) & wdata_unit_vl_mask;
                 end else begin
                     unique case (pipe_in_ctrl_i.mode.lsu.eew)
                         VSEW_8:  begin
-                            wdata_buf_d[i] = vs3_data[i*8+8-1:i*8];
+                            wdata_buf_d[i] = vs3_data[i*8 +: 8];
                             wmask_buf_d[i] = {{VMEM_W/8-1{1'b0}},    wdata_stri_mask  };
                         end
                         VSEW_16: begin
-                            wdata_buf_d[i] = vs3_data[i*16+16-1:i*16];
+                            wdata_buf_d[i] = vs3_data[i*16 +: 16];
                             wmask_buf_d[i] = {{VMEM_W/8-2{1'b0}}, {2{wdata_stri_mask}}};
                         end
                         VSEW_32: begin
-                            wdata_buf_d[i] = vs3_data[i*32+32-1:i*32];
+                            wdata_buf_d[i] = vs3_data[i*32 +: 32];
                             wmask_buf_d[i] = {{VMEM_W/8-4{1'b0}}, {4{wdata_stri_mask}}};
                         end
                         default: ;
@@ -308,6 +318,8 @@ module vproc_lsu import vproc_pkg::*; #(
             end
         end
     endgenerate
+
+    assign vmsk_tmp_d = vmsk_data;
 
     // suppress memory request if all data elements are invalid (have indices greater than VL)
     // TODO: memory requests should probably also be suppressed if all elements are masked off, but
@@ -350,6 +362,7 @@ module vproc_lsu import vproc_pkg::*; #(
 
 
     vproc_lsu_extension #(
+        .MAX_OP_W                 ( MAX_OP_W                                    ),
         .VMEM_W                   ( VMEM_W                                      ),
         .VREG_W                   ( VREG_W                                      ),
         .MEM_PORTS                ( MEM_PORTS                                   ),
@@ -397,8 +410,6 @@ module vproc_lsu import vproc_pkg::*; #(
         end
     end
 
-    assign pipe_out_valid_o = state_rdata_valid ? state_rdata.mem_req_valid : '0;
-
     always_comb begin
         pipe_out_ctrl_o              = DONT_CARE_ZERO ? '0 : 'x;
         pipe_out_ctrl_o.first_cycle  = state_rdata.first_cycle;
@@ -420,9 +431,43 @@ module vproc_lsu import vproc_pkg::*; #(
     assign pipe_out_pend_clr_o = state_rdata.res_store;
     
     always_comb begin
-        pipe_out_res_o = rdata_buf;
+        pipe_out_valid_o = state_rdata.mem_req_valid;
+
         for(int i = 0; i < MEM_PORTS; i++) begin
+            pipe_out_res_o[i][VMEM_W-1:0] = rdata_buf[i];
             pipe_out_mask_o[i] = (state_rdata.mode.stride == LSU_UNITSTRIDE) ? rdata_unit_vdmsk[i] : {(VMEM_W/8){rdata_stri_vdmsk[i]}};
+        end
+
+        if(state_rdata.field_init_count == 0) begin
+
+            pipe_out_valid_o[MEM_PORTS-1:1] = '0;
+
+            for(int i = 0; i < MEM_PORTS; i++) begin
+                unique case (state_rdata.mode.eew)
+                    VSEW_8: begin
+                        pipe_out_res_o[0][8*i +: 8] = rdata_buf[i][7:0];
+                        pipe_out_mask_o[0][i] = {(1){rdata_stri_vdmsk[i]}};
+                    end
+                    VSEW_16: begin
+                        pipe_out_res_o[0][16*i +: 16] = rdata_buf[i][15:0];
+                        pipe_out_mask_o[0][2*i +: 2] = {(2){rdata_stri_vdmsk[i]}};
+                    end
+                    VSEW_32: begin
+                        pipe_out_res_o[0][32*i +: 32] = rdata_buf[i][31:0];
+                        pipe_out_mask_o[0][4*i +: 4] = {(4){rdata_stri_vdmsk[i]}};
+                    end
+                    default: ;    
+                endcase
+
+                if(state_rdata.mode.stride == LSU_UNITSTRIDE) begin
+                    pipe_out_res_o[0][VMEM_W*i +: VMEM_W] = rdata_buf[i];
+                    pipe_out_mask_o[0][VMEM_W/8*i +: VMEM_W/8] = rdata_unit_vdmsk[i];
+                end
+            end
+        end
+
+        if(~state_rdata_valid) begin
+            pipe_out_valid_o = '0;
         end
     end
 

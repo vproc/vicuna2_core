@@ -124,6 +124,15 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_mask_o  = '0;
                 pipe_out_valid_o = |unit_out_valid;
                 for(int i = 0; i < RES_CNT; i++) begin
+                    pipe_out_res_store_o[i] = 0;
+                    pipe_out_res_data_o[i] = '0;
+                    pipe_out_res_valid_o[i] = 0;
+                    pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = '0;
+                    pipe_out_res_flags_o[i].shift           = 0;
+                    pipe_out_res_flags_o[i].elemwise        = 0;
+                    pipe_out_res_flags_o[i].vreg_idx       = '0;
+                    pipe_out_res_flags_o[i].lsu_instr      = 0;
+                    pipe_out_res_flags_o[i].field_instr    = 0;
                     for(int j = 0; j < MEM_PORTS; j++) begin
                         if(i == unit_out_ctrl.field_counter[j]) begin
                             pipe_out_res_store_o[i] = unit_out_ctrl.res_store;
@@ -133,14 +142,8 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                             pipe_out_res_flags_o[i].shift           = unit_out_ctrl.res_shift;
                             pipe_out_res_flags_o[i].elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
                             pipe_out_res_flags_o[i].vreg_idx        = unit_out_ctrl.vreg_idx;
-                        end else begin
-                            pipe_out_res_store_o[i] = 0;
-                            pipe_out_res_data_o[i] = '0;
-                            pipe_out_res_valid_o[i] = 0;
-                            pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = '0;
-                            pipe_out_res_flags_o[i].shift           = 0;
-                            pipe_out_res_flags_o[i].elemwise        = 0;
-                            pipe_out_res_flags_o[i].vreg_idx       = '0;
+                            pipe_out_res_flags_o[i].lsu_instr       = 1;
+                            pipe_out_res_flags_o[i].field_instr     = unit_out_ctrl.field_init_count > 0;
                         end
                     end
                 end

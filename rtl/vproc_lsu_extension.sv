@@ -1,4 +1,5 @@
 module vproc_lsu_extension import vproc_pkg::*; #(
+        parameter int unsigned        MAX_OP_W        = 32,
         parameter int unsigned        VMEM_W          = 32,   // width in bits of the vector memory interface
         parameter int unsigned        VREG_W          = 128,   // width in bits of a vector register
         parameter int unsigned        MEM_PORTS       = 1,
@@ -24,8 +25,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         output logic                  state_rdata_valid_o,
         output logic                  state_req_ready_o,
         output LSU_STATE_RED_T        state_rdata_o,
-        output logic [       VMEM_W   -1:0] rdata_buf_o,
-        output logic [       VMEM_W/8 -1:0] rmask_buf_o,
+        output logic [VMEM_W   -1:0] rdata_buf_o [MEM_PORTS-1:0],
+        output logic [VMEM_W/8 -1:0] rmask_buf_o [MEM_PORTS-1:0],
 
         input  instr_state [XIF_ID_CNT-1:0] instr_state_i,
 
@@ -56,62 +57,31 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     endfunction
 
     /////////////////////////////////scratch memory//////////////////////////////// 
-    typedef logic [$clog2(SCRATCH_DEPTH)-1 : 0] elem_cnt_t;
-    typedef logic [$clog2(VLSU_QUEUE_SZ) : 0] pending_req_cnt_t;
+    typedef logic [$clog2(MEM_PORTS)-1 : 0] port_select_t;
     typedef logic [$clog2(PORT_QUEUE_DEPTH) : 0] portq_elem_cnt_t;
     typedef logic [$clog2(VLSU_QUEUE_SZ + (MEM_PORTS*PORT_QUEUE_DEPTH)) : 0] outstanding_mem_req_cnt_t;
 
-    typedef enum logic [1:0] {
-        VALID,
-        PENDING,
-        NOT_VALID
-    } scratch_memory_state_t;
-
-    typedef struct packed {
-        logic [31:0] addr;
-        logic [VMEM_W/8-1:0] wmask;
-        logic [VMEM_W-1:0] data;
-        pending_req_cnt_t pending_req_cnt;
-    } scratch_line_t;
-
-    typedef scratch_memory_state_t [SCRATCH_DEPTH-1 : 0] scratch_memory_states_t;
-    typedef scratch_line_t [SCRATCH_DEPTH-1 : 0] scratch_memory_t;
-
-    scratch_memory_states_t scratch_memory_state_q, scratch_memory_state_d;
-    scratch_memory_t scratch_memory_q, scratch_memory_d;
-
     /////////////////////////////////scratch state////////////////////////////////
-    logic scratch_hit;
-    logic scratch_pending;
-
-    elem_cnt_t scratch_pending_index;
-    logic scratch_pending_req_cleared;
-    logic [VMEM_W-1 : 0] scratch_pending_output;
-    logic [$clog2(VMEM_W/8)-1:0] scratch_pending_data_off;
-
-    logic [VMEM_W-1:0] scratch_hit_data;
+    port_select_t [MEM_PORTS-1:0] port_pending_select;
+    logic [MEM_PORTS-1:0][$clog2(VMEM_W/8)-1:0] port_pending_data_off;
 
     typedef enum logic [2:0] {
         IDLE                            = 3'b000,
         LOAD                            = 3'b001,
         LOAD_MISALIGNMENT               = 3'b010,
-        STORE_SCRATCH                   = 3'b011,
-        STORE_SCRATCH_MISALIGNMENT      = 3'b100,
-        STORE_MEMORY                    = 3'b101,
+        STORE                           = 3'b011,
+        STORE_MISALIGNMENT              = 3'b100,
         LAST_CYCLE_LOAD                 = 3'b110,
         LAST_CYCLE_STORE                = 3'b111
     } scratch_fsm_state_t;
 
     typedef struct packed {
         scratch_fsm_state_t fsm_state;
-        elem_cnt_t write_index;
-        elem_cnt_t store_end_index;
-        logic [MEM_PORTS-1:0] current_input_port;
-        logic [MEM_PORTS-1:0] current_output_port;
         outstanding_mem_req_cnt_t outstanding_mem_req_cnt;
         cfg_vsew current_eew;
-        logic misalignment_request;
-        logic [VMEM_W-1 : 0] misalignment_data;
+        logic [MEM_PORTS-1:0] misalignment_request_in;
+        logic [MEM_PORTS-1:0] misalignment_request_out;
+        logic [MEM_PORTS-1:0][VMEM_W-1 : 0] misalignment_data;
         logic store;
         logic [XIF_ID_W-1:0] id;
     } scratch_state_t;
@@ -125,14 +95,12 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     LSU_STATE_RED_T     state_req_red;
 
     /////////////////////////////////Store queue////////////////////////////////
-    logic               mem_req_queue_ready_in;
-    logic               mem_req_queue_ready_out;
-    logic               mem_req_queue_valid_in;
-    logic               mem_req_queue_valid_out;
+    logic [MEM_PORTS-1:0]   mem_req_queue_ready_in;
+    logic [MEM_PORTS-1:0]   mem_req_queue_ready_out;
+    logic [MEM_PORTS-1:0]   mem_req_queue_valid_in;
+    logic [MEM_PORTS-1:0]   mem_req_queue_valid_out;
 
     typedef struct packed {
-        logic [MEM_PORTS-1:0]        selected_input_port;
-        elem_cnt_t [MEM_PORTS-1:0]   port_write_index;
         logic                        first_cycle;
         logic                        store;
         logic [31:0]                 addr;
@@ -140,7 +108,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         logic [VMEM_W/8-1:0]         wmask;
     } mem_req_queue_data_t;
 
-    mem_req_queue_data_t mem_req_queue_data_in, mem_req_queue_data_out;
+    mem_req_queue_data_t [MEM_PORTS-1:0] mem_req_queue_data_in;
+    mem_req_queue_data_t [MEM_PORTS-1:0] mem_req_queue_data_out;
 
 
     /////////////////////////////////Output queue////////////////////////////////
@@ -148,26 +117,25 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     logic               output_queue_ready_out;
     logic               output_queue_ready_in;
 
-    logic                           scratch_queue_pending_out;
-    elem_cnt_t                      scratch_queue_pending_index_out;
-    logic [$clog2(VMEM_W/8)-1:0]    scratch_queue_pending_data_off_out;
-    logic [VMEM_W-1 : 0]            scratch_queue_data_out;
+    port_select_t   [MEM_PORTS-1:0]                       port_queue_pending_select_out;
+    logic           [MEM_PORTS-1:0][$clog2(VMEM_W/8)-1:0] port_queue_pending_data_off;
+    logic       [MEM_PORTS-1:0][VMEM_W-1 : 0]           scratch_queue_data_out;
 
     LSU_STATE_RED_T     deq_state;
 
     // load data, offset and mask buffers:
-    logic [       VMEM_W   -1:0] rdata_buf_q, rdata_buf_d;
-    logic [       VMEM_W/8 -1:0] rmask_buf_q, rmask_buf_d;
+    logic [VMEM_W   -1:0] rdata_buf_q [MEM_PORTS-1:0];
+    logic [VMEM_W   -1:0] rdata_buf_d [MEM_PORTS-1:0];
+    logic [VMEM_W/8 -1:0] rmask_buf_q [MEM_PORTS-1:0]; 
+    logic [VMEM_W/8 -1:0] rmask_buf_d [MEM_PORTS-1:0];
 
-    logic misalignment_request_out;
+    logic [MEM_PORTS-1:0] misalignment_request_out;
 
     typedef struct packed {
-        logic [VMEM_W-1 : 0]         scratch_hit_data;
-        logic                        scratch_pending;
-        elem_cnt_t                   scratch_pending_index;
-        logic [$clog2(VMEM_W/8)-1:0] scratch_pending_data_off;
-        LSU_STATE_RED_T              state_req_red;
-        logic                        misalignment_request;
+        port_select_t   [MEM_PORTS-1:0]                         port_pending_select;
+        logic           [MEM_PORTS-1:0][$clog2(VMEM_W/8)-1:0]   port_pending_data_off;
+        LSU_STATE_RED_T                                         state_req_red;
+        logic           [MEM_PORTS-1:0]                         misalignment_request;
     } output_queue_data_t;
 
     output_queue_data_t output_queue_data_in, output_queue_data_out;
@@ -178,7 +146,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     logic [MEM_PORTS-1 : 0] port_queue_ready_in;
     logic [VMEM_W   -1:0]   port_queue_rdata_out [MEM_PORTS-1 : 0]; 
     logic [MEM_PORTS-1 : 0] port_queue_mem_err_out;
-    elem_cnt_t [MEM_PORTS-1:0] port_queue_write_index_out;
 
     typedef struct packed {
         portq_elem_cnt_t [MEM_PORTS-1:0] portq_elem_cnt;
@@ -191,14 +158,19 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     logic           mem_req_switch;
 
     /////////////////////////////////General signals////////////////////////////////
-    logic            state_req_stall;
-    logic            pending_req_stall; 
-    logic            state_rdata_valid_q, state_rdata_valid_d;
-    logic            misalignment_request;
+    logic                   state_req_stall;
+    logic                   pending_req_stall; 
+    logic                   state_rdata_valid_q, state_rdata_valid_d;
+    logic [MEM_PORTS-1:0]   misalignment_request;
+    logic                   misalignment_request_any;
+    logic                   all_ports_finished;
+    logic                   misalignment_request_finished;
+    logic                   state_req_red_end_of_field;
+    logic                   deq_state_end_of_field;
 
-    logic            state_req_ready;
+    logic                   state_req_ready;
 
-    LSU_STATE_RED_T  state_rdata_q, state_rdata_d;
+    LSU_STATE_RED_T         state_rdata_q, state_rdata_d;
 
     // memory request caused an exception:
     logic mem_exc_q, mem_exc_d;
@@ -206,6 +178,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     // memory request caused an error (exception or bus error):
     logic       mem_err_q,     mem_err_d, mem_any_err_q, mem_any_err_d;
     logic [5:0] mem_exccode_q, mem_exccode_d;
+
+    logic [VMEM_W-1:0] rdata_next [MEM_PORTS-1:0];
 
 
     logic [$bits(obi_bus[0].req)-1:0]       obi_bus_req [MEM_PORTS-1:0];
@@ -243,8 +217,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         end
         else begin
             scratch_state_q <= scratch_state_d;
-            scratch_memory_state_q <= scratch_memory_state_d;
-            scratch_memory_q <= scratch_memory_d;
             port_state_q <= port_state_d;
             mem_err_q     <= mem_err_d;
             mem_any_err_q <= mem_any_err_d;
@@ -306,22 +278,20 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                              (instr_state_i[state_req_red_i.id] == INSTR_SPECULATIVE);          
 
     // memory request (keep requesting next access while addressing is not complete)
-    logic input_port_any_gnt;
     always_comb begin
         port_state_d = port_state_q;
-        input_port_any_gnt = 0;
 
         if(scratch_state_q.fsm_state == IDLE) begin
             port_state_d.portq_elem_cnt = '0;
         end
 
         for(int i = 0; i < MEM_PORTS; i++) begin
-            obi_bus_req[i]   = mem_req_queue_valid_out & (~mem_exc_q | mem_req_queue_data_out.first_cycle) & 
-                               mem_req_queue_data_out.selected_input_port[i] & port_queue_ready_out[i];
-            obi_bus_addr[i]  = mem_req_queue_data_out.addr;//VLSU_FLAGS[VLSU_ALIGNED_UNITSTRIDE] ? {mem_req_queue_data_out.addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}} : mem_req_queue_data_out.addr;
-            obi_bus_we[i]    = mem_req_queue_data_out.store;
-            obi_bus_be[i]    = mem_req_queue_data_out.wmask;
-            obi_bus_wdata[i] = mem_req_queue_data_out.wdata;
+            obi_bus_req[i]   = mem_req_queue_valid_out[i] & (~mem_exc_q | mem_req_queue_data_out[i].first_cycle) & 
+                               port_queue_ready_out[i];
+            obi_bus_addr[i]  = mem_req_queue_data_out[i].addr;
+            obi_bus_we[i]    = mem_req_queue_data_out[i].store;
+            obi_bus_be[i]    = mem_req_queue_data_out[i].wmask;
+            obi_bus_wdata[i] = mem_req_queue_data_out[i].wdata;
             obi_bus_aid[i]   = i; // TODO: USE_XIF_MEM needs id from state_red_req
 
             if(obi_bus_gnt[i] & port_queue_ready_in[i]) begin
@@ -331,8 +301,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             end else if (port_queue_ready_in[i]) begin
                 port_state_d.portq_elem_cnt[i] = port_state_q.portq_elem_cnt[i] - 1;
             end
-
-            input_port_any_gnt |= obi_bus_gnt[i];
         end
     end
 
@@ -359,7 +327,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         .enq_ready_o  ( input_queue_ready_out                                         ),
         .enq_valid_i  ( state_req_red_i.state_req_valid_q & ~state_req_stall          ),
         .enq_data_i   ( state_req_red_i                                               ),
-        .deq_ready_i  ( input_queue_ready_in & ~pending_req_stall & ~misalignment_request),
+        .deq_ready_i  ( input_queue_ready_in & ~pending_req_stall & ~misalignment_request_any),
         .deq_valid_o  ( input_queue_valid_out                                         ),
         .deq_data_o   ( state_req_red                                                 ),
         .flags_any_o  (                                                               ),
@@ -367,24 +335,28 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     );
 
     // memory request queue
-    vproc_queue #(
-        .WIDTH        ( $bits(LSU_STATE_RED_T)                                                            ),
-        .DEPTH        ( VLSU_QUEUE_SZ                                                                     ),
-        .FLOW         ( 1'b1                                                                              )
-    ) mem_req_queue (
-        .clk_i        ( clk_i                                                                             ),
-        .async_rst_ni ( async_rst_ni                                                                      ),
-        .sync_rst_ni  ( sync_rst_ni                                                                       ),
-        .enq_ready_o  ( mem_req_queue_ready_out                                                           ),
-        .enq_valid_i  ( mem_req_queue_valid_in                                                            ),
-        .enq_data_i   ( mem_req_queue_data_in                                                             ),
-        .deq_ready_i  ( mem_req_queue_ready_in                                                            ),
-        .deq_valid_o  ( mem_req_queue_valid_out                                                           ),
-        .deq_data_o   ( mem_req_queue_data_out                                                            ),
-        .flags_any_o  (                                                                                   ),
-        .flags_all_o  (                                                                                   )
-    );
-    assign mem_req_queue_ready_in = input_port_any_gnt | (mem_exc_q & ~mem_req_queue_data_out.first_cycle);
+    generate
+        for (genvar i = 0; i < MEM_PORTS; i++) begin
+            vproc_queue #(
+                .WIDTH        ( $bits(LSU_STATE_RED_T)                                                                  ),
+                .DEPTH        ( VLSU_QUEUE_SZ                                                                           ),
+                .FLOW         ( 1'b1                                                                                    )
+            ) mem_req_queue (
+                .clk_i        ( clk_i                                                                                   ),
+                .async_rst_ni ( async_rst_ni                                                                            ),
+                .sync_rst_ni  ( sync_rst_ni                                                                             ),
+                .enq_ready_o  ( mem_req_queue_ready_out[i]                                                              ),
+                .enq_valid_i  ( mem_req_queue_valid_in[i]                                                               ),
+                .enq_data_i   ( mem_req_queue_data_in[i]                                                                ),
+                .deq_ready_i  ( mem_req_queue_ready_in[i]                                                               ),
+                .deq_valid_o  ( mem_req_queue_valid_out[i]                                                              ),
+                .deq_data_o   ( mem_req_queue_data_out[i]                                                               ),
+                .flags_any_o  (                                                                                         ),
+                .flags_all_o  (                                                                                         )
+            );
+            assign mem_req_queue_ready_in[i] = obi_bus_gnt[i] | (mem_exc_q & ~mem_req_queue_data_out[i].first_cycle);
+        end
+    endgenerate
 
 
     // Port queue
@@ -409,65 +381,51 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             );
 
             assign port_queue_ready_out[i] = port_state_q.portq_elem_cnt[i] != PORT_QUEUE_DEPTH;
-
-            vproc_queue #(
-                .WIDTH        ( $bits(LSU_STATE_RED_T)                                                                                        ),
-                .DEPTH        ( PORT_QUEUE_DEPTH                                                                                              ),
-                .FLOW         ( 1'b1                                                                                                          )
-            ) port_write_index_queue (
-                .clk_i        ( clk_i                                                                                                         ),
-                .async_rst_ni ( async_rst_ni                                                                                                  ),
-                .sync_rst_ni  ( sync_rst_ni                                                                                                   ),
-                .enq_ready_o  (                                                                                                               ),
-                .enq_valid_i  ( mem_req_queue_ready_in & ~mem_req_queue_data_out.store & mem_req_queue_data_out.selected_input_port[i]        ),
-                .enq_data_i   ( mem_req_queue_data_out.port_write_index                                                                       ),
-                .deq_ready_i  ( port_queue_ready_in[i]                                                                                        ),
-                .deq_valid_o  (                                                                                                               ),
-                .deq_data_o   ( port_queue_write_index_out[i]                                                                                 ),
-                .flags_any_o  (                                                                                                               ),
-                .flags_all_o  (                                                                                                               )
-            );
         end
     endgenerate
-    
-    logic force_hit;
+
+    assign misalignment_request_any = |misalignment_request;
+
+    always_comb begin
+        state_req_red_end_of_field = 0;
+
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            if(state_req_red.field_init_count == state_req_red.field_counter[i] 
+               & state_req_red.mem_req_valid[i]) begin
+
+                state_req_red_end_of_field = 1;
+
+            end
+        end
+    end
 
     always_comb begin
         logic [$clog2(VMEM_W/8):0] eew_in_bytes;
-        logic scratch_read_hit;
-        logic scratch_write_hit;
-        logic [$clog2(VMEM_W/8)-1:0] scratch_data_offset;
-        logic [VMEM_W-1:0] scratch_wdata;
-        logic [VMEM_W/8-1:0] scratch_wmask;
-        elem_cnt_t selected_index;
-        elem_cnt_t selected_write_index;
+        logic [MEM_PORTS-1:0] port_read_hit;
+        logic [MEM_PORTS-1:0] port_write_hit;
+        logic [MEM_PORTS-1:0] port_hit;
+        logic [MEM_PORTS-1:0][VMEM_W-1:0] port_wdata;
+        logic [MEM_PORTS-1:0][VMEM_W/8-1:0] port_wmask;
 
-        logic [31:0] end_of_addr;
+        logic [MEM_PORTS-1:0][31:0] end_of_addr;
 
         scratch_state_d = scratch_state_q;
-        scratch_memory_state_d = scratch_memory_state_q;
-        scratch_memory_d = scratch_memory_q;
 
-        scratch_read_hit = 0;
-        scratch_write_hit = 0;
-        scratch_hit = 0;
-        scratch_hit_data = '0;
-        scratch_pending = 0;
-        scratch_pending_output = '0;
-        scratch_pending_req_cleared = 0;
-        scratch_data_offset = '0;
-        scratch_wdata = '0;
-        scratch_wmask = '0;
+        port_read_hit = 0;
+        port_write_hit = 0;
+        port_hit = 0;
+        port_pending_select = '0;
+        port_wdata = '0;
+        port_wmask = '0;
 
         mem_req_switch = 0;
-        mem_req_queue_valid_in = 0;
-
-        selected_index = '0;
-        selected_write_index = '0;
+        mem_req_queue_valid_in = '0;
 
         pending_req_stall = 0;
 
-        misalignment_request = 0;
+        misalignment_request = '0;
+        all_ports_finished = 0;
+        misalignment_request_finished = 0;
 
         end_of_addr = '0;
 
@@ -476,6 +434,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         end
 
         mem_any_err_d = mem_any_err_q;
+
+        rdata_next = '{default: '0};
 
         unique case (scratch_state_q.current_eew)
             VSEW_8:
@@ -488,9 +448,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 eew_in_bytes = VMEM_W/8;
         endcase
 
-        //force_hit = scratch_memory_state_q[1] == PENDING | scratch_memory_state_q[0] == PENDING;
-        force_hit = '0;
-
         unique case (scratch_state_q.fsm_state)
         
             IDLE: begin
@@ -499,17 +456,10 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 scratch_state_d.id = state_req_red.id;
                 scratch_state_d.store = state_req_red.mode.store;
                 
-                scratch_state_d.write_index = 0;
                 scratch_state_d.outstanding_mem_req_cnt = 0;
 
-                scratch_state_d.current_input_port = MEM_PORTS'(1);
-                scratch_state_d.current_output_port = MEM_PORTS'(1);
-
-                for(int i = 0; i < SCRATCH_DEPTH; i++) begin
-                    scratch_memory_state_d[i] = NOT_VALID;
-                end
-
-                scratch_state_d.misalignment_request = 0;
+                scratch_state_d.misalignment_request_in = '0;
+                scratch_state_d.misalignment_request_out = '0;
 
                 // Reset error for new memory request
                 mem_any_err_d = 0;
@@ -530,11 +480,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                         eew_in_bytes = VMEM_W/8;
                 endcase
 
-                end_of_addr = state_req_red.req_addr_q + eew_in_bytes - 1;
-
                 if(input_queue_ready_in & input_queue_valid_out & state_req_red.first_cycle & state_req_red.suppressed) begin
                     if(state_req_red.mode.store) begin
-                        scratch_state_d.fsm_state = STORE_SCRATCH;
+                        scratch_state_d.fsm_state = STORE;
                         pending_req_stall = 0;
                     end else begin
                         scratch_state_d.fsm_state = LOAD;
@@ -545,33 +493,75 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     
 
                     if(state_req_red.mode.store) begin
-                        scratch_state_d.fsm_state = STORE_SCRATCH;
+                        scratch_state_d.fsm_state = STORE;
                         pending_req_stall = 0;
                         mem_req_switch = 1;
 
-                        scratch_memory_state_d[0] = VALID;
-                        scratch_memory_d[0].addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-                        scratch_memory_d[0].wmask = '0;
-                        scratch_state_d.write_index = 1;
+                        for(int i = 0; i < MEM_PORTS; i++) begin
+                            end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes - 1;
 
-                        scratch_data_offset = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
+                            if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & state_req_red.mem_req_valid[i]) begin
 
-                        if(scratch_memory_d[0].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
-                            misalignment_request = 1;
-                        end
+                                for(int j = 0; j < i; j++) begin
 
-                        if(~pending_req_stall & misalignment_request) begin
-                            scratch_state_d.fsm_state = STORE_SCRATCH_MISALIGNMENT;
-                        end
+                                    if(
+                                        state_req_red.mem_req_valid[j] &
+                                        state_req_red.req_addr_q[j][31:$clog2(VMEM_W/8)] == state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)]
+                                    ) begin
+                                        
+                                        port_read_hit[i] = 1; 
+                                        port_pending_select[i] = port_pending_select[j];
 
-                        scratch_wdata = state_req_red.wdata_buf_q << VMEM_W'(scratch_data_offset << 3);
-                        scratch_wmask = state_req_red.wmask_buf_q << scratch_data_offset;
+                                        if(state_req_red.req_addr_q[j][31:$clog2(VMEM_W/8)] != end_of_addr[i][31:$clog2(VMEM_W/8)]) begin
+                                            misalignment_request[i] = 1;
+                                            scratch_state_d.misalignment_request_in[i] = 1;
+                                        end
 
-                        for (int j = 0; j < VMEM_W / 8 ; j++) begin
-                            if(scratch_wmask[j]) begin
-                                scratch_memory_d[0].data[8*j +: 8] = scratch_wdata[8*j +: 8];
-                                scratch_memory_d[0].wmask[j] = 1;
+
+                                    end
+                                end
+                                port_pending_data_off[i] = state_req_red.req_addr_q[i][$clog2(VMEM_W/8)-1:0];
+
+                                if(~port_read_hit[i]) begin
+                                    if(mem_req_queue_ready_out[i]) begin
+                                            port_write_hit[i] = 1;
+                                            port_pending_select[i] = i;
+                                            mem_req_queue_valid_in[i] = 1;
+                                            port_wmask[i] = '0;
+
+                                            if(state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)] != end_of_addr[i][31:$clog2(VMEM_W/8)]) begin
+                                                misalignment_request[i] = 1;
+                                                scratch_state_d.misalignment_request_in[i] = 1;
+                                            end
+
+                                        end else begin
+                                            pending_req_stall = 1;
+                                        end
+                                end
+
+                                if(~pending_req_stall & misalignment_request_any) begin
+                                    scratch_state_d.fsm_state = STORE_MISALIGNMENT;
+                                end
+
+                                port_hit = port_read_hit | port_write_hit;
+
+                                port_wdata[i] = state_req_red.wdata_buf_q[i] << VMEM_W'(port_pending_data_off[i] << 3);
+                                port_wmask[i] = state_req_red.wmask_buf_q[i] << port_pending_data_off[i]; 
+
+                                if(port_hit) begin
+
+                                    for (int j = 0; j < VMEM_W / 8 ; j++) begin
+                                        if(port_wmask[i][j]) begin
+                                            port_wdata[port_pending_select[i]][8*j +: 8] = port_wdata[i][8*j +: 8];
+                                            port_wmask[port_pending_select[i]][j] = 1;
+                                        end
+                                    end
+                                end
                             end
+                        end
+
+                        if(pending_req_stall) begin
+                            mem_req_queue_valid_in = '0;
                         end
 
 
@@ -579,24 +569,60 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                         scratch_state_d.fsm_state = LOAD;
                         pending_req_stall = 0;
 
-                        if(mem_req_queue_ready_out) begin
-                            mem_req_queue_valid_in = 1;
-                            scratch_state_d.write_index = 1;
-                            scratch_memory_state_d[0] = PENDING;
-                            scratch_memory_d[0].addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-                            scratch_memory_d[0].pending_req_cnt = 1;
-                            scratch_pending = 1;
-                            scratch_pending_index = 0;
-                            scratch_pending_data_off = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
+                        for(int i = 0; i < MEM_PORTS; i++) begin
+                            end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes - 1;
 
-                            if(scratch_memory_d[0].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
-                                misalignment_request = 1;
+                            // Load
+                            if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & state_req_red.mem_req_valid[i]) begin
+
+                                for(int j = 0; j < i; j++) begin
+
+                                    if(
+                                        state_req_red.mem_req_valid[j] &
+                                        state_req_red.req_addr_q[j][31:$clog2(VMEM_W/8)] == state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)]
+                                    ) begin
+                                        
+                                        port_read_hit[i] = 1; 
+                                        port_pending_select[i] = port_pending_select[j];
+                                        port_pending_data_off[i] = state_req_red.req_addr_q[i][$clog2(VMEM_W/8)-1:0];
+
+
+                                        if(state_req_red.req_addr_q[j][31:$clog2(VMEM_W/8)] != end_of_addr[i][31:$clog2(VMEM_W/8)]) begin
+                                            misalignment_request[i] = 1;
+                                            scratch_state_d.misalignment_request_in[i] = 1;
+                                        end
+
+
+                                    end
+                                end
+
+                                if(~port_read_hit[i]) begin
+                                    if(mem_req_queue_ready_out[i]) begin
+                                        mem_req_queue_valid_in[i] = 1;
+                                        port_pending_select[i] = i;
+                                        port_pending_data_off[i] = state_req_red.req_addr_q[i][$clog2(VMEM_W/8)-1:0];
+
+                                        if(state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)] != end_of_addr[i][31:$clog2(VMEM_W/8)]) begin
+                                            misalignment_request[i] = 1;
+                                            scratch_state_d.misalignment_request_in[i] = 1;
+                                        end
+                                    end else begin
+                                        pending_req_stall = 1;
+                                    end
+                                end
+
+                                if(~pending_req_stall & misalignment_request_any) begin
+                                    scratch_state_d.fsm_state = LOAD_MISALIGNMENT;
+                                end
                             end
-                        end else begin
-                            pending_req_stall = 1;
+
                         end
 
-                        if(~pending_req_stall & misalignment_request) begin
+                        if(pending_req_stall) begin
+                            mem_req_queue_valid_in = '0;
+                        end
+
+                        if(~pending_req_stall & misalignment_request_any) begin
                             scratch_state_d.fsm_state = LOAD_MISALIGNMENT;
                         end
 
@@ -606,80 +632,57 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
             LOAD: begin
 
-                end_of_addr = state_req_red.req_addr_q + eew_in_bytes - 1;
+                for(int i = 0; i < MEM_PORTS; i++) begin
+                    end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes - 1;
 
-                // Load
-                if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed) begin
+                    // Load
+                    if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & state_req_red.mem_req_valid[i]) begin
 
-                    for(int i = 0; i < HIT_DEPTH; i++) begin
-                        selected_index = scratch_state_q.write_index - 1 - i;
+                        for(int j = 0; j < i; j++) begin
 
-                        if(
-                            (
-                                scratch_memory_state_q[selected_index] == VALID ||
-                                scratch_memory_state_q[selected_index] == PENDING
-                            ) &
-                            scratch_memory_q[selected_index].addr[31:$clog2(VMEM_W/8)] == state_req_red.req_addr_q[31:$clog2(VMEM_W/8)]
-                        ) begin
-                            
-                            scratch_read_hit = 1;
+                            if(
+                                state_req_red.mem_req_valid[j] &
+                                state_req_red.req_addr_q[j][31:$clog2(VMEM_W/8)] == state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)]
+                            ) begin
+                                
+                                port_read_hit[i] = 1; 
+                                port_pending_select[i] = port_pending_select[j];
+                                port_pending_data_off[i] = state_req_red.req_addr_q[i][$clog2(VMEM_W/8)-1:0];
 
-                            scratch_data_offset = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];   
 
-                            scratch_hit_data = '0;
-                            scratch_hit_data = scratch_memory_q[selected_index].data >> VMEM_W'(scratch_data_offset << 3);
+                                if(state_req_red.req_addr_q[j][31:$clog2(VMEM_W/8)] != end_of_addr[i][31:$clog2(VMEM_W/8)]) begin
+                                    misalignment_request[i] = 1;
+                                    scratch_state_d.misalignment_request_in[i] = 1;
+                                end
 
-                            if (scratch_memory_state_q[selected_index] == PENDING) begin
-                                scratch_memory_d[selected_index].pending_req_cnt = scratch_memory_q[selected_index].pending_req_cnt + 1;
-                                scratch_pending = 1;
-                                scratch_pending_index = selected_index;
-                                scratch_pending_data_off = scratch_data_offset;
+
                             end
-
-
-                            if(scratch_memory_q[selected_index].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
-                                misalignment_request = 1;
-                            end
-
-
                         end
-                    end
 
-                    scratch_hit = scratch_read_hit;
+                        if(~port_read_hit[i]) begin
+                            if(mem_req_queue_ready_out[i]) begin
+                                mem_req_queue_valid_in[i] = 1;
+                                port_pending_select[i] = i;
+                                port_pending_data_off[i] = state_req_red.req_addr_q[i][$clog2(VMEM_W/8)-1:0];
 
-                    if(~scratch_hit) begin
-                        selected_index = scratch_state_q.write_index;
-                        if(
-                            (
-                                scratch_memory_state_q[selected_index] == PENDING ||
-                                scratch_memory_state_q[selected_index] == VALID
-                            ) &
-                            scratch_memory_q[selected_index].pending_req_cnt > 0
-                        ) begin
-                            pending_req_stall = 1;
-                        end else begin
-                            if(mem_req_queue_ready_out) begin
-                                mem_req_queue_valid_in = 1;
-                                scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                                scratch_memory_state_d[selected_index] = PENDING;
-                                scratch_memory_d[selected_index].addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-                                scratch_memory_d[selected_index].pending_req_cnt = 1;
-                                scratch_pending = 1;
-                                scratch_pending_index = selected_index;
-                                scratch_pending_data_off = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
-
-                                if(scratch_memory_d[selected_index].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
-                                    misalignment_request = 1;
+                                if(state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)] != end_of_addr[i][31:$clog2(VMEM_W/8)]) begin
+                                    misalignment_request[i] = 1;
+                                    scratch_state_d.misalignment_request_in[i] = 1;
                                 end
                             end else begin
                                 pending_req_stall = 1;
                             end
                         end
+
+                        if(~pending_req_stall & misalignment_request_any) begin
+                            scratch_state_d.fsm_state = LOAD_MISALIGNMENT;
+                        end
                     end
 
-                    if(~pending_req_stall & misalignment_request) begin
-                        scratch_state_d.fsm_state = LOAD_MISALIGNMENT;
-                    end
+                end
+
+                if(pending_req_stall) begin
+                    mem_req_queue_valid_in = '0;
                 end
 
                 // End of load
@@ -687,9 +690,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     input_queue_ready_in &
                     input_queue_valid_out &
                     state_req_red.last_cycle & 
-                    (state_req_red.field_init_count == '0 | state_req_red.field_init_count == state_req_red.field_counter) &
+                    (state_req_red.field_init_count == '0 | state_req_red_end_of_field) &
                     ~pending_req_stall &
-                    ~misalignment_request
+                    ~misalignment_request_any
                 ) begin
                     scratch_state_d.fsm_state = LAST_CYCLE_LOAD;
                 end
@@ -698,70 +701,46 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
             LOAD_MISALIGNMENT: begin
 
-                end_of_addr = state_req_red.req_addr_q + eew_in_bytes;
+                for(int i = 0; i < MEM_PORTS; i++) begin
+                    end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes;
 
-                // Load
-                if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed) begin
+                    // Load
+                    if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & scratch_state_q.misalignment_request_in[i]) begin
 
-                    for(int i = 0; i < HIT_DEPTH; i++) begin
-                        selected_index = scratch_state_q.write_index - 1 - i;
+                        for(int j = 0; j < i; j++) begin
 
-                        if(
-                            (
-                                scratch_memory_state_q[selected_index] == VALID ||
-                                scratch_memory_state_q[selected_index] == PENDING
-                            ) &
-                            scratch_memory_q[selected_index].addr[31:$clog2(VMEM_W/8)] == end_of_addr[31:$clog2(VMEM_W/8)]
-                        ) begin
-                            
-                            scratch_read_hit = 1;
-
-                            scratch_data_offset = eew_in_bytes - end_of_addr[$clog2(VMEM_W/8)-1:0];
-
-                            scratch_hit_data = '0;
-                            scratch_hit_data = scratch_memory_q[selected_index].data << VMEM_W'(scratch_data_offset << 3);
-
-                            if (scratch_read_hit & scratch_memory_state_q[selected_index] == PENDING) begin
-                                scratch_memory_d[selected_index].pending_req_cnt = scratch_memory_q[selected_index].pending_req_cnt + 1;
-                                scratch_pending = 1;
-                                scratch_pending_index = selected_index;
-                                scratch_pending_data_off = scratch_data_offset;
-                            end
-
+                                if(
+                                    state_req_red.mem_req_valid[j] &
+                                    scratch_state_q.misalignment_request_in[j] &
+                                    end_of_addr[j][31:$clog2(VMEM_W/8)] == end_of_addr[i][31:$clog2(VMEM_W/8)]
+                                ) begin
+                                    
+                                    port_read_hit[i] = 1; 
+                                    port_pending_select[i] = port_pending_select[j];
+                                    port_pending_data_off[i] = eew_in_bytes - end_of_addr[i][$clog2(VMEM_W/8)-1:0];
+                                end
                         end
-                    end
 
-                    scratch_hit = scratch_read_hit;
-
-                    if(~scratch_hit) begin
-                        selected_index = scratch_state_q.write_index;
-                        if(
-                            (
-                                scratch_memory_state_q[selected_index] == PENDING ||
-                                scratch_memory_state_q[selected_index] == VALID
-                            ) &
-                            scratch_memory_q[selected_index].pending_req_cnt > 0
-                        ) begin
-                            pending_req_stall = 1;
-                        end else begin
-                            if(mem_req_queue_ready_out) begin
-                                mem_req_queue_valid_in = 1;
-                                scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                                scratch_memory_state_d[selected_index] = PENDING;
-                                scratch_memory_d[selected_index].addr = {end_of_addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-                                scratch_memory_d[selected_index].pending_req_cnt = 1;
-                                scratch_pending = 1;
-                                scratch_pending_index = selected_index;
-                                scratch_pending_data_off = eew_in_bytes - end_of_addr[$clog2(VMEM_W/8)-1:0];
+                        if(~port_read_hit[i]) begin
+                            if(mem_req_queue_ready_out[i]) begin
+                                mem_req_queue_valid_in[i] = 1;
+                                port_pending_select[i] = i;
+                                port_pending_data_off[i] = eew_in_bytes - end_of_addr[i][$clog2(VMEM_W/8)-1:0];
                             end else begin
                                 pending_req_stall = 1;
                             end
                         end
-                    end
 
-                    if(~pending_req_stall) begin
-                        scratch_state_d.fsm_state = LOAD;
+
+                        if(~pending_req_stall) begin
+                            scratch_state_d.fsm_state = LOAD;
+                            scratch_state_d.misalignment_request_in = '0;
+                        end
                     end
+                end
+
+                if(pending_req_stall) begin
+                    mem_req_queue_valid_in = '0;
                 end
 
                 // End of load
@@ -769,7 +748,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     input_queue_ready_in &
                     input_queue_valid_out &
                     state_req_red.last_cycle & 
-                    (state_req_red.field_init_count == '0 | state_req_red.field_init_count == state_req_red.field_counter) &
+                    (state_req_red.field_init_count == '0 | state_req_red_end_of_field) &
                     ~pending_req_stall
                 ) begin
                     scratch_state_d.fsm_state = LAST_CYCLE_LOAD;
@@ -777,204 +756,161 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
             end
 
-            STORE_SCRATCH: begin
+            STORE: begin
                 mem_req_switch = 1;
 
-                end_of_addr = state_req_red.req_addr_q + eew_in_bytes - 1;
+                for(int i = 0; i < MEM_PORTS; i++) begin
+                    end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes - 1;
 
-                if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed) begin
-                    
-                    for(int i = 0; i < HIT_DEPTH; i++) begin
-                        selected_index = scratch_state_q.write_index - 1 - i;
-                        if(
-                            scratch_memory_state_q[selected_index] == VALID &
-                            scratch_memory_q[selected_index].addr[31:$clog2(VMEM_W/8)] == state_req_red.req_addr_q[31:$clog2(VMEM_W/8)]
-                        ) begin
-                            scratch_read_hit = 1;
-                            selected_write_index = selected_index;
+                    if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & state_req_red.mem_req_valid[i]) begin
 
-                            if(scratch_memory_q[selected_index].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
-                                misalignment_request = 1;
-                            end
-                        end
-                    end
+                        for(int j = 0; j < i; j++) begin
 
-                    scratch_data_offset = state_req_red.req_addr_q[$clog2(VMEM_W/8)-1:0];
+                            if(
+                                state_req_red.mem_req_valid[j] &
+                                state_req_red.req_addr_q[j][31:$clog2(VMEM_W/8)] == state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)]
+                            ) begin
+                                
+                                port_read_hit[i] = 1; 
+                                port_pending_select[i] = port_pending_select[j];
 
-                    if(~scratch_read_hit) begin
-                        selected_write_index = scratch_state_q.write_index;
-
-                        if(scratch_memory_state_q[selected_write_index] == NOT_VALID) begin
-                            scratch_write_hit = 1;
-                            scratch_memory_state_d[selected_write_index] = VALID;
-                            scratch_memory_d[selected_write_index].addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-                            scratch_memory_d[selected_write_index].wmask = '0;
-                            scratch_state_d.write_index = scratch_state_q.write_index + 1;
-
-                            if(scratch_memory_d[selected_write_index].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
-                                misalignment_request = 1;
-                            end
-
-                        end else begin
-                            if(mem_req_queue_ready_out) begin
-                                scratch_write_hit = 1;
-                                mem_req_queue_valid_in = 1;
-                                scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                                scratch_memory_d[selected_write_index].addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-                                scratch_memory_d[selected_write_index].wmask = '0;
-
-                                if(scratch_memory_d[selected_write_index].addr[31:$clog2(VMEM_W/8)] != end_of_addr[31:$clog2(VMEM_W/8)]) begin
-                                    misalignment_request = 1;
+                                if(state_req_red.req_addr_q[j][31:$clog2(VMEM_W/8)] != end_of_addr[i][31:$clog2(VMEM_W/8)]) begin
+                                    misalignment_request[i] = 1;
+                                    scratch_state_d.misalignment_request_in[i] = 1;
                                 end
 
-                            end else begin
-                                pending_req_stall = 1;
+
                             end
                         end
-                    end
+                        port_pending_data_off[i] = state_req_red.req_addr_q[i][$clog2(VMEM_W/8)-1:0];
 
-                    if(~pending_req_stall & misalignment_request) begin
-                        scratch_state_d.fsm_state = STORE_SCRATCH_MISALIGNMENT;
-                    end
+                        if(~port_read_hit[i]) begin
+                            if(mem_req_queue_ready_out[i]) begin
+                                    port_write_hit[i] = 1;
+                                    port_pending_select[i] = i;
+                                    mem_req_queue_valid_in[i] = 1;
+                                    port_wmask[i] = '0;
 
-                    scratch_hit = scratch_read_hit | scratch_write_hit;
-
-                    scratch_wdata = state_req_red.wdata_buf_q << VMEM_W'(scratch_data_offset << 3);
-                    scratch_wmask = state_req_red.wmask_buf_q << scratch_data_offset; 
-
-                    if(scratch_hit) begin
-
-                        for (int j = 0; j < VMEM_W / 8 ; j++) begin
-                            if(scratch_wmask[j]) begin
-                                scratch_memory_d[selected_write_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
-                                scratch_memory_d[selected_write_index].wmask[j] = 1;
-                            end
-                        end
-                    end
-                end
-
-
-                // End of store
-                if(
-                    input_queue_ready_in &
-                    input_queue_valid_out &
-                    state_req_red.last_cycle & 
-                    (state_req_red.field_init_count == '0 | state_req_red.field_init_count == state_req_red.field_counter) &
-                    ~pending_req_stall &
-                    ~misalignment_request
-                ) begin
-                    scratch_state_d.fsm_state = STORE_MEMORY;
-                    scratch_state_d.store_end_index = scratch_state_d.write_index - 1; // need to read from d since it could have been updated this cycle
-                end
-
-
-            end
-
-
-            STORE_SCRATCH_MISALIGNMENT: begin
-                mem_req_switch = 1;
-
-                end_of_addr = state_req_red.req_addr_q + eew_in_bytes;
-
-                if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed) begin
-                    
-                    for(int i = 0; i < HIT_DEPTH; i++) begin
-                        selected_index = scratch_state_q.write_index - 1 - i;
-                        if(
-                            scratch_memory_state_q[selected_index] == VALID &
-                            scratch_memory_q[selected_index].addr[31:$clog2(VMEM_W/8)] == end_of_addr[31:$clog2(VMEM_W/8)]
-                        ) begin
-                            scratch_read_hit = 1;
-                            selected_write_index = selected_index;
-                        end
-                    end
-
-                    scratch_data_offset = eew_in_bytes - end_of_addr[$clog2(VMEM_W/8)-1:0];
-
-                    if(~scratch_read_hit) begin
-                        selected_write_index = scratch_state_q.write_index;
-
-                        if(scratch_memory_state_q[selected_write_index] == NOT_VALID) begin
-                            scratch_write_hit = 1;
-                            scratch_memory_state_d[selected_write_index] = VALID;
-                            scratch_memory_d[selected_write_index].addr = {end_of_addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-                            scratch_memory_d[selected_write_index].wmask = '0;
-                            scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                        end else begin
-                            if(mem_req_queue_ready_out) begin
-                                scratch_write_hit = 1;
-                                mem_req_queue_valid_in = 1;
-                                scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                                scratch_memory_d[selected_write_index].addr = {end_of_addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-                                scratch_memory_d[selected_write_index].wmask = '0;
-                            end else begin
-                                pending_req_stall = 1;
-                            end
-                        end
-                    end
-
-                    scratch_hit = scratch_read_hit | scratch_write_hit;
-
-                    scratch_wdata = state_req_red.wdata_buf_q >> VMEM_W'(scratch_data_offset << 3);
-                    scratch_wmask = state_req_red.wmask_buf_q >> scratch_data_offset; 
-
-                    if(scratch_hit) begin
-
-                        for (int j = 0; j < VMEM_W / 8 ; j++) begin
-                            if(scratch_wmask[j]) begin
-                                scratch_memory_d[selected_write_index].data[8*j +: 8] = scratch_wdata[8*j +: 8];
-                                scratch_memory_d[selected_write_index].wmask[j] = 1;
-                            end
-                        end
-                    end
-
-                    if(~pending_req_stall) begin
-                        scratch_state_d.fsm_state = STORE_SCRATCH;
-                    end
-                end
-
-
-                // End of store
-                if(
-                    input_queue_ready_in &
-                    input_queue_valid_out &
-                    state_req_red.last_cycle & 
-                    (state_req_red.field_init_count == '0 | state_req_red.field_init_count == state_req_red.field_counter) &
-                    ~pending_req_stall &
-                    ~misalignment_request
-                ) begin
-                    scratch_state_d.fsm_state = STORE_MEMORY;
-                    scratch_state_d.store_end_index = scratch_state_d.write_index - 1; // need to read from d since it could have been updated this cycle
-                end
-
-
-            end
-
-            STORE_MEMORY: begin
-                mem_req_switch = 1;
-                pending_req_stall = 1;
-
-                if(scratch_memory_state_q[scratch_state_q.write_index] == VALID) begin
-
-                    if(mem_req_queue_ready_out) begin
-                        for(int i = 0; i < MEM_PORTS; i++) begin
-                            if(scratch_state_q.current_input_port[i]) begin
-                                if(port_queue_ready_out[i]) begin
-                                    mem_req_queue_valid_in = 1;
-                                    scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                                    if(scratch_state_q.write_index == scratch_state_q.store_end_index) begin
-                                        scratch_state_d.fsm_state = LAST_CYCLE_STORE;
+                                    if(state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)] != end_of_addr[i][31:$clog2(VMEM_W/8)]) begin
+                                        misalignment_request[i] = 1;
+                                        scratch_state_d.misalignment_request_in[i] = 1;
                                     end
+
+                                end else begin
+                                    pending_req_stall = 1;
+                                end
+                        end
+
+                        if(~pending_req_stall & misalignment_request_any) begin
+                            scratch_state_d.fsm_state = STORE_MISALIGNMENT;
+                        end
+
+                        port_hit = port_read_hit | port_write_hit;
+
+                        port_wdata[i] = state_req_red.wdata_buf_q[i] << VMEM_W'(port_pending_data_off[i] << 3);
+                        port_wmask[i] = state_req_red.wmask_buf_q[i] << port_pending_data_off[i]; 
+
+                        if(port_hit) begin
+
+                            for (int j = 0; j < VMEM_W / 8 ; j++) begin
+                                if(port_wmask[i][j]) begin
+                                    port_wdata[port_pending_select[i]][8*j +: 8] = port_wdata[i][8*j +: 8];
+                                    port_wmask[port_pending_select[i]][j] = 1;
                                 end
                             end
-                        end                        
+                        end
                     end
+                end
 
-                end else begin
-                    scratch_state_d.write_index = scratch_state_q.write_index + 1;
-                    if(scratch_state_q.write_index == scratch_state_q.store_end_index) begin
-                        scratch_state_d.fsm_state = LAST_CYCLE_STORE;
+                if(pending_req_stall) begin
+                    mem_req_queue_valid_in = '0;
+                end
+
+                // End of store
+                if(
+                    input_queue_ready_in &
+                    input_queue_valid_out &
+                    state_req_red.last_cycle & 
+                    (state_req_red.field_init_count == '0 | state_req_red_end_of_field) &
+                    ~pending_req_stall &
+                    ~misalignment_request_any
+                ) begin
+                    scratch_state_d.fsm_state = LAST_CYCLE_STORE;
+                end
+
+
+            end
+
+
+            STORE_MISALIGNMENT: begin
+                mem_req_switch = 1;
+
+                for(int i = 0; i < MEM_PORTS; i++) begin
+                    end_of_addr = state_req_red.req_addr_q + eew_in_bytes;
+
+                    if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & scratch_state_q.misalignment_request_in[i]) begin
+                        
+                        for(int j = 0; j < i; j++) begin
+
+                            if(
+                                state_req_red.mem_req_valid[j] &
+                                scratch_state_q.misalignment_request_in[j] &
+                                end_of_addr[j][31:$clog2(VMEM_W/8)] == end_of_addr[i][31:$clog2(VMEM_W/8)]
+                            ) begin
+                                
+                                port_read_hit[i] = 1; 
+                                port_pending_select[i] = port_pending_select[j];
+                            end
+                        end
+
+                        port_pending_data_off[i] = eew_in_bytes - end_of_addr[i][$clog2(VMEM_W/8)-1:0];
+
+                        if(~port_read_hit[i]) begin
+                            if(mem_req_queue_ready_out[i]) begin
+                                    port_write_hit[i] = 1;
+                                    port_pending_select[i] = i;
+                                    mem_req_queue_valid_in[i] = 1;
+                                    port_wmask[i] = '0;
+                                end else begin
+                                    pending_req_stall = 1;
+                                end
+                        end
+
+                        port_hit = port_read_hit | port_write_hit;
+
+                        port_wdata[i] = state_req_red.wdata_buf_q[i] << VMEM_W'(port_pending_data_off[i] << 3);
+                        port_wmask[i] = state_req_red.wmask_buf_q[i] << port_pending_data_off[i]; 
+
+                        if(port_hit) begin
+
+                            for (int j = 0; j < VMEM_W / 8 ; j++) begin
+                                if(port_wmask[i][j]) begin
+                                    port_wdata[port_pending_select[i]][8*j +: 8] = port_wdata[i][8*j +: 8];
+                                    port_wmask[port_pending_select[i]][j] = 1;
+                                end
+                            end
+                        end
+
+                        if(~pending_req_stall) begin
+                            scratch_state_d.fsm_state = STORE;
+                            scratch_state_d.misalignment_request_in = '0;
+                        end
                     end
+                end
+
+                if(pending_req_stall) begin
+                    mem_req_queue_valid_in = '0;
+                end
+
+                // End of store
+                if(
+                    input_queue_ready_in &
+                    input_queue_valid_out &
+                    state_req_red.last_cycle & 
+                    (state_req_red.field_init_count == '0 | state_req_red_end_of_field) &
+                    ~pending_req_stall
+                ) begin
+                    scratch_state_d.fsm_state = LAST_CYCLE_STORE;
                 end
 
 
@@ -984,9 +920,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 pending_req_stall = 1;
                 if(scratch_state_q.outstanding_mem_req_cnt == '0 & ~output_queue_valid_out) begin
                     scratch_state_d.fsm_state = IDLE;
-                    scratch_state_d.current_input_port = MEM_PORTS'(1);
-                    scratch_state_d.current_output_port = MEM_PORTS'(1);
-                    scratch_state_d.write_index = 0;
                 end
             end
 
@@ -994,9 +927,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 pending_req_stall = 1;
                 if(scratch_state_q.outstanding_mem_req_cnt == '0) begin
                     scratch_state_d.fsm_state = IDLE;
-                    scratch_state_d.current_input_port = MEM_PORTS'(1);
-                    scratch_state_d.current_output_port = MEM_PORTS'(1);
-                    scratch_state_d.write_index = 0;
                 end
             end
 
@@ -1008,75 +938,77 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             LOAD_MISALIGNMENT,
             LAST_CYCLE_LOAD: begin
                 // PENDING_LOAD_STALL - deal with pending loads
+                logic misalignment_request_out_any;
+                port_select_t [MEM_PORTS-1:0] selected_port;
 
+                misalignment_request_out_any = 0;
+                selected_port = port_queue_pending_select_out;
+
+                // put together the data
                 for(int i = 0; i < MEM_PORTS; i++) begin
-
-                    if(scratch_state_q.current_output_port[i] & port_queue_valid_out[i]) begin
-                        port_queue_ready_in[i] = 1;
-                        scratch_memory_state_d[port_queue_write_index_out[i]] = VALID;
-                        scratch_memory_d[port_queue_write_index_out[i]].data = port_queue_rdata_out[i];
+                    if(scratch_state_q.misalignment_request_out[i]) begin
+                        rdata_next[i] = (port_queue_rdata_out[selected_port[i]] << VMEM_W'(port_queue_pending_data_off[i] << 3)) | scratch_state_q.misalignment_data[i];
+                    end else begin
+                        rdata_next[i] = port_queue_rdata_out[selected_port[i]] >> VMEM_W'(port_queue_pending_data_off[i] << 3);
                     end
                 end
 
-                // pending case
-                if (output_queue_valid_out & scratch_queue_pending_out) begin
+                if (output_queue_valid_out) begin
+                    misalignment_request_out_any = |misalignment_request_out;
 
-                    logic [VMEM_W-1:0] temp_scratch_memory_mux;
-                    temp_scratch_memory_mux = '0;
+                    all_ports_finished = ~misalignment_request_out_any;
+                    misalignment_request_finished = 1;
 
-                    if(scratch_memory_state_q[scratch_queue_pending_index_out] == VALID) begin
-                        scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt = scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt - 1; // read from d since it could have been incremented before
-                        scratch_pending_req_cleared = 1;
-
-                        temp_scratch_memory_mux = scratch_memory_q[scratch_queue_pending_index_out].data;
-
-                    end else if(scratch_memory_state_d[scratch_queue_pending_index_out] == VALID) begin
-                        scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt = scratch_memory_d[scratch_queue_pending_index_out].pending_req_cnt - 1; // read from d since it could have been incremented before
-                        scratch_pending_req_cleared = 1;
-
-                        temp_scratch_memory_mux = scratch_memory_d[scratch_queue_pending_index_out].data;
+                    // check if requests are finished
+                    for(int i = 0; i < MEM_PORTS; i++) begin
+                        if(~port_queue_valid_out[selected_port[i]] & deq_state.mem_req_valid[i] & misalignment_request_out[i]) begin
+                            misalignment_request_finished = 0;
+                        end
                     end
 
-                    scratch_pending_output = temp_scratch_memory_mux >> VMEM_W'(scratch_queue_pending_data_off_out << 3);
-
-                    if(misalignment_request_out & scratch_pending_req_cleared) begin
-                        scratch_state_d.misalignment_request = 1;
-                        scratch_state_d.misalignment_data = scratch_pending_output;
+                    for(int i = 0; i < MEM_PORTS; i++) begin
+                        if(~port_queue_valid_out[selected_port[i]] & deq_state.mem_req_valid[i]) begin
+                            all_ports_finished = 0;
+                        end
                     end
 
-                    if(scratch_state_q.misalignment_request & scratch_pending_req_cleared) begin
-                        scratch_state_d.misalignment_request = 0;
-                        scratch_pending_output = (temp_scratch_memory_mux << VMEM_W'(scratch_queue_pending_data_off_out << 3)) | scratch_state_q.misalignment_data;
+                    // send out valid signals to ports
+                    for(int i = 0; i < MEM_PORTS; i++) begin
+                        if(port_queue_valid_out[selected_port[i]] & deq_state.mem_req_valid[i] & misalignment_request_out[i]) begin
+                            port_queue_ready_in[selected_port[i]] = 1;
+                            scratch_state_d.misalignment_request_out[i] = 1;
+                            scratch_state_d.misalignment_data[i] = rdata_next[i];
+                        end
                     end
 
+                    for(int i = 0; i < MEM_PORTS; i++) begin
+                        if(port_queue_valid_out[selected_port[i]] & deq_state.mem_req_valid[i]) begin
+                            port_queue_ready_in[selected_port[i]] = 1;
+                        end
+                    end
+
+                    // block valid signals if requests are not all finished
+                    if(~misalignment_request_finished) begin
+                        port_queue_ready_in = '0;
+                        scratch_state_d.misalignment_request_out = '0;
+                    end
+
+                    if(~all_ports_finished) begin
+                        port_queue_ready_in = '0;
+                    end else begin
+                        scratch_state_d.misalignment_request_out = '0;
+                    end
                 end
-
-                // hit case
-                if (output_queue_valid_out & ~scratch_queue_pending_out) begin
-
-                    if(misalignment_request_out) begin
-                        scratch_state_d.misalignment_request = 1;
-                        scratch_state_d.misalignment_data = scratch_queue_data_out;
-                    end
-
-                    if(scratch_state_q.misalignment_request) begin
-                        scratch_pending_output = scratch_queue_data_out | scratch_state_q.misalignment_data;
-                    end
-                end
-                
             end
 
-            STORE_SCRATCH,
-            STORE_SCRATCH_MISALIGNMENT,
-            STORE_MEMORY,
+            STORE,
+            STORE_MISALIGNMENT,
             LAST_CYCLE_STORE: begin
                 // PENDING_STORE_STALL - deal with pending stores
 
                 for(int i = 0; i < MEM_PORTS; i++) begin
-                    if(scratch_state_q.current_output_port[i]) begin
-                        if(port_queue_valid_out[i]) begin
-                            port_queue_ready_in[i] = 1;
-                        end
+                    if(port_queue_valid_out[i]) begin
+                        port_queue_ready_in[i] = 1;
                     end
                 end
 
@@ -1088,31 +1020,34 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         endcase
 
         // Input port configuration
-        if(mem_req_queue_valid_in) begin
-            scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt + 1;
-            scratch_state_d.current_input_port = rotate_left(scratch_state_q.current_input_port);
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            if(mem_req_queue_valid_in[i]) begin
+                scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt + 1;
+            end
         end
 
         if(mem_req_switch) begin
-            mem_req_queue_data_in.selected_input_port = scratch_state_q.current_input_port;
-            mem_req_queue_data_in.first_cycle = state_req_red.first_cycle;
-            mem_req_queue_data_in.store = 1;
-            mem_req_queue_data_in.addr = scratch_memory_q[scratch_state_q.write_index].addr;
-            mem_req_queue_data_in.wmask = scratch_memory_q[scratch_state_q.write_index].wmask;
-            mem_req_queue_data_in.wdata = scratch_memory_q[scratch_state_q.write_index].data;
-            mem_req_queue_data_in.port_write_index = scratch_state_q.write_index;
-        end else begin
-            mem_req_queue_data_in.selected_input_port = scratch_state_q.current_input_port;
-            mem_req_queue_data_in.first_cycle = state_req_red.first_cycle;
-            mem_req_queue_data_in.store = 0;
-            if(scratch_state_q.fsm_state == LOAD_MISALIGNMENT) begin
-                mem_req_queue_data_in.addr = {end_of_addr[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+            mem_req_queue_data_in[i].first_cycle = state_req_red.first_cycle;
+            mem_req_queue_data_in[i].store = 1;
+            if(scratch_state_q.fsm_state == STORE_MISALIGNMENT) begin
+                mem_req_queue_data_in[i].addr = {end_of_addr[i][31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
             end else begin
-                mem_req_queue_data_in.addr = {state_req_red.req_addr_q[31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+                mem_req_queue_data_in[i].addr = {state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
             end
-            mem_req_queue_data_in.wmask = state_req_red.wmask_buf_q;
-            mem_req_queue_data_in.wdata = state_req_red.wdata_buf_q;
-            mem_req_queue_data_in.port_write_index = scratch_state_q.write_index;
+            mem_req_queue_data_in[i].wmask = port_wmask[i];
+            mem_req_queue_data_in[i].wdata = port_wdata[i];
+        end else begin
+            for(int i = 0; i < MEM_PORTS; i++) begin
+                mem_req_queue_data_in[i].first_cycle = state_req_red.first_cycle;
+                mem_req_queue_data_in[i].store = 0;
+                if(scratch_state_q.fsm_state == LOAD_MISALIGNMENT) begin
+                    mem_req_queue_data_in[i].addr = {end_of_addr[i][31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+                end else begin
+                    mem_req_queue_data_in[i].addr = {state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+                end
+                mem_req_queue_data_in[i].wmask = state_req_red.wmask_buf_q[i];
+                mem_req_queue_data_in[i].wdata = state_req_red.wdata_buf_q[i];
+            end
         end
 
         // Output port configuration
@@ -1120,7 +1055,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             if(port_queue_ready_in[i]) begin
                 mem_any_err_d |= port_queue_mem_err_out[i];
                 scratch_state_d.outstanding_mem_req_cnt = scratch_state_d.outstanding_mem_req_cnt - 1; // read from d since it could have been incremented before
-                scratch_state_d.current_output_port = rotate_left(scratch_state_q.current_output_port);
             end
         end
 
@@ -1129,12 +1063,10 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
 
     // output queue -> queue after sending memory request
-    assign output_queue_data_in.scratch_hit_data           = scratch_hit_data;
-    assign output_queue_data_in.scratch_pending            = scratch_pending;
-    assign output_queue_data_in.scratch_pending_index      = scratch_pending_index;
-    assign output_queue_data_in.scratch_pending_data_off   = scratch_pending_data_off;
-    assign output_queue_data_in.state_req_red              = state_req_red;
-    assign output_queue_data_in.misalignment_request       = misalignment_request;
+    assign output_queue_data_in.port_pending_select             = port_pending_select;
+    assign output_queue_data_in.port_pending_data_off           = port_queue_pending_data_off;
+    assign output_queue_data_in.state_req_red                   = state_req_red;
+    assign output_queue_data_in.misalignment_request            = misalignment_request;
 
     // flow turned off since otherwise requests will be handled before the scratch was able to process them 
     vproc_queue_dyn_flow #(
@@ -1156,24 +1088,44 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         .flags_all_o  (                                                                                                                 )
     );
 
-    assign scratch_queue_data_out              = output_queue_data_out.scratch_hit_data;
-    assign scratch_queue_pending_out           = output_queue_data_out.scratch_pending;
-    assign scratch_queue_pending_index_out     = output_queue_data_out.scratch_pending_index;
-    assign scratch_queue_pending_data_off_out  = output_queue_data_out.scratch_pending_data_off;
-    assign deq_state                           = output_queue_data_out.state_req_red;
-    assign rmask_buf_d                         = output_queue_data_out.state_req_red.vmsk_tmp_q;
+    assign port_queue_pending_select_out       = output_queue_data_out.port_pending_select;
+    assign port_queue_pending_data_off         = output_queue_data_out.port_pending_data_off;
     assign misalignment_request_out            = output_queue_data_out.misalignment_request;
 
+    always_comb begin
+        deq_state = output_queue_data_out.state_req_red;
+        deq_state_end_of_field = 0;
+
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            if(deq_state.field_init_count == deq_state.field_counter[i] 
+               & deq_state.mem_req_valid[i]) begin
+
+                deq_state_end_of_field = 1;
+
+            end
+        end
+
+    end
+
+
+    always_comb begin
+        rdata_buf_d = rdata_next;
+
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            rmask_buf_d[i] = output_queue_data_out.state_req_red.vmsk_tmp_q[i];
+        end
+
+    end
 
 
     // Ready signals
     assign output_queue_ready_in = output_queue_valid_out & 
-                                    ((~deq_state.mode.store & ~scratch_queue_pending_out | scratch_pending_req_cleared) | deq_state.mode.store | deq_state.suppressed | mem_err_d);
+                                    ((~deq_state.mode.store & all_ports_finished | misalignment_request_finished) | deq_state.mode.store | deq_state.suppressed | mem_err_d);
 
-    assign input_queue_ready_in  = output_queue_ready_out & ~force_hit;
+    assign input_queue_ready_in  = output_queue_ready_out;
 
     // Valid signals
-    assign state_rdata_valid_d = output_queue_valid_out & output_queue_ready_in & ~misalignment_request_out;
+    assign state_rdata_valid_d = output_queue_valid_out & output_queue_ready_in & all_ports_finished;
 
     // monitor the memory result for bus errors and the queue for exceptions
     always_comb begin
@@ -1193,10 +1145,10 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     // LSU transaction complete queue, result indicates potential exceptions
     logic trans_complete_valid, trans_complete_ready;
     assign trans_complete_valid = ((~scratch_state_q.store & state_rdata_valid_d & deq_state.last_cycle & 
-                                 (deq_state.field_init_count == '0 | deq_state.field_init_count == deq_state.field_counter)) &
+                                 (deq_state.field_init_count == '0 | deq_state_end_of_field)) &
                                   (instr_state_i[scratch_state_q.id] == INSTR_COMMITTED)) |
                                   (scratch_state_q.store & state_rdata_valid_d & deq_state.last_cycle & 
-                                 (deq_state.field_init_count == '0 | deq_state.field_init_count == deq_state.field_counter));
+                                 (deq_state.field_init_count == '0 | deq_state_end_of_field));
 
     /*assign trans_complete_valid = ((~scratch_state_q.store & scratch_state_q.fsm_state == LAST_CYCLE_LOAD & scratch_state_d.fsm_state == IDLE) &
                                   (instr_state_i[scratch_state_q.id] == INSTR_COMMITTED)) |
@@ -1225,9 +1177,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         state_rdata_d.exc        = mem_err_d;
         state_rdata_d.res_store &= ~state_rdata_d.mode.store; // inhibit vreg store for vector store
     end
-
-    // load data:
-    assign rdata_buf_d = output_queue_ready_in & (scratch_queue_pending_out | scratch_state_q.misalignment_request) ? scratch_pending_output : scratch_queue_data_out;
 
     assign state_rdata_valid_o = state_rdata_valid_q;
     assign state_req_ready_o = state_req_ready;

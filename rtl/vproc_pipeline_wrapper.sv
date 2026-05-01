@@ -528,7 +528,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         for(int i = 0; i < OP_CNT; i++) begin
             state_init.op_flags[i].lsu_instr   = 0;
             state_init.op_flags[i].field_instr = 0;
-            state_init.op_flags[i].unit_stride = 0;
         end
 
         if (unit_lsu) begin 
@@ -541,7 +540,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             for(int i = 0; i < OP_CNT; i++) begin
                 state_init.op_flags[i].lsu_instr   = 1;
                 state_init.op_flags[i].field_instr = state_init.field_init_count > 0 ? 1 : 0;
-                state_init.op_flags[i].unit_stride = pipe_in_data_i.mode.lsu.stride == LSU_UNITSTRIDE;
             end
         end
         if (unit_alu) begin
