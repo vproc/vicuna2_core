@@ -134,7 +134,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                     pipe_out_res_flags_o[i].lsu_instr      = 0;
                     pipe_out_res_flags_o[i].field_instr    = 0;
                     for(int j = 0; j < MEM_PORTS; j++) begin
-                        if(i == unit_out_ctrl.field_counter[j]) begin
+                        if(i == unit_out_ctrl.field_counter[j] & unit_out_valid[j]) begin
                             pipe_out_res_store_o[i] = unit_out_ctrl.res_store;
                             pipe_out_res_data_o[i] = unit_out_res[j];
                             pipe_out_res_valid_o[i] = unit_out_valid[j];

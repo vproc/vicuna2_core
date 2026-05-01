@@ -165,6 +165,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     logic                   misalignment_request_any;
     logic                   all_ports_finished;
     logic                   misalignment_request_finished;
+    logic                   misalignment_request_out_any;
     logic                   state_req_red_end_of_field;
     logic                   deq_state_end_of_field;
 
@@ -385,6 +386,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     endgenerate
 
     assign misalignment_request_any = |misalignment_request;
+    assign misalignment_request_out_any = |misalignment_request_out;
 
     always_comb begin
         state_req_red_end_of_field = 0;
@@ -480,16 +482,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                         eew_in_bytes = VMEM_W/8;
                 endcase
 
-                if(input_queue_ready_in & input_queue_valid_out & state_req_red.first_cycle & state_req_red.suppressed) begin
-                    if(state_req_red.mode.store) begin
-                        scratch_state_d.fsm_state = STORE;
-                        pending_req_stall = 0;
-                    end else begin
-                        scratch_state_d.fsm_state = LOAD;
-                        pending_req_stall = 0;
-                    end
-
-                end else if(input_queue_ready_in & input_queue_valid_out & state_req_red.first_cycle) begin
+                if(input_queue_ready_in & input_queue_valid_out & state_req_red.first_cycle) begin
                     
 
                     if(state_req_red.mode.store) begin
@@ -500,7 +493,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                         for(int i = 0; i < MEM_PORTS; i++) begin
                             end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes - 1;
 
-                            if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & state_req_red.mem_req_valid[i]) begin
+                            if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed[i] & state_req_red.mem_req_valid[i]) begin
 
                                 for(int j = 0; j < i; j++) begin
 
@@ -534,9 +527,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                                 scratch_state_d.misalignment_request_in[i] = 1;
                                             end
 
-                                        end else begin
-                                            pending_req_stall = 1;
-                                        end
+                                    end else begin
+                                        pending_req_stall = 1;
+                                    end
                                 end
 
                                 if(~pending_req_stall & misalignment_request_any) begin
@@ -573,7 +566,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes - 1;
 
                             // Load
-                            if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & state_req_red.mem_req_valid[i]) begin
+                            if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed[i] & state_req_red.mem_req_valid[i]) begin
 
                                 for(int j = 0; j < i; j++) begin
 
@@ -636,7 +629,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes - 1;
 
                     // Load
-                    if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & state_req_red.mem_req_valid[i]) begin
+                    if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed[i] & state_req_red.mem_req_valid[i]) begin
 
                         for(int j = 0; j < i; j++) begin
 
@@ -705,7 +698,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes;
 
                     // Load
-                    if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & scratch_state_q.misalignment_request_in[i]) begin
+                    if(input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed[i] & scratch_state_q.misalignment_request_in[i]) begin
 
                         for(int j = 0; j < i; j++) begin
 
@@ -762,7 +755,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 for(int i = 0; i < MEM_PORTS; i++) begin
                     end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes - 1;
 
-                    if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & state_req_red.mem_req_valid[i]) begin
+                    if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed[i] & state_req_red.mem_req_valid[i]) begin
 
                         for(int j = 0; j < i; j++) begin
 
@@ -846,9 +839,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 mem_req_switch = 1;
 
                 for(int i = 0; i < MEM_PORTS; i++) begin
-                    end_of_addr = state_req_red.req_addr_q + eew_in_bytes;
+                    end_of_addr[i] = state_req_red.req_addr_q[i] + eew_in_bytes;
 
-                    if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed & scratch_state_q.misalignment_request_in[i]) begin
+                    if (input_queue_ready_in & input_queue_valid_out & ~state_req_red.suppressed[i] & scratch_state_q.misalignment_request_in[i]) begin
                         
                         for(int j = 0; j < i; j++) begin
 
@@ -878,8 +871,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
                         port_hit = port_read_hit | port_write_hit;
 
-                        port_wdata[i] = state_req_red.wdata_buf_q[i] << VMEM_W'(port_pending_data_off[i] << 3);
-                        port_wmask[i] = state_req_red.wmask_buf_q[i] << port_pending_data_off[i]; 
+                        port_wdata[i] = state_req_red.wdata_buf_q[i] >> VMEM_W'(port_pending_data_off[i] << 3);
+                        port_wmask[i] = state_req_red.wmask_buf_q[i] >> port_pending_data_off[i]; 
 
                         if(port_hit) begin
 
@@ -938,10 +931,10 @@ module vproc_lsu_extension import vproc_pkg::*; #(
             LOAD_MISALIGNMENT,
             LAST_CYCLE_LOAD: begin
                 // PENDING_LOAD_STALL - deal with pending loads
-                logic misalignment_request_out_any;
+                logic misalignment_request_combine_any;
                 port_select_t [MEM_PORTS-1:0] selected_port;
 
-                misalignment_request_out_any = 0;
+                misalignment_request_combine_any = |scratch_state_q.misalignment_request_out;
                 selected_port = port_queue_pending_select_out;
 
                 // put together the data
@@ -949,15 +942,17 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     if(scratch_state_q.misalignment_request_out[i]) begin
                         rdata_next[i] = (port_queue_rdata_out[selected_port[i]] << VMEM_W'(port_queue_pending_data_off[i] << 3)) | scratch_state_q.misalignment_data[i];
                     end else begin
-                        rdata_next[i] = port_queue_rdata_out[selected_port[i]] >> VMEM_W'(port_queue_pending_data_off[i] << 3);
+                        if(misalignment_request_combine_any) begin
+                            rdata_next[i] = scratch_state_q.misalignment_data[i];
+                        end else begin
+                            rdata_next[i] = port_queue_rdata_out[selected_port[i]] >> VMEM_W'(port_queue_pending_data_off[i] << 3);
+                        end
                     end
                 end
 
                 if (output_queue_valid_out) begin
-                    misalignment_request_out_any = |misalignment_request_out;
-
                     all_ports_finished = ~misalignment_request_out_any;
-                    misalignment_request_finished = 1;
+                    misalignment_request_finished = misalignment_request_out_any;
 
                     // check if requests are finished
                     for(int i = 0; i < MEM_PORTS; i++) begin
@@ -967,8 +962,14 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     end
 
                     for(int i = 0; i < MEM_PORTS; i++) begin
-                        if(~port_queue_valid_out[selected_port[i]] & deq_state.mem_req_valid[i]) begin
-                            all_ports_finished = 0;
+                        if(~port_queue_valid_out[selected_port[i]] & deq_state.mem_req_valid[i] & ~deq_state.suppressed[i]) begin
+                            if(misalignment_request_combine_any) begin
+                                if(scratch_state_q.misalignment_request_out[i]) begin
+                                    all_ports_finished = 0;
+                                end
+                            end else begin
+                                all_ports_finished = 0;
+                            end
                         end
                     end
 
@@ -977,8 +978,8 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                         if(port_queue_valid_out[selected_port[i]] & deq_state.mem_req_valid[i] & misalignment_request_out[i]) begin
                             port_queue_ready_in[selected_port[i]] = 1;
                             scratch_state_d.misalignment_request_out[i] = 1;
-                            scratch_state_d.misalignment_data[i] = rdata_next[i];
                         end
+                        scratch_state_d.misalignment_data[i] = rdata_next[i];
                     end
 
                     for(int i = 0; i < MEM_PORTS; i++) begin
@@ -988,14 +989,14 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     end
 
                     // block valid signals if requests are not all finished
-                    if(~misalignment_request_finished) begin
+                    if(~misalignment_request_finished & misalignment_request_out_any) begin
                         port_queue_ready_in = '0;
                         scratch_state_d.misalignment_request_out = '0;
                     end
 
-                    if(~all_ports_finished) begin
+                    if(~all_ports_finished & ~misalignment_request_out_any) begin
                         port_queue_ready_in = '0;
-                    end else begin
+                    end else if(all_ports_finished) begin
                         scratch_state_d.misalignment_request_out = '0;
                     end
                 end
@@ -1022,22 +1023,22 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         // Input port configuration
         for(int i = 0; i < MEM_PORTS; i++) begin
             if(mem_req_queue_valid_in[i]) begin
-                scratch_state_d.outstanding_mem_req_cnt = scratch_state_q.outstanding_mem_req_cnt + 1;
+                scratch_state_d.outstanding_mem_req_cnt = scratch_state_d.outstanding_mem_req_cnt + 1; // read from d since it could have been incremented before
             end
         end
 
-        if(mem_req_switch) begin
-            mem_req_queue_data_in[i].first_cycle = state_req_red.first_cycle;
-            mem_req_queue_data_in[i].store = 1;
-            if(scratch_state_q.fsm_state == STORE_MISALIGNMENT) begin
-                mem_req_queue_data_in[i].addr = {end_of_addr[i][31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+        for(int i = 0; i < MEM_PORTS; i++) begin
+            if(mem_req_switch) begin
+                mem_req_queue_data_in[i].first_cycle = state_req_red.first_cycle;
+                mem_req_queue_data_in[i].store = 1;
+                if(scratch_state_q.fsm_state == STORE_MISALIGNMENT) begin
+                    mem_req_queue_data_in[i].addr = {end_of_addr[i][31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+                end else begin
+                    mem_req_queue_data_in[i].addr = {state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
+                end
+                mem_req_queue_data_in[i].wmask = port_wmask[i];
+                mem_req_queue_data_in[i].wdata = port_wdata[i];
             end else begin
-                mem_req_queue_data_in[i].addr = {state_req_red.req_addr_q[i][31:$clog2(VMEM_W/8)], {$clog2(VMEM_W/8){1'b0}}};
-            end
-            mem_req_queue_data_in[i].wmask = port_wmask[i];
-            mem_req_queue_data_in[i].wdata = port_wdata[i];
-        end else begin
-            for(int i = 0; i < MEM_PORTS; i++) begin
                 mem_req_queue_data_in[i].first_cycle = state_req_red.first_cycle;
                 mem_req_queue_data_in[i].store = 0;
                 if(scratch_state_q.fsm_state == LOAD_MISALIGNMENT) begin
@@ -1047,6 +1048,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 end
                 mem_req_queue_data_in[i].wmask = state_req_red.wmask_buf_q[i];
                 mem_req_queue_data_in[i].wdata = state_req_red.wdata_buf_q[i];
+                
             end
         end
 
@@ -1064,7 +1066,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // output queue -> queue after sending memory request
     assign output_queue_data_in.port_pending_select             = port_pending_select;
-    assign output_queue_data_in.port_pending_data_off           = port_queue_pending_data_off;
+    assign output_queue_data_in.port_pending_data_off           = port_pending_data_off;
     assign output_queue_data_in.state_req_red                   = state_req_red;
     assign output_queue_data_in.misalignment_request            = misalignment_request;
 
@@ -1120,12 +1122,12 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
     // Ready signals
     assign output_queue_ready_in = output_queue_valid_out & 
-                                    ((~deq_state.mode.store & all_ports_finished | misalignment_request_finished) | deq_state.mode.store | deq_state.suppressed | mem_err_d);
+                                    ((~deq_state.mode.store & all_ports_finished | misalignment_request_finished) | deq_state.mode.store | mem_err_d);
 
     assign input_queue_ready_in  = output_queue_ready_out;
 
     // Valid signals
-    assign state_rdata_valid_d = output_queue_valid_out & output_queue_ready_in & all_ports_finished;
+    assign state_rdata_valid_d = output_queue_valid_out & output_queue_ready_in & ~misalignment_request_out_any;
 
     // monitor the memory result for bus errors and the queue for exceptions
     always_comb begin
