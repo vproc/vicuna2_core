@@ -1,4 +1,4 @@
-// Auto-generated on Fri May  1 11:14:56 AM CEST 2026
+// Auto-generated on Thu May  7 02:05:22 PM CEST 2026
 
 // Vector coprocessor default configuration package
 //
@@ -11,12 +11,12 @@
 // the vproc_core module can override any parameter with a different value.
 
 // Configuration details:
-// - Vector register width: 128 bits
+// - Vector register width: 256 bits
 // - Vector pipelines:
-//   * Pipeline 0: 64 bits wide, contains VLSU
-//     Uses 1 128-bit vreg read ports and write port 0
+//   * Pipeline 0: 128 bits wide, contains VLSU
+//     Uses 1 256-bit vreg read ports and write port 0
 //   * Pipeline 1: 32 bits wide, contains VELEM, VSLD, VDIV, VALU, VMUL
-//     Uses 1 128-bit vreg read ports and write port 0
+//     Uses 1 256-bit vreg read ports and write port 0
 // - Vector register file needs 3 read ports and 1 write ports
 
 package vproc_config;
@@ -24,7 +24,7 @@ package vproc_config;
     import vproc_pkg::*;
 
     parameter vreg_type    VREG_TYPE                   = VREG_GENERIC;
-    parameter int unsigned VREG_W                      = 128;
+    parameter int unsigned VREG_W                      = 256;
     parameter int unsigned VMEM_W                      = 32;
     parameter int unsigned MEM_W                       = 32;
     parameter int unsigned VPORT_RD_CNT                = 3;
@@ -36,7 +36,7 @@ package vproc_config;
     parameter bit [UNIT_CNT-1:0] PIPE_UNITS [PIPE_CNT] = '{
         (UNIT_CNT'(1) << UNIT_LSU), (UNIT_CNT'(1) << UNIT_ELEM) | (UNIT_CNT'(1) << UNIT_SLD) | (UNIT_CNT'(1) << UNIT_DIV) | (UNIT_CNT'(1) << UNIT_ALU) | (UNIT_CNT'(1) << UNIT_MUL)
     };
-    parameter int unsigned PIPE_W           [PIPE_CNT] = '{64, 32};
+    parameter int unsigned PIPE_W           [PIPE_CNT] = '{128, 32};
     parameter int unsigned PIPE_VPORT_CNT   [PIPE_CNT] = '{1, 1};
     parameter int unsigned PIPE_VPORT_IDX   [PIPE_CNT] = '{1, 2};
     parameter int unsigned PIPE_VPORT_WR    [PIPE_CNT] = '{0, 0};

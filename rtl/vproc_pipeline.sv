@@ -270,7 +270,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 end
             end
             state_next.field_init_count        = pipe_in_state_i.field_init_count;
-            state_next.field_counter           = pipe_in_state_i.field_init_count > 0 ? MEM_PORTS-1 : '0;
+            state_next.field_counter           = '0;
             state_next.field_done              = 0;
             state_next.first_cycle             = 1'b1;
             state_next.init_addr               = 1'b1;
@@ -318,7 +318,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                         if(op_load[i] | res_store) begin
                             state_next.field_counter = state_q.field_counter + 3'b001;
                         end else begin
-                            if(5'(state_q.field_counter + MEM_PORTS) >= state_q.field_init_count) begin
+                            if(5'(state_q.field_counter + MEM_PORTS) > state_q.field_init_count) begin
                                 state_next.field_counter = 3'b000;
                                 state_next.first_cycle = '0;
                                 state_next.init_addr = '0;
@@ -333,8 +333,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                     end
                 end
 
+
                 for(int i = 0; i < OP_CNT; i++) begin
-                    if(OP_FIELD[i]) begin
+                    if(OP_FIELD[i] & op_load[i]) begin
                         state_next.op_vaddr[i] = DONT_CARE_ZERO ? '0 : 'x;
                         unique case (state_q.emul)
                             EMUL_1: state_next.op_vaddr[i] = state_q.op_vaddr[i] + 5'(1);
@@ -345,17 +346,33 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                         endcase
                     end
                 end
-                state_next.res_vaddr = DONT_CARE_ZERO ? '0 : 'x;
-                unique case (state_q.emul)
-                    EMUL_1: state_next.res_vaddr = state_q.res_vaddr + 5'(1);
-                    EMUL_2: state_next.res_vaddr = state_q.res_vaddr + 5'(2);
-                    EMUL_4: state_next.res_vaddr = state_q.res_vaddr + 5'(4);
-                    // EMUL_8 is invalid since EMUL * NFIELDS <= 8 according to spec
-                    default: ;
-                endcase
 
-                state_next.field_done = (state_next.field_init_count == state_next.field_counter | state_next.field_counter == 3'b000) 
-                                        & state_q.last_cycle;
+                if(res_store) begin
+                    state_next.res_vaddr = DONT_CARE_ZERO ? '0 : 'x;
+                    unique case (state_q.emul)
+                        EMUL_1: state_next.res_vaddr = state_q.res_vaddr + 5'(1);
+                        EMUL_2: state_next.res_vaddr = state_q.res_vaddr + 5'(2);
+                        EMUL_4: state_next.res_vaddr = state_q.res_vaddr + 5'(4);
+                        // EMUL_8 is invalid since EMUL * NFIELDS <= 8 according to spec
+                        default: ;
+                    endcase
+                end
+
+                state_next.field_done = 0;
+
+                if(state_q.mode.lsu.store) begin
+                    if(MEM_PORTS > state_q.field_init_count & last_cycle_next & state_next.field_counter == 3'b000) begin
+                        state_next.field_done = 1;
+                    end else begin
+                        state_next.field_done = (state_next.field_init_count == state_next.field_counter | state_next.field_counter == 3'b000 |
+                                                5'(state_next.field_counter + MEM_PORTS) > state_q.field_init_count) 
+                                                & state_q.last_cycle;
+                    end
+                end else begin
+                    state_next.field_done = (state_next.field_init_count == state_next.field_counter | state_next.field_counter == 3'b000) 
+                                            & state_q.last_cycle;
+                end
+
                 unique case (state_q.emul)
                     EMUL_1: state_next.field_done &= state_q.count.part.mul == 3'(000);
                     EMUL_2: state_next.field_done &= state_q.count.part.mul == 3'(001);
@@ -1021,54 +1038,58 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         logic                     [$clog2(VREG_W/MAX_OP_W)-1 :0] vreg_idx; //TODO: This should be defined per pipeline as log2(VREG_W/MAX_OP_W) bits wide.  Needed by PACK to write results to correct locations
         logic [2:0]                    field_init_count;
         logic [MEM_PORTS-1:0][2:0]     field_counter;
-        logic [MEM_PORTS-1:0][$clog2(MAX_OP_W/8)-1:0] mem_req_vl_part;
+        logic [MEM_PORTS-1:0][$clog2(MEM_W/8)-1:0] mem_req_vl_part;
         logic [MEM_PORTS-1:0]          mem_req_vl_part_0;
         logic [MEM_PORTS-1:0]          mem_req_valid;
+        logic                          field_done;
     } ctrl_t;
 
-    logic [MEM_PORTS-1:0][$clog2(MAX_OP_W/8)-1:0] mem_req_vl_part;
+    logic [MEM_PORTS-1:0][$clog2(MEM_W/8)-1:0] mem_req_vl_part;
     logic [MEM_PORTS-1:0] mem_req_vl_part_0;
     logic [MEM_PORTS-1:0] mem_req_valid;
 
     generate
         if (UNITS[UNIT_LSU]) begin
             always_comb begin
-                counter_t temp_counter = state_q.count;
+                counter_t [MEM_PORTS-1:0] temp_counter = state_q.count;
 
                 for(int i = 0; i < MEM_PORTS; i++) begin
                     unique case ({state_q.count_inc, state_q.field_init_count > 0})
                         {COUNT_INC_1, 1'b0}: begin
-                            temp_counter.val     = state_q.count.val     + COUNTER_W'(1 * i);
+                            temp_counter[i].val     = state_q.count.val     + COUNTER_W'(1 * i);
                         end
                         {COUNT_INC_2, 1'b0}: begin
-                            temp_counter.val     = state_q.count.val     + COUNTER_W'(2 * i);
+                            temp_counter[i].val     = state_q.count.val     + COUNTER_W'(2 * i);
                         end
                         {COUNT_INC_4, 1'b0}: begin
-                            temp_counter.val     = state_q.count.val     + COUNTER_W'(4 * i);
+                            temp_counter[i].val     = state_q.count.val     + COUNTER_W'(4 * i);
                         end
                         {COUNT_INC_MAX, 1'b0}: begin
-                            temp_counter.val     = state_q.count.val     + (1 << $clog2(MAX_OP_W/COUNTER_OP_W)) * i;
+                            temp_counter[i].val     = state_q.count.val + (1 << $clog2(MEM_W/COUNTER_OP_W)) *  i;
                         end
                         {COUNT_INC_1, 1'b1}: begin
-                            temp_counter.val     = state_q.count.val     + COUNTER_W'(1);
+                            temp_counter[i].val     = state_q.count.val;//     + COUNTER_W'(1);
                         end
                         {COUNT_INC_2, 1'b1}: begin
-                            temp_counter.val     = state_q.count.val     + COUNTER_W'(2);
+                            temp_counter[i].val     = state_q.count.val;//     + COUNTER_W'(2);
                         end
                         {COUNT_INC_4, 1'b1}: begin
-                            temp_counter.val     = state_q.count.val     + COUNTER_W'(4);
+                            temp_counter[i].val     = state_q.count.val;//     + COUNTER_W'(4);
                         end
                         {COUNT_INC_MAX, 1'b1}: begin
-                            temp_counter.val     = state_q.count.val     + (1 << $clog2(MEM_W/COUNTER_OP_W));
+                            temp_counter[i].val     = state_q.count.val;//     + (1 << $clog2(MEM_W/COUNTER_OP_W));
                         end
                         default: ;
                     endcase
 
-                    mem_req_vl_part[i]      = (temp_counter.val[COUNTER_W-2:$clog2(MAX_OP_W/COUNTER_OP_W)] == state_q.vl[CFG_VL_W-1:$clog2(MAX_OP_W/8)]) ?  state_q.vl[$clog2(MAX_OP_W/8)-1:0] : '1;
-                    mem_req_vl_part_0[i]    = (temp_counter.val[COUNTER_W-2:$clog2(MAX_OP_W/COUNTER_OP_W)] >  state_q.vl[CFG_VL_W-1:$clog2(MAX_OP_W/8)]) |  state_q.vl_0;
+                    //mem_req_vl_part[i]      = (temp_counter[i].val[COUNTER_W-2:$clog2(MAX_OP_W/COUNTER_OP_W)] == state_q.vl[CFG_VL_W-1:$clog2(MAX_OP_W/8)]) ?  state_q.vl[$clog2(MAX_OP_W/8)-1:0] : '1;
+                    //mem_req_vl_part_0[i]    = (temp_counter[i].val[COUNTER_W-2:$clog2(MAX_OP_W/COUNTER_OP_W)] >  state_q.vl[CFG_VL_W-1:$clog2(MAX_OP_W/8)]) |  state_q.vl_0;
+
+                    mem_req_vl_part[i]      = (temp_counter[i].val[COUNTER_W-2:$clog2(MEM_W/COUNTER_OP_W)] == state_q.vl[CFG_VL_W-1:$clog2(MEM_W/8)]) ?  state_q.vl[$clog2(MEM_W/8)-1:0] : '1;
+                    mem_req_vl_part_0[i]    = (temp_counter[i].val[COUNTER_W-2:$clog2(MEM_W/COUNTER_OP_W)] >  state_q.vl[CFG_VL_W-1:$clog2(MEM_W/8)]) |  state_q.vl_0;
 
                     if (UNITS[UNIT_LSU ] & (state_q.unit == UNIT_LSU ) & (state_q.mode.lsu.stride != LSU_UNITSTRIDE)) begin
-                        mem_req_vl_part_0[i] = (temp_counter.val[COUNTER_W-2:0] >  state_q.vl[CFG_VL_W-1:$clog2(COUNTER_OP_W/8)]) |  state_q.vl_0;
+                        mem_req_vl_part_0[i] = (temp_counter[i].val[COUNTER_W-2:0] >  state_q.vl[CFG_VL_W-1:$clog2(COUNTER_OP_W/8)]) |  state_q.vl_0;
                     end
 
                     mem_req_valid[i] = state_q.field_init_count > 0 &
@@ -1076,7 +1097,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                                        5'(state_q.field_counter + i) > 7) ? 0 : 1;
 
                     for(int j = 0; j < OP_CNT; j++) begin
-                        if(((OP_FIELD[i] & op_load[i]) | res_store) & i != 0) begin
+                        if(((OP_FIELD[j] & op_load[j]) | res_store) & i != 0 & state_q.field_init_count > 0) begin
                             mem_req_valid[i] = 0;
                         end
                     end
@@ -1135,6 +1156,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         unpack_ctrl.mem_req_vl_part_0 = mem_req_vl_part_0;
 
         unpack_ctrl.mem_req_valid = mem_req_valid;
+        unpack_ctrl.field_done = state_q.field_done;
 
         unpack_ctrl.xval = state_q.xval;
         unpack_ctrl.op_xval = state_q.op_xval[0];
