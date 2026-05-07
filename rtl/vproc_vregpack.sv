@@ -298,9 +298,6 @@ module vproc_vregpack #(
                     if(pipe_in_res_flags_i[i].lsu_instr & MEM_PORTS > 1 & pipe_in_res_flags_i[i].field_instr & ~pipe_in_res_flags_i[i].elemwise) begin
                         res_default = {   pipe_in_res_data_i[i][MEM_W-1:0], res_buffer[i][VPORT_W  -1:VPORT_W  -RES_W[i]  +MEM_W]};
                         msk_default = {   pipe_in_res_mask_i[i][MEM_W/8-1:0] , msk_buffer[i][VPORT_W/8-1:VPORT_W/8-RES_W[i]/8+MEM_W/8 ]};
-                    end else if(pipe_in_res_flags_i[i].lsu_instr & MEM_PORTS > 1 & ~pipe_in_res_flags_i[i].field_instr & ~pipe_in_res_flags_i[i].elemwise) begin
-                        //res_default = {   pipe_in_res_data_i[i][MEM_PORTS*MEM_W-1:0], res_buffer[i][VPORT_W  -1:VPORT_W  -RES_W[i]  +MEM_PORTS*MEM_W]};
-                        //msk_default = {   pipe_in_res_mask_i[i][MEM_W/8*MEM_PORTS-1:0] , msk_buffer[i][VPORT_W/8-1:VPORT_W/8-RES_W[i]/8+MEM_W/8*MEM_PORTS ]};
                     end
 
                     //Changes to control flow to improve performance.  Introduces timing anomalies
@@ -340,10 +337,6 @@ module vproc_vregpack #(
                                         
                                     end
                                     VSEW_32: begin
-                                        //res_default = {   pipe_in_res_data_i[i][MEM_PORTS*32-1:0], res_buffer[i][VPORT_W  -1:VPORT_W  -RES_W[i]  +MEM_PORTS*32]};
-                                        //msk_default = {   pipe_in_res_mask_i[i][4*MEM_PORTS-1:0] , msk_buffer[i][VPORT_W/8-1:VPORT_W/8-RES_W[i]/8+4*MEM_PORTS ]};
-                                        //res_default =    {pipe_in_res_data_i[i][MEM_PORTS*32-1:0], {RES_W[i]  -MEM_PORTS*32{1'b0}}} | (res_buffer[i][VPORT_W  -1 -: RES_W[i]  ] >> MEM_PORTS*32);
-                                        //msk_default = {pipe_in_res_mask_i[i][4*MEM_PORTS-1:0] , {RES_W[i]/8-4*MEM_PORTS {1'b0}}} | (msk_buffer[i][VPORT_W/8-1 -: RES_W[i]/8] >> 4*MEM_PORTS);
                                         res_default = (pipe_in_res_data_i[i] << (RES_W[i] - MEM_PORTS*32)) | (res_buffer[i][VPORT_W-1 -: RES_W[i]] >> MEM_PORTS*32);
                                         msk_default = (pipe_in_res_mask_i[i] << (RES_W[i]/8 - 4*MEM_PORTS)) | (msk_buffer[i][VPORT_W/8-1 -: RES_W[i]/8] >> 4*MEM_PORTS);
                                     end

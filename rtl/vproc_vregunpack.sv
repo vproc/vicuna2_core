@@ -454,14 +454,6 @@ module vproc_vregunpack
                                    op_buffer[i][ OP_W[i]     -1:OP_W[i]/4];
                             default: ;
                         endcase
-                        if(op_load_flags[i].lsu_instr) begin
-                            //TODO: might be a issue for unitstride field instruction
-                            if(op_load_flags[i].field_instr) begin
-                                //op_default[MEM_PORTS*MEM_W/8 : 0] = op_buffer[i][MEM_PORTS*MEM_W/8 +: MEM_PORTS*MEM_W/8];
-                            end else begin
-                                //op_default[MEM_W/8 : 0] = op_buffer[i][MEM_W/8 +: MEM_W/8];
-                            end
-                        end
                         if (OP_ALLOW_ELEMWISE[i] & op_load_flags[i].elemwise) begin
                             unique case (op_load_flags[i].lsu_instr & ~op_load_flags[i].field_instr)
                                 1'b0: op_default[OP_W[i]-2:0] = op_buffer[i][OP_W[i]-1:1];
@@ -509,7 +501,7 @@ module vproc_vregunpack
 
                                 if(op_load_flags[i].lsu_instr) begin
 
-                                    if(~OP_FIELD[i] & ~op_load_flags[i].field_instr) begin
+                                    if(~op_load_flags[i].field_instr) begin
                                         op_default[OP_W[i]-9:0] = DONT_CARE_ZERO ? '0 : 'x;
                                         unique case (op_load_eew[i])
                                             VSEW_8: op_default[OP_W[i]-9:0] = op_buffer[i][OP_W[i]-1 :8*MEM_PORTS ];
@@ -523,15 +515,7 @@ module vproc_vregunpack
                                         op_mem_default[j][OP_W[i]-9:0] = DONT_CARE_ZERO ? '0 : 'x;
                                     end
 
-                                    unique case ({op_load_eew[i], op_load_flags[i].field_instr})
-                                        {VSEW_8, 1'b0}: op_mem_default[0][OP_W[i]-9:0] = op_buffer[i][OP_W[i]-1 :8*MEM_PORTS ];
-                                        {VSEW_16, 1'b0}: op_mem_default[0][OP_W[i]-9:0] = op_buffer[i][OP_W[i]+7 :16*MEM_PORTS];
-                                        {VSEW_32, 1'b0}: op_mem_default[0][OP_W[i]-9:0] = op_buffer[i][OP_W[i]+23:32*MEM_PORTS];
-                                        {VSEW_8, 1'b1}: op_mem_default[0][OP_W[i]-9:0] = op_buffer[i][OP_W[i]-1 :8 ];
-                                        {VSEW_16, 1'b1}: op_mem_default[0][OP_W[i]-9:0] = op_buffer[i][OP_W[i]+7 :16];
-                                        {VSEW_32, 1'b1}: op_mem_default[0][OP_W[i]-9:0] = op_buffer[i][OP_W[i]+23:32];
-                                        default: ;
-                                    endcase
+                                    op_mem_default[0] = op_default;
                                 
                                     if(FIELD_COUNT_USED) begin
                                         if(OP_FIELD[i]) begin

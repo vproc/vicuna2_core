@@ -1082,9 +1082,6 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                         default: ;
                     endcase
 
-                    //mem_req_vl_part[i]      = (temp_counter[i].val[COUNTER_W-2:$clog2(MAX_OP_W/COUNTER_OP_W)] == state_q.vl[CFG_VL_W-1:$clog2(MAX_OP_W/8)]) ?  state_q.vl[$clog2(MAX_OP_W/8)-1:0] : '1;
-                    //mem_req_vl_part_0[i]    = (temp_counter[i].val[COUNTER_W-2:$clog2(MAX_OP_W/COUNTER_OP_W)] >  state_q.vl[CFG_VL_W-1:$clog2(MAX_OP_W/8)]) |  state_q.vl_0;
-
                     mem_req_vl_part[i]      = (temp_counter[i].val[COUNTER_W-2:$clog2(MEM_W/COUNTER_OP_W)] == state_q.vl[CFG_VL_W-1:$clog2(MEM_W/8)]) ?  state_q.vl[$clog2(MEM_W/8)-1:0] : '1;
                     mem_req_vl_part_0[i]    = (temp_counter[i].val[COUNTER_W-2:$clog2(MEM_W/COUNTER_OP_W)] >  state_q.vl[CFG_VL_W-1:$clog2(MEM_W/8)]) |  state_q.vl_0;
 
