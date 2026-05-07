@@ -251,9 +251,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                     state_rdata_q <= state_rdata_d;
                     rdata_buf_q   <= rdata_buf_d;
                     rmask_buf_q   <= rmask_buf_d;
-                    //mem_err_q     <= mem_err_d;
-                    //mem_any_err_q <= mem_any_err_d;
-                    //mem_exccode_q <= mem_exccode_d;
                 end
             end
         end else begin
@@ -263,11 +260,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                 rdata_buf_q         = rdata_buf_d;
                 rmask_buf_q         = rmask_buf_d;
             end
-            /*always_ff @(posedge clk_i) begin
-                mem_err_q     <= mem_err_d;
-                mem_any_err_q <= mem_any_err_d;
-                mem_exccode_q <= mem_exccode_d;
-            end*/
         end
     endgenerate
 

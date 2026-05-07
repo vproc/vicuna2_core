@@ -1,4 +1,4 @@
-// Auto-generated on Thu May  7 02:05:22 PM CEST 2026
+// Auto-generated on Fri May  8 04:28:01 PM CEST 2026
 
 // Vector coprocessor default configuration package
 //
