@@ -1054,33 +1054,25 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 counter_t [MEM_PORTS-1:0] temp_counter = state_q.count;
 
                 for(int i = 0; i < MEM_PORTS; i++) begin
-                    unique case ({state_q.count_inc, state_q.field_init_count > 0})
-                        {COUNT_INC_1, 1'b0}: begin
+                    unique case (state_q.count_inc)
+                        COUNT_INC_1: begin
                             temp_counter[i].val     = state_q.count.val     + COUNTER_W'(1 * i);
                         end
-                        {COUNT_INC_2, 1'b0}: begin
+                        COUNT_INC_2: begin
                             temp_counter[i].val     = state_q.count.val     + COUNTER_W'(2 * i);
                         end
-                        {COUNT_INC_4, 1'b0}: begin
+                        COUNT_INC_4: begin
                             temp_counter[i].val     = state_q.count.val     + COUNTER_W'(4 * i);
                         end
-                        {COUNT_INC_MAX, 1'b0}: begin
+                        COUNT_INC_MAX: begin
                             temp_counter[i].val     = state_q.count.val + (1 << $clog2(MEM_W/COUNTER_OP_W)) *  i;
-                        end
-                        {COUNT_INC_1, 1'b1}: begin
-                            temp_counter[i].val     = state_q.count.val;//     + COUNTER_W'(1);
-                        end
-                        {COUNT_INC_2, 1'b1}: begin
-                            temp_counter[i].val     = state_q.count.val;//     + COUNTER_W'(2);
-                        end
-                        {COUNT_INC_4, 1'b1}: begin
-                            temp_counter[i].val     = state_q.count.val;//     + COUNTER_W'(4);
-                        end
-                        {COUNT_INC_MAX, 1'b1}: begin
-                            temp_counter[i].val     = state_q.count.val;//     + (1 << $clog2(MEM_W/COUNTER_OP_W));
                         end
                         default: ;
                     endcase
+
+                    if(state_q.field_init_count > 0) begin
+                        temp_counter[i].val     = state_q.count.val;
+                    end
 
                     mem_req_vl_part[i]      = (temp_counter[i].val[COUNTER_W-2:$clog2(MEM_W/COUNTER_OP_W)] == state_q.vl[CFG_VL_W-1:$clog2(MEM_W/8)]) ?  state_q.vl[$clog2(MEM_W/8)-1:0] : '1;
                     mem_req_vl_part_0[i]    = (temp_counter[i].val[COUNTER_W-2:$clog2(MEM_W/COUNTER_OP_W)] >  state_q.vl[CFG_VL_W-1:$clog2(MEM_W/8)]) |  state_q.vl_0;
