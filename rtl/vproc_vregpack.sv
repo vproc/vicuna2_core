@@ -288,6 +288,19 @@ module vproc_vregpack #(
 
             end else begin
 
+                logic [RES_W[i]-1:0]   lsu_data_helper;
+                logic [RES_W[i]/8-1:0] lsu_mask_helper;
+
+                if (MEM_PORTS == 1) begin
+                    assign lsu_data_helper = pipe_in_res_data_i[i][RES_W[i]-1:0];
+                    assign lsu_mask_helper = pipe_in_res_mask_i[i][RES_W[i]/8-1:0];
+                end else begin
+                    assign lsu_data_helper = { pipe_in_res_data_i[i][MEM_W-1:0], 
+                                            res_buffer[i][VPORT_W-1 : VPORT_W-RES_W[i]+MEM_W] };
+                    assign lsu_mask_helper = { pipe_in_res_mask_i[i][MEM_W/8-1:0], 
+                                            msk_buffer[i][VPORT_W/8-1 : VPORT_W/8-RES_W[i]/8+MEM_W/8] };
+                end
+
                 logic [RES_W[i]  -1:0] res_default;
                 logic [RES_W[i]/8-1:0] msk_default;
                 always_comb begin
@@ -296,8 +309,8 @@ module vproc_vregpack #(
                     res_saturated[i] = '0;
 
                     if(pipe_in_res_flags_i[i].lsu_instr & MEM_PORTS > 1 & pipe_in_res_flags_i[i].field_instr & ~pipe_in_res_flags_i[i].elemwise) begin
-                        res_default = {   pipe_in_res_data_i[i][MEM_W-1:0], res_buffer[i][VPORT_W  -1:VPORT_W  -RES_W[i]  +MEM_W]};
-                        msk_default = {   pipe_in_res_mask_i[i][MEM_W/8-1:0] , msk_buffer[i][VPORT_W/8-1:VPORT_W/8-RES_W[i]/8+MEM_W/8 ]};
+                        res_default = lsu_data_helper;
+                        msk_default = lsu_mask_helper;
                     end
 
                     //Changes to control flow to improve performance.  Introduces timing anomalies

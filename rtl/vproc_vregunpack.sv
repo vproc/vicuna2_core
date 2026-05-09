@@ -474,12 +474,12 @@ module vproc_vregunpack
                         // use field buffer value instead of op_buffer where field 0 resides
                         if(OP_FIELD[i]) begin
                             if(op_load_flags[i].field_instr) begin
-                                op_mem_default[0][OP_W[i]-MEM_W-1:0] = op_buffer[i][OP_W[i]-1:MEM_W];
+                                op_mem_default[0][OP_W[i]-1:0] = op_buffer[i][OP_W[i]+MEM_W-1:MEM_W];
                             end
 
                             for(int j = 0; j < MEM_PORTS; j++) begin
                                 if(op_load_flags[i].field_instr & op_load_field_counter[i][j] > 0) begin
-                                    op_mem_default[j][OP_W[i]-MEM_W-1:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_W[i]-1:MEM_W];
+                                    op_mem_default[j][OP_W[i]-1:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_W[i]+MEM_W-1:MEM_W];
                                 end
                             end
                         end
@@ -624,6 +624,28 @@ module vproc_vregunpack
     // Operand extraction logic   
     generate
         for (genvar i = 0; i < OP_CNT; i++) begin
+
+            logic [OP_W[i]-1:0] op_field_helper;
+
+            if(MEM_PORTS == 1 & OP_FIELD[i]) begin
+                always_comb begin
+                    op_field_helper = field_buffer_q[op_extract_field_counter[i][0] - 1];
+                end
+            end else if(OP_FIELD[i]) begin
+                always_comb begin
+                    // Default assignment to avoid latches
+                    op_field_helper = '0;
+
+                    for(int j = 0; j < MEM_PORTS; j++) begin
+                        if(op_extract_field_counter[i][j] > 0) begin
+                            op_field_helper[MEM_W*j +: MEM_W] = field_buffer_q[op_extract_field_counter[i][j] - 1][MEM_W-1:0];
+                        end
+                    end
+                end
+            end else begin
+                assign op_field_helper = '0; 
+            end
+
             always_comb begin
                 // operand is lower part of operand buffer by default
                 op_data[i]              = DONT_CARE_ZERO ? '0 : 'x;
@@ -680,12 +702,10 @@ module vproc_vregunpack
                             end
                             default: ;
                         endcase
+                    end
 
-                        if(~op_extract_flags[i].elemwise) begin
-                            if(op_extract_field_counter[i][j] > 0) begin
-                                op_data[i][MEM_W*j +: MEM_W] = field_buffer_q[op_extract_field_counter[i][j] - 1][MEM_W-1:0];
-                            end
-                        end
+                    if(~op_extract_flags[i].elemwise) begin
+                        op_data[i] = op_field_helper;
                     end
                 end else begin
                     // extend each element to twice its size if this operand is narrow.  If this is a vf4 extension extend to 4 times its size
