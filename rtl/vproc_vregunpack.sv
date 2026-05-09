@@ -474,12 +474,12 @@ module vproc_vregunpack
                         // use field buffer value instead of op_buffer where field 0 resides
                         if(OP_FIELD[i]) begin
                             if(op_load_flags[i].field_instr) begin
-                                op_mem_default[0][OP_W[i]-MEM_W-1:0] = op_buffer[i][OP_W[i]-1:MEM_W];
+                                op_mem_default[0][OP_W[i]-1:0] = op_buffer[i][OP_W[i]+MEM_W-1:MEM_W];
                             end
 
                             for(int j = 0; j < MEM_PORTS; j++) begin
                                 if(op_load_flags[i].field_instr & op_load_field_counter[i][j] > 0) begin
-                                    op_mem_default[j][OP_W[i]-MEM_W-1:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_W[i]-1:MEM_W];
+                                    op_mem_default[j][OP_W[i]-1:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_W[i]+MEM_W-1:MEM_W];
                                 end
                             end
                         end
