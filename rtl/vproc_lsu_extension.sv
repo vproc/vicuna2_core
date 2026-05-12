@@ -405,9 +405,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
 
         scratch_state_d = scratch_state_q;
 
-        port_read_hit = 0;
-        port_write_hit = 0;
-        port_hit = 0;
+        port_read_hit = '0;
+        port_write_hit = '0;
+        port_hit = '0;
         port_pending_select = '0;
         port_wdata = '0;
         port_wmask = '0;
@@ -528,12 +528,12 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                     scratch_state_d.fsm_state = STORE_MISALIGNMENT;
                                 end
 
-                                port_hit = port_read_hit | port_write_hit;
+                                port_hit[i] = port_read_hit[i] | port_write_hit[i];
 
                                 port_wdata[i] = state_req_red.wdata_buf_q[i] << VMEM_W'(port_pending_data_off[i] << 3);
                                 port_wmask[i] = state_req_red.wmask_buf_q[i] << port_pending_data_off[i]; 
 
-                                if(port_hit) begin
+                                if(port_hit[i]) begin
 
                                     for (int j = 0; j < VMEM_W / 8 ; j++) begin
                                         if(port_wmask[i][j]) begin
@@ -790,12 +790,12 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                             scratch_state_d.fsm_state = STORE_MISALIGNMENT;
                         end
 
-                        port_hit = port_read_hit | port_write_hit;
+                        port_hit[i] = port_read_hit[i] | port_write_hit[i];
 
                         port_wdata[i] = state_req_red.wdata_buf_q[i] << VMEM_W'(port_pending_data_off[i] << 3);
                         port_wmask[i] = state_req_red.wmask_buf_q[i] << port_pending_data_off[i]; 
 
-                        if(port_hit) begin
+                        if(port_hit[i]) begin
 
                             for (int j = 0; j < VMEM_W / 8 ; j++) begin
                                 if(port_wmask[i][j]) begin
@@ -861,12 +861,12 @@ module vproc_lsu_extension import vproc_pkg::*; #(
                                 end
                         end
 
-                        port_hit = port_read_hit | port_write_hit;
+                        port_hit[i] = port_read_hit[i] | port_write_hit[i];
 
                         port_wdata[i] = state_req_red.wdata_buf_q[i] >> VMEM_W'(port_pending_data_off[i] << 3);
                         port_wmask[i] = state_req_red.wmask_buf_q[i] >> port_pending_data_off[i]; 
 
-                        if(port_hit) begin
+                        if(port_hit[i]) begin
 
                             for (int j = 0; j < VMEM_W / 8 ; j++) begin
                                 if(port_wmask[i][j]) begin
