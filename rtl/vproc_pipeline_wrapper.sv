@@ -651,14 +651,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 1) begin
             localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
@@ -724,14 +725,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 2) begin
             localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
@@ -797,14 +799,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 8) begin
             localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
@@ -943,14 +946,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 4 && RES_CNT == 2) begin
             localparam int unsigned OP_W           [4] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
@@ -1016,14 +1020,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 5 && RES_CNT == 1) begin
             localparam int unsigned OP_W           [5] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
@@ -1089,14 +1094,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 5 && RES_CNT == 2) begin
             localparam int unsigned OP_W           [5] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
@@ -1162,14 +1168,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 6 && RES_CNT == 1) begin
             localparam int unsigned OP_W           [6] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
@@ -1235,14 +1242,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 6 && RES_CNT == 2) begin
             localparam int unsigned OP_W           [6] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
@@ -1308,14 +1316,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
-                .MEM_PORTS           ( MEM_PORTS           ),
                 .OBI_CFG             ( OBI_CFG             ),
                 .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else begin
             $fatal(1, "A pipeline with %d operands and %d results is not supported.",

@@ -1051,7 +1051,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
     generate
         if (UNITS[UNIT_LSU]) begin
             always_comb begin
-                counter_t [MEM_PORTS-1:0] temp_counter = state_q.count;
+                counter_t [MEM_PORTS-1:0] temp_counter;
+
+                temp_counter = state_q.count;
 
                 for(int i = 0; i < MEM_PORTS; i++) begin
                     unique case (state_q.count_inc)

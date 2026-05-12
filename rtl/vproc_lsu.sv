@@ -286,7 +286,7 @@ module vproc_lsu import vproc_pkg::*; #(
 
                 wdata_unit_vl_mask = ~pipe_in_ctrl_i.mem_req_vl_part_0[i] ? ({(VMEM_W/8){1'b1}} >> (~pipe_in_ctrl_i.mem_req_vl_part[i])) : '0;
 
-                vmsk_data[i] = pipe_in_mask_i[VMEM_W-1:0];
+                vmsk_data[i] = pipe_in_mask_i[VMEM_W/8-1:0];
 
                 if(pipe_in_ctrl_i.field_init_count == 0 & pipe_in_ctrl_i.mode.lsu.stride != LSU_UNITSTRIDE) begin
                     unique case (pipe_in_ctrl_i.mode.lsu.eew)
@@ -458,9 +458,11 @@ module vproc_lsu import vproc_pkg::*; #(
 
         if(state_rdata.field_init_count == 0) begin
 
-            pipe_out_valid_o[MEM_PORTS-1:1] = '0;
-
             for(int i = 0; i < MEM_PORTS; i++) begin
+
+                if(i > 0) begin
+                    pipe_out_valid_o[i] = 0;
+                end
 
                 if(state_rdata.mode.stride != LSU_UNITSTRIDE) begin
                     unique case (state_rdata.mode.eew)
