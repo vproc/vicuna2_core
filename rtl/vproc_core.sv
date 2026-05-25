@@ -273,6 +273,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         cfg_vxrm             vxrm;
         logic                vl_0;
         logic [CFG_VL_W-1:0] vl;
+        logic [CFG_VL_W  :0] vlmax;
         op_unit              unit;
         op_mode              mode;
         op_widenarrow        widenarrow;
@@ -343,6 +344,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .emul_o             ( dec_data_d.emul                     ),
         .vxrm_o             ( dec_data_d.vxrm                     ),
         .vl_o               ( dec_data_d.vl                       ),
+        .vlmax_o            ( dec_data_d.vlmax                    ),
         .unit_o             ( instr_unit                          ),
         .mode_o             ( instr_mode                          ),
         .widenarrow_o       ( dec_data_d.widenarrow               ),

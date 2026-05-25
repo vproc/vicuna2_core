@@ -215,6 +215,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         cfg_emul                         emul;              // effective MUL factor
         cfg_vxrm                         vxrm;
         logic        [CFG_VL_W     -1:0] vl;
+        logic        [CFG_VL_W       :0] vlmax;
         logic                            vl_0;
         logic                     [31:0] xval;
         unpack_flags [OP_CNT -1:0]       op_flags;
@@ -371,9 +372,53 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             end
             else if (pipe_in_data_i.mode.sld.dir == SLD_UP) begin
                 unique case (pipe_in_data_i.vsew)
-                    VSEW_8:  state_init.alt_count_init = -{1'b0, pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)   +: ALT_COUNT_W-1]};
-                    VSEW_16: state_init.alt_count_init = -{1'b0, pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)-1 +: ALT_COUNT_W-1]};
-                    VSEW_32: state_init.alt_count_init = -{1'b0, pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)-2 +: ALT_COUNT_W-1]};
+                    VSEW_8:  state_init.alt_count_init = -pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)   +: ALT_COUNT_W];
+                    VSEW_16: state_init.alt_count_init = -pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)-1 +: ALT_COUNT_W];
+                    VSEW_32: state_init.alt_count_init = -pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)-2 +: ALT_COUNT_W];
+                    default: ;
+                endcase
+                
+                unique case (pipe_in_data_i.emul)
+                    EMUL_1: begin
+                        if(pipe_in_data_i.rs1.r.xval > VREG_W/8) begin
+                            unique case (pipe_in_data_i.vsew)
+                                VSEW_8:  state_init.alt_count_init = -((VREG_W/8) >> ($clog2(MAX_OP_W/8)));
+                                VSEW_16: state_init.alt_count_init = -((VREG_W/16) >> ($clog2(MAX_OP_W/8) - 1));
+                                VSEW_32: state_init.alt_count_init = -((VREG_W/32) >> ($clog2(MAX_OP_W/8) - 2));
+                                default: ;
+                            endcase
+                        end
+                    end
+                    EMUL_2: begin
+                        if(pipe_in_data_i.rs1.r.xval > 2*VREG_W/8) begin
+                            unique case (pipe_in_data_i.vsew)
+                                VSEW_8:  state_init.alt_count_init = -((2*VREG_W/8) >> ($clog2(MAX_OP_W/8)));
+                                VSEW_16: state_init.alt_count_init = -((2*VREG_W/16) >> ($clog2(MAX_OP_W/8) - 1));
+                                VSEW_32: state_init.alt_count_init = -((2*VREG_W/32) >> ($clog2(MAX_OP_W/8) - 2));
+                                default: ;
+                            endcase
+                        end
+                    end
+                    EMUL_4: begin
+                        if(pipe_in_data_i.rs1.r.xval > 4*VREG_W/8) begin
+                            unique case (pipe_in_data_i.vsew)
+                                VSEW_8:  state_init.alt_count_init = -((4*VREG_W/8) >> ($clog2(MAX_OP_W/8)));
+                                VSEW_16: state_init.alt_count_init = -((4*VREG_W/16) >> ($clog2(MAX_OP_W/8) - 1));
+                                VSEW_32: state_init.alt_count_init = -((4*VREG_W/32) >> ($clog2(MAX_OP_W/8) - 2));
+                                default: ;
+                            endcase
+                        end
+                    end
+                    EMUL_8: begin
+                        if(pipe_in_data_i.rs1.r.xval > 8*VREG_W/8) begin
+                            unique case (pipe_in_data_i.vsew)
+                                VSEW_8:  state_init.alt_count_init = -((8*VREG_W/8) >> ($clog2(MAX_OP_W/8)));
+                                VSEW_16: state_init.alt_count_init = -((8*VREG_W/16) >> ($clog2(MAX_OP_W/8) - 1));
+                                VSEW_32: state_init.alt_count_init = -((8*VREG_W/32) >> ($clog2(MAX_OP_W/8) - 2));
+                                default: ;
+                            endcase
+                        end
+                    end
                     default: ;
                 endcase
             end else begin
@@ -471,6 +516,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         state_init.unit           = pipe_in_data_i.unit;
         state_init.vxrm           = pipe_in_data_i.vxrm;
         state_init.vl             = pipe_in_data_i.vl;
+        state_init.vlmax          = pipe_in_data_i.vlmax;
         state_init.vl_0           = pipe_in_data_i.vl_0;
         state_init.xval           = pipe_in_data_i.rs1.r.xval;
 
