@@ -349,6 +349,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             vproc_pkg::cfg_vsew  flushing_eew_q,     flushing_eew_d;
             vproc_pkg::cfg_emul  flushing_emul_q,    flushing_emul_d;
             logic [4:0]          flushing_vaddr_q,   flushing_vaddr_d;
+            logic                xreg_ready_q;
             always_ff @(posedge clk_i) begin
                 if (pipe_out_ready_i) begin
                     vd_count_q         <= vd_count_d;
@@ -362,12 +363,17 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             always_ff @(posedge clk_i or negedge async_rst_ni) begin
                 if (~async_rst_ni) begin
                     flushing_q <= 1'b0;
+                    xreg_ready_q <= 1'b0;
                 end
                 else if (~sync_rst_ni) begin
                     flushing_q <= 1'b0;
+                    xreg_ready_q <= 1'b0;
                 end
                 else if (pipe_out_ready_i) begin
                     flushing_q <= flushing_d;
+                    xreg_ready_q <= xreg_ready_next;
+                end else begin
+                    xreg_ready_q <= xreg_ready_next;
                 end
             end
             // track whether there are any valid results
@@ -421,7 +427,10 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 endcase
             end
 
-            assign unit_out_stall = unit_out_xreg_valid & (instr_speculative | ~xreg_ready_i);
+            assign unit_out_stall = unit_out_xreg_valid & (instr_speculative | (~xreg_ready_i & ~xreg_ready_q));
+            
+            logic xreg_ready_next;
+            assign xreg_ready_next = unit_out_xreg_valid & (xreg_ready_i | xreg_ready_q);
 
             // flush the downstream part of the pipeline after the last cycle if needed
             logic flushing_last_cycle;

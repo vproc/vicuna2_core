@@ -268,7 +268,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     // has to happen at the request stage, since later stalling is not possible
     // Also stall if incoming instruction is speculative OR a current instruction has not finished
     assign state_req_stall = (~state_req_red_i.mode.store & state_req_red_i.res_store & vreg_pend_rd_i[state_req_red_i.res_vaddr]) |
-                             (instr_state_i[state_req_red_i.id] == INSTR_SPECULATIVE);          
+                             (instr_state_i[state_req_red_i.id] == INSTR_SPECULATIVE) & state_req_red_i.state_req_valid_q;          
 
     // memory request (keep requesting next access while addressing is not complete)
     always_comb begin
