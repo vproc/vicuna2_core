@@ -135,9 +135,12 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_vregfile.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_vreg_wr_mux.sv
                     ${DESIGN_RTL_DIR_COMMON}/src/fifo_v3.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/custom_vfu/vproc_custom_vfu.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/custom_vfu/vproc_custom_decoder.sv
                     )
 
 set(VICUNA_INCLUDE  ${DESIGN_RTL_DIR_VICUNA}                                            #Vicuna Include Dirs
+                    ${DESIGN_RTL_DIR_VICUNA}/custom_vfu
                     ${DESIGN_RTL_DIR_VICUNA}/../sva
                     ${DESIGN_RTL_DIR_COMMON}/include
                     ${DESIGN_RTL_DIR_COMMON}/src
