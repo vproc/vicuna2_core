@@ -118,7 +118,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
     // - ELEM unit additionally requires indices -3 and -2, hence a minimum of 5 operands
     // - if MUL and ELEM units are both present in same pipeline, then all 6 operands are required
     // - in case a pipeline contains only the SLD unit the operand count is 2 (indices 0 and -1)
-    localparam int unsigned OP_CNT        = (UNITS[UNIT_MUL] | UNITS[UNIT_FPU]) ? (
+    localparam int unsigned OP_CNT        = (UNITS[UNIT_MUL] | UNITS[UNIT_FPU] | UNITS[UNIT_CUSTOM]) ? (
                                                 UNITS[UNIT_ELEM] ? 6 : 4
                                             ) : (
                                                 UNITS[UNIT_ELEM] ? 5 : (
@@ -133,7 +133,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
     // should be fetched at the latest possible stage, since the pipeline waits until the alt count
     // completes its cycle before accepting the next instruction.
     localparam int unsigned OP0_SRC   = 0;
-    localparam int unsigned OP1_SRC   = (VPORT_CNT >= ((UNITS[UNIT_MUL] | UNITS[UNIT_FPU]) ? 3 : 2)) ? 1 : 0;
+    localparam int unsigned OP1_SRC   = (VPORT_CNT >= ((UNITS[UNIT_MUL] | UNITS[UNIT_FPU] | UNITS[UNIT_CUSTOM]) ? 3 : 2)) ? 1 : 0;
     localparam int unsigned OP2_SRC   = VPORT_CNT - 1;
     localparam int unsigned MIN_STAGE = 1; // first possible unpack stage
     // start by fetching op 0, then op1, except for ELEM unit which needs to fetch op1 first since
@@ -153,7 +153,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                                         );
 
     // Verify that shared read ports are sufficiently wide
-    if ((UNITS[UNIT_MUL] | UNITS[UNIT_FPU]) & (OP0_SRC == OP1_SRC) & (OP0_SRC == OP2_SRC) & (MAX_OP_W * 2 >= VPORT_W[OP0_SRC])) begin
+    if ((UNITS[UNIT_MUL] | UNITS[UNIT_FPU]| UNITS[UNIT_CUSTOM]) & (OP0_SRC == OP1_SRC) & (OP0_SRC == OP2_SRC) & (MAX_OP_W * 2 >= VPORT_W[OP0_SRC])) begin
         $fatal(1, "If operands 0, 1, and 2 share the same source read port, then the operand ",
                   "width must not be larger than one quarter of the read port width (the current ",
                   "read port width is %d bits, hence the operand width can be at most %d bits; ",
@@ -168,7 +168,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                                                  (OP1_STAGE > OP2_STAGE) ? OP1_STAGE : OP2_STAGE
                                             ));
 
-    // operand flags
+    // operand flags //TODO: Custom functional units might need to change this bits.
     localparam bit OP_DYN_ADDR_OFFSET     = UNITS[UNIT_ELEM];   // operand with dynamic addr used
     localparam bit OP_SECOND_MASK         = UNITS[UNIT_ELEM];   // second mask operand used
     localparam bit OP0_NARROW             = UNITS[UNIT_MUL] | UNITS[UNIT_ALU] | UNITS[UNIT_ELEM] | UNITS[UNIT_FPU];
@@ -234,6 +234,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
     assign unit_fpu  = UNITS[UNIT_FPU]  & (pipe_in_data_i.unit == UNIT_FPU);
     assign unit_zvbb  = UNITS[UNIT_ZVBB]  & (pipe_in_data_i.unit == UNIT_ZVBB);
     assign unit_zvbc  = UNITS[UNIT_ZVBC]  & (pipe_in_data_i.unit == UNIT_ZVBC);
+    assign unit_custom = UNITS[UNIT_CUSTOM]  & (pipe_in_data_i.unit == UNIT_CUSTOM);
 
     // identify the type of data that vs2 supplies for ELEM instructions
     logic elem_flush, elem_vs2_data, elem_vs2_mask, elem_vs2_dyn_addr;
@@ -509,24 +510,13 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         state_init.op_xval [1]        = pipe_in_data_i.rs1.r.xval;
 
         state_init.op_flags[OP_CNT-1].vreg = DONT_CARE_ZERO ? 1'b0 : 1'bx;
-        unique case (1'b1)
-            unit_lsu:  state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.lsu.masked;
-            unit_alu:  state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.alu.op_mask != ALU_MASK_NONE;
-            unit_mul:  state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.mul.masked;
-            unit_div:  state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.div.masked;
-            unit_fpu:  state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.div.masked;
-            unit_sld:  state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.sld.masked;
-            unit_elem: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.elem.masked;
-            unit_zvbb: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbb.masked;
-            unit_zvbc: state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbc.masked;
-            default: ;
-        endcase
 
         state_init.res_vreg  [0] = 1'b1;
         state_init.res_narrow[0] = '0;
         state_init.res_vaddr     = pipe_in_data_i.rd.addr;
 
         if (unit_lsu) begin 
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.lsu.masked;
             state_init.op_flags[0       ].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
             state_init.op_flags[1       ].vreg     =  pipe_in_data_i.mode.lsu.store;
             state_init.op_flags[1       ].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
@@ -535,6 +525,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             state_init.res_vreg[0       ]          = ~pipe_in_data_i.mode.lsu.store;
         end
         if (unit_alu) begin
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.alu.op_mask != ALU_MASK_NONE;
             state_init.op_flags  [0        ].sigext =  pipe_in_data_i.mode.alu.sigext;
             state_init.op_flags  [1        ].sigext =  pipe_in_data_i.mode.alu.sigext;
             state_init.res_vreg  [0        ]        = ~pipe_in_data_i.mode.alu.cmp;
@@ -542,6 +533,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             state_init.res_vreg  [RES_CNT-1]        =  pipe_in_data_i.mode.alu.cmp;
         end
         if (unit_mul) begin
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.mul.masked;
             state_init.op_vaddr[0]                          = pipe_in_data_i.mode.mul.op2_is_vd ? pipe_in_data_i.rd.addr : pipe_in_data_i.rs2.r.vaddr;
             state_init.op_flags[0].sigext                   = pipe_in_data_i.mode.mul.op2_signed;
             state_init.op_flags[1].sigext                   = pipe_in_data_i.mode.mul.op1_signed;
@@ -561,8 +553,9 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             state_init.op_vaddr[                OP_CNT-2    ]          = pipe_in_data_i.rs2.r.vaddr;
             state_init.op_flags[                OP_CNT-1    ].elemwise = 1'b1;
         end
-         if (unit_fpu) begin
+        if (unit_fpu) begin
             //For widening ops always pad with 0s
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.fpu.masked;
             state_init.op_flags[0].sigext                   = 1'b0;
             state_init.op_flags[1].sigext                   = 1'b0;
             state_init.op_flags[0].elemwise                 = pipe_in_data_i.mode.fpu.op_reduction;
@@ -571,8 +564,38 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             state_init.op_flags[(OP_CNT >= 3) ? 2 : 0].vreg = (pipe_in_data_i.mode.fpu.op == FMADD | pipe_in_data_i.mode.fpu.op == FNMSUB);
             state_init.op_vaddr[(OP_CNT >= 3) ? 2 : 0]      = pipe_in_data_i.rd.addr;
 
-         end
+        end
+        if (unit_div) begin
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.div.masked;
+        end
+        if (unit_sld) begin
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.sld.masked;
+        end
+        if (unit_elem) begin
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.elem.masked;
+        end
+        if (unit_zvbb) begin
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbb.masked;
+        end
+        if (unit_zvbc) begin
+            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbc.masked;
+        end
+        if (unit_custom) begin
+            /*
+            * TODO:
+            * -Custom Masked Ops
+            * -Optional 3 argument custom ops
+            * -Sign Extend ops using standard flow (ie not using vregunpack)
+            * -Widening ops where custom FU performs widening (ie not using vregunpack)
+            */
+            state_init.op_flags[OP_CNT-1].vreg = 1'b0;
+            state_init.op_flags[(OP_CNT >= 3) ? 2 : 0].vreg = 1'b1;
+            state_init.op_vaddr[(OP_CNT >= 3) ? 2 : 0]      = pipe_in_data_i.rd.addr;
+        end
     end
+
+    logic[7:0] rd_addr;
+    assign rd_addr = pipe_in_data_i.rd.addr;
 
 
     ///////////////////////////////////////////////////////////////////////////
