@@ -109,6 +109,7 @@ typedef enum logic [3:0] {
     UNIT_ELEM,
     UNIT_ZVBB,
     UNIT_ZVBC,
+    UNIT_CUSTOM, //Used for arbitrary custom functional units
     // pseudo-units (used for instructions that require no unit):
     UNIT_CFG
 } op_unit;
@@ -390,6 +391,10 @@ typedef struct packed {
     logic [15:0] unused;
 } op_mode_zvbc;
 
+typedef struct packed { //Meant to be reinterpreted by the custom functional unit and the custom decoder
+    logic [17:0] unused;
+} op_mode_custom;
+
 `ifdef VPROC_OP_MODE_UNION
 typedef union packed {
     logic [17:0]  unused;
@@ -406,6 +411,7 @@ typedef struct packed {
     op_mode_fpu  fpu;
     op_mode_zvbb zvbb;
     op_mode_zvbc zvbc;
+    op_mode_custom custom;
 } op_mode;
 
 // source register type:

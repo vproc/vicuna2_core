@@ -65,6 +65,34 @@ module vproc_decoder #(
 
     logic misaligned_ls /* verilator public */;
 
+    logic op_custom_valid;
+    `ifdef VECTOR_CUSTOM
+    vproc_pkg::op_mode       custom_mode;
+    vproc_pkg::op_regs       custom_rs1;
+    vproc_pkg::op_regs       custom_rs2;
+    vproc_pkg::op_regd       custom_rd;
+
+    vproc_custom_decoder #(
+                    .VREG_W             ( VREG_W                              ),
+                    .CFG_VL_W           ( CFG_VL_W                            ),
+                    .XIF_MEM_W          ( XIF_MEM_W                           ),
+                    .DONT_CARE_ZERO     ( DONT_CARE_ZERO                      )
+    ) vproc_custom_decoder (
+        .instr_i(instr_i),
+
+        .vsew_i(vsew_i),
+        .lmul_i(vlmul_i),
+
+        .valid_o(op_custom_valid),
+        .mode_o(custom_mode),
+        .rs1_o(custom_rs1),
+        .rs2_o(custom_rs2),
+        .rd_o(custom_rd)
+    );
+    `else
+    assign op_custom_valid = 1'b0; //Without custom op support, never valid
+    `endif
+
     always_comb begin
         instr_illegal = 1'b0;
         emul_override = 1'b0;
@@ -72,6 +100,13 @@ module vproc_decoder #(
         evl_pol       = EVL_DEFAULT;
 
         vxrm_o        = DONT_CARE_ZERO ? cfg_vxrm'('0) : cfg_vxrm'('x);
+        `ifdef VECTOR_CUSTOM
+        unit_o        = UNIT_CUSTOM; //Default to custom unit
+        mode_o        = custom_mode;
+        rs1_o         = custom_rs1;
+        rs2_o         = custom_rs2;
+        rd_o          = custom_rd;
+        `else
         unit_o        = DONT_CARE_ZERO ? op_unit'('0) : op_unit'('x);
         mode_o.unused = DONT_CARE_ZERO ? '0 : 'x;
 
@@ -87,6 +122,7 @@ module vproc_decoder #(
 
         rd_o.vreg     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rd_o.addr     = instr_vd;
+        `endif
 
         widenarrow_o  = OP_SINGLEWIDTH;
 
@@ -2754,8 +2790,7 @@ module vproc_decoder #(
     // operation illegal (invalid vtype, invalid EMUL, or register addresses for the current configuration)
     logic op_illegal;
     assign op_illegal = (unit_o != UNIT_CFG) & (vs1_invalid | vs2_invalid | vd_invalid | vtype_invalid | emul_invalid);
-
-    assign valid_o   = instr_valid_i & (~instr_illegal) & (~op_illegal);
+    assign valid_o   = instr_valid_i & (~instr_illegal | op_custom_valid) & (~op_illegal);
 
 
 endmodule
