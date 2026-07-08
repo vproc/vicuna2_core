@@ -443,6 +443,7 @@ typedef struct packed {
     logic narrow;
     logic vf4_ext;
     logic sigext;
+    logic lsu_instr;
     logic field_instr;
 } unpack_flags;
 
@@ -456,6 +457,9 @@ typedef struct packed {
     logic       sig;
     logic [2:0] mul_idx;
     logic [4:0] vreg_idx; //TODO: This should be defined per pipeline as log2(VREG_W/MAX_OP_W) bits wide
+    logic       first_cycle;
+    logic       lsu_instr;
+    logic       field_instr;
 } pack_flags;
 
 

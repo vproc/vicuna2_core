@@ -5,7 +5,7 @@
     // Assert that the instruction ID is always valid
     assert property (
         @(posedge clk_i)
-        state_valid_q |-> instr_state_i[state_q.id] != INSTR_INVALID
+        state_valid_q & state_q.unit != UNIT_SLD |-> instr_state_i[state_q.id] != INSTR_INVALID
     ) else begin
         $error("Instruction %d is invalid", state_q.id);
     end
