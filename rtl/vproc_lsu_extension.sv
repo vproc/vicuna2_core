@@ -411,6 +411,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         port_hit = '0;
         port_hit_index = '0;
         port_pending_select = '0;
+        port_pending_data_off = '{default: 0};
         port_wdata = '0;
         port_wmask = '0;
 

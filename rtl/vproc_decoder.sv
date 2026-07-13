@@ -2259,7 +2259,7 @@ module vproc_decoder #(
             VSEW_8: elem_per_vl = VREG_W/8;
             VSEW_16: elem_per_vl = VREG_W/16;
             VSEW_32: elem_per_vl = VREG_W/32;
-            default: ;
+            default: elem_per_vl = VREG_W/8;
         endcase
 
         unique case (lmul_i)

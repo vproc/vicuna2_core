@@ -1179,7 +1179,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
                 VSEW_32: begin
                     unpack_ctrl.vl_idx[i] = (state_q.count + i) >> 2; 
                 end
-                default: ;
+                default: unpack_ctrl.vl_idx[i] = state_q.count;
             endcase
         end
 
