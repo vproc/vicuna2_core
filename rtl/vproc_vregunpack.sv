@@ -54,7 +54,7 @@ module vproc_vregunpack
         input  logic                                  pipe_in_valid_i,
         output logic                                  pipe_in_ready_o,
         input  logic               [CTRL_DATA_W-1:0]  pipe_in_ctrl_i,       // pipeline control sigs
-        input  op_unit                                pipe_in_unit_i,
+        input  vproc_pkg::op_unit                     pipe_in_unit_i,
         input  vproc_pkg::cfg_vsew                    pipe_in_alt_eew_i,
         input  vproc_pkg::cfg_vsew                    pipe_in_eew_i,        // current element width
         input  logic   [OP_CNT-1:0]                   pipe_in_op_load_i,    // load signals of ops
@@ -467,7 +467,10 @@ module vproc_vregunpack
                 always_comb begin
                     // retain current value by default
                     op_default = op_buffer[i][OP_W[i]-1:0];
-                    op_mem_default[0] = op_buffer[i][OP_W[i]-1:0];
+                    
+                    for(int j = 0; j < MEM_PORTS; j++) begin
+                    	op_mem_default[j] = op_buffer[i][OP_W[i]-1:0];
+                    end
 
                     if(FIELD_COUNT_USED) begin
 
@@ -554,8 +557,10 @@ module vproc_vregunpack
                 // lower part
                 op_buffer_next[i] = {op_buffer[i][MAX_VPORT_W-1:OP_W[i]], op_default};
                 
-                for(int k = 0; k < 7; k++) begin
-                    field_buffer_next[k] = field_buffer_q[k];
+                if(OP_FIELD[i]) begin
+		        for(int k = 0; k < 7; k++) begin
+		            field_buffer_next[k] = field_buffer_q[k];
+		        end
                 end
 
                 if(op_load_flags[i].lsu_instr) begin
