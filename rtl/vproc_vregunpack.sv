@@ -17,6 +17,8 @@ module vproc_vregunpack
 
         // vector register operands configuration
         parameter int unsigned                        MAX_OP_W           = 64,   // max op width
+        parameter int unsigned                        MEM_W              = 0,
+        parameter int unsigned                        MEM_PORTS          = 1,
         parameter int unsigned                        OP_CNT             = 1,    // op count
         parameter int unsigned                        OP_W    [OP_CNT]   = '{0}, // op widths
         parameter int unsigned                        OP_STAGE[OP_CNT]   = '{0}, // op load stage
@@ -59,7 +61,8 @@ module vproc_vregunpack
         input  logic   [OP_CNT-1:0][MAX_VADDR_W-1:0]  pipe_in_op_vaddr_i,   // vreg addresses of ops
         input  FLAGS_T [OP_CNT-1:0]                   pipe_in_op_flags_i,   // unpack flags of ops
         input  logic   [OP_CNT-1:0][31           :0]  pipe_in_op_xval_i,    // X reg values for ops
-        input  logic   [2:0]                          pipe_in_field_counter_i,
+        input  logic   [MEM_PORTS-1:0]                pipe_in_mem_req_valid_i,
+        input  logic   [MEM_PORTS-1:0][2:0]           pipe_in_field_counter_i,
 
         // pipeline out
         output logic                                  pipe_out_valid_o,
@@ -106,7 +109,8 @@ module vproc_vregunpack
         op_unit                               unit;
         cfg_vsew                              eew;
         cfg_vsew                              alt_eew;
-        logic   [2:0]                         field_counter;
+        logic   [MEM_PORTS-1:0]               mem_req_valid;
+        logic   [MEM_PORTS-1:0][2:0]          field_counter;
         logic   [OP_CNT-1:0]                  op_load;
         logic   [OP_CNT-1:0][MAX_VADDR_W-1:0] op_vaddr;
         FLAGS_T [OP_CNT-1:0]                  op_flags;
@@ -127,6 +131,7 @@ module vproc_vregunpack
         stage_0.op_vaddr = pipe_in_op_vaddr_i;
         stage_0.op_flags = pipe_in_op_flags_i;
         stage_0.op_xval  = pipe_in_op_xval_i;
+        stage_0.mem_req_valid = pipe_in_mem_req_valid_i;
         stage_0.field_counter = pipe_in_field_counter_i;
         `else
         if (pipe_in_ready_o & pipe_in_valid_i) begin
@@ -138,6 +143,7 @@ module vproc_vregunpack
             stage_0.op_vaddr = pipe_in_op_vaddr_i;
             stage_0.op_flags = pipe_in_op_flags_i;
             stage_0.op_xval  = pipe_in_op_xval_i;
+            stage_0.mem_req_valid = pipe_in_mem_req_valid_i;
             stage_0.field_counter = pipe_in_field_counter_i;
         end
         `endif
@@ -396,15 +402,17 @@ module vproc_vregunpack
     end
 
     // Load signals, vregs, current buffers, and unpack settings of operands and masks
-    logic    [OP_CNT-1:0]                  op_load;
-    FLAGS_T  [OP_CNT-1:0]                  op_load_flags;
-    cfg_vsew [OP_CNT-1:0]                  op_load_eew;
-    logic    [OP_CNT-1:0][MAX_VPORT_W-1:0] op_buffer;
-    FLAGS_T  [OP_CNT-1:0]                  op_extract_flags;
-    cfg_vsew [OP_CNT-1:0]                  op_extract_eew;
-    logic    [OP_CNT-1:0][31           :0] op_xval;
-    logic    [OP_CNT-1:0][2:0]             op_load_field_counter;
-    logic    [OP_CNT-1:0][2:0]             op_extract_field_counter;
+    logic    [OP_CNT-1:0]                       op_load;
+    FLAGS_T  [OP_CNT-1:0]                       op_load_flags;
+    cfg_vsew [OP_CNT-1:0]                       op_load_eew;
+    logic    [OP_CNT-1:0][MAX_VPORT_W-1:0]      op_buffer;
+    FLAGS_T  [OP_CNT-1:0]                       op_extract_flags;
+    cfg_vsew [OP_CNT-1:0]                       op_extract_eew;
+    logic    [OP_CNT-1:0][31:0]                 op_xval;
+    logic    [OP_CNT-1:0][MEM_PORTS-1:0][2:0]   op_load_field_counter;
+    logic    [OP_CNT-1:0][MEM_PORTS-1:0][2:0]   op_extract_field_counter;
+    logic    [OP_CNT-1:0][MEM_PORTS-1:0]        op_load_mem_req_valid;
+    logic    [OP_CNT-1:0][MEM_PORTS-1:0]        op_extract_mem_req_valid;
     always_comb begin
         for (int i = 0; i < OP_CNT; i++) begin
             op_load         [i] = stage_state[OP_STAGE[i]    ].op_load[i];
@@ -416,6 +424,8 @@ module vproc_vregunpack
             op_xval         [i] = stage_state[OP_STAGE[i] + 1].op_xval[i];
             op_load_field_counter [i] = stage_state[OP_STAGE[i]    ].field_counter;
             op_extract_field_counter [i] = stage_state[OP_STAGE[i] + 1].field_counter;
+            op_load_mem_req_valid [i] = stage_state[OP_STAGE[i]    ].mem_req_valid;
+            op_extract_mem_req_valid [i] = stage_state[OP_STAGE[i] + 1].mem_req_valid;
         end
 
     end
@@ -424,6 +434,7 @@ module vproc_vregunpack
     generate
         for (genvar i = 0; i < OP_CNT; i++) begin
             logic [OP_W[i]-1:0] op_default;
+            logic [OP_W[i]-1:0] op_mem_default [MEM_PORTS-1:0];
             // move next mask section (depends on EEW) into lower 3/4 of operand part for masks
             if (OP_MASK[i]) begin
                 if (OP_ALWAYS_ELEMWISE[i]) begin
@@ -444,7 +455,10 @@ module vproc_vregunpack
                             default: ;
                         endcase
                         if (OP_ALLOW_ELEMWISE[i] & op_load_flags[i].elemwise) begin
-                            op_default[OP_W[i]-2:0] = op_buffer[i][OP_W[i]-1:1];
+                            unique case (op_load_flags[i].lsu_instr & ~op_load_flags[i].field_instr)
+                                1'b0: op_default[OP_W[i]-2:0] = op_buffer[i][OP_W[i]-1:1];
+                                1'b1: op_default[OP_W[i]-1-MEM_PORTS:0] = op_buffer[i][OP_W[i]-1:MEM_PORTS];
+                            endcase
                         end
                     end
                 end
@@ -453,13 +467,20 @@ module vproc_vregunpack
                 always_comb begin
                     // retain current value by default
                     op_default = op_buffer[i][OP_W[i]-1:0];
+                    op_mem_default[0] = op_buffer[i][OP_W[i]-1:0];
 
                     if(FIELD_COUNT_USED) begin
 
                         // use field buffer value instead of op_buffer where field 0 resides
                         if(OP_FIELD[i]) begin
-                            if(op_load_flags[i].field_instr & op_load_field_counter[i] > 0) begin
-                                op_default = field_buffer_q[op_load_field_counter[i] - 1][OP_W[i]-1:0];
+                            if(op_load_flags[i].field_instr) begin
+                                op_mem_default[0][OP_W[i]-1:0] = op_buffer[i][OP_W[i]+MEM_W-1:MEM_W];
+                            end
+
+                            for(int j = 0; j < MEM_PORTS; j++) begin
+                                if(op_load_flags[i].field_instr & op_load_field_counter[i][j] > 0) begin
+                                    op_mem_default[j][OP_W[i]-1:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_W[i]+MEM_W-1:MEM_W];
+                                end
                             end
                         end
                     end
@@ -477,16 +498,37 @@ module vproc_vregunpack
                                     {VSEW_32, 1'b0}: op_default[OP_W[i]-9:0] = op_buffer[i][OP_W[i]+23:32];
                                     default: ;
                                 endcase
+
+                                if(op_load_flags[i].lsu_instr) begin
+
+                                    if(~op_load_flags[i].field_instr) begin
+                                        op_default[OP_W[i]-9:0] = DONT_CARE_ZERO ? '0 : 'x;
+                                        unique case (op_load_eew[i])
+                                            VSEW_8: op_default[OP_W[i]-9:0] = op_buffer[i][OP_W[i]-1 :8*MEM_PORTS ];
+                                            VSEW_16: op_default[OP_W[i]-9:0] = op_buffer[i][OP_W[i]+7 :16*MEM_PORTS];
+                                            VSEW_32: op_default[OP_W[i]-9:0] = op_buffer[i][OP_W[i]+23:32*MEM_PORTS];
+                                            default: ;
+                                        endcase
+                                    end
+
+                                    for(int j = 0; j < MEM_PORTS; j++) begin
+                                        op_mem_default[j][OP_W[i]-9:0] = DONT_CARE_ZERO ? '0 : 'x;
+                                    end
+
+                                    op_mem_default[0] = op_default;
                                 
-                                if(FIELD_COUNT_USED) begin
-                                    if(OP_FIELD[i]) begin
-                                        if(op_load_flags[i].field_instr & op_load_field_counter[i] > 0) begin
-                                            unique case (op_load_eew[i])
-                                                VSEW_8: op_default[OP_W[i]-9:0] = field_buffer_q[op_load_field_counter[i] - 1][OP_W[i]-1 :8 ];
-                                                VSEW_16: op_default[OP_W[i]-9:0] = field_buffer_q[op_load_field_counter[i] - 1][OP_W[i]+7 :16];
-                                                VSEW_32: op_default[OP_W[i]-9:0] = field_buffer_q[op_load_field_counter[i] - 1][OP_W[i]+23:32];
-                                                default: ;
-                                            endcase
+                                    if(FIELD_COUNT_USED) begin
+                                        if(OP_FIELD[i]) begin
+                                            for(int j = 0; j < MEM_PORTS; j++) begin
+                                                if(op_load_flags[i].field_instr & op_load_field_counter[i][j] > 0) begin
+                                                    unique case (op_load_eew[i])
+                                                        VSEW_8: op_mem_default[j][OP_W[i]-9:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_W[i]-1 :8 ];
+                                                        VSEW_16: op_mem_default[j][OP_W[i]-9:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_W[i]+7 :16];
+                                                        VSEW_32: op_mem_default[j][OP_W[i]-9:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_W[i]+23:32];
+                                                        default: ;
+                                                    endcase
+                                                end
+                                            end
                                         end
                                     end
                                 end
@@ -511,23 +553,28 @@ module vproc_vregunpack
                 // by default, retain current value for upper part and assign default value for
                 // lower part
                 op_buffer_next[i] = {op_buffer[i][MAX_VPORT_W-1:OP_W[i]], op_default};
+                
+                for(int k = 0; k < 7; k++) begin
+                    field_buffer_next[k] = field_buffer_q[k];
+                end
 
-                if(FIELD_COUNT_USED) begin
-                    
+                if(op_load_flags[i].lsu_instr) begin
+                        
                     // retain current value without shifting since it is turn of other field
-                    if(op_load_flags[i].field_instr & op_load_field_counter[i] > 0) begin
+                    if(op_load_flags[i].field_instr & op_load_field_counter[i][0] > 0) begin
                         op_buffer_next[i] = op_buffer[i];
                     end
 
 
                     if(OP_FIELD[i]) begin
+                        if(op_load_mem_req_valid[i][0] == 1 & op_load_field_counter[i][0] == 0) begin
+                            op_buffer_next[i] = {op_buffer[i][MAX_VPORT_W-1:OP_W[i]], op_mem_default[0]}; 
+                        end
 
-                        // shift value if it is turn of field or retain value if it is not turn of field
-                        for(int j = 0; j < 7; j++) begin
-                            if(op_load_field_counter[i] == j + 1) begin
-                                field_buffer_next[j] = {field_buffer_q[j][MAX_VPORT_W-1:OP_W[i]], op_default};
-                            end else begin
-                                field_buffer_next[j] = field_buffer_q[j];
+                        for(int j = 0; j < MEM_PORTS; j++) begin
+                            // shift value if it is turn of field or retain value if it is not turn of field
+                            if(op_load_mem_req_valid[i][j] == 1 & op_load_field_counter[i][j] > 0) begin
+                                field_buffer_next[op_load_field_counter[i][j]-1] = {field_buffer_q[op_load_field_counter[i][j]-1][MAX_VPORT_W-1:OP_W[i]], op_mem_default[j]};
                             end
                         end
 
@@ -543,13 +590,17 @@ module vproc_vregunpack
 
                     op_buffer_next[i][OP_VPORT_W-OP_W[i]-1:0] = op_buffer[i][OP_VPORT_W-1:OP_W[i]];
                     
-                    // if it is turn of field shift the respective field_buffer
-                    if(OP_FIELD[i] & FIELD_COUNT_USED & op_load_flags[i].field_instr  & op_load_field_counter[i] > 0) begin
-                        field_buffer_next[op_load_field_counter[i] - 1][OP_VPORT_W-OP_W[i]-1:0] = field_buffer_q[op_load_field_counter[i] - 1][OP_VPORT_W-1:OP_W[i]];
+                    for(int j = 0; j < MEM_PORTS; j++) begin
+
+                        if(OP_FIELD[i] & FIELD_COUNT_USED & op_load_flags[i].field_instr) begin
+                            if(op_load_mem_req_valid[i][j] == 1 & op_load_field_counter[i][j] > 0) begin
+                                field_buffer_next[op_load_field_counter[i][j] - 1][OP_VPORT_W-OP_W[i]-1:0] = field_buffer_q[op_load_field_counter[i][j] - 1][OP_VPORT_W-1:OP_W[i]];
+                            end
+                        end
                     end
 
                     // if it is turn of field, do not shift value of op_buffer
-                    if(FIELD_COUNT_USED & op_load_flags[i].field_instr  & op_load_field_counter[i] > 0) begin
+                    if(FIELD_COUNT_USED & op_load_flags[i].field_instr  & op_load_field_counter[i][0] > 0) begin
                         op_buffer_next[i] = op_buffer[i];
                     end
                 end
@@ -557,8 +608,8 @@ module vproc_vregunpack
                 if (op_load[i]) begin
 
                     // if it is turn of field load value into field buffer, otherwise into op_buffer
-                    if(OP_FIELD[i] & FIELD_COUNT_USED & op_load_flags[i].field_instr  & op_load_field_counter[i] > 0) begin
-                        field_buffer_next[op_load_field_counter[i] - 1][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0];
+                    if(OP_FIELD[i] & FIELD_COUNT_USED & op_load_flags[i].field_instr  & op_load_field_counter[i][0] > 0) begin
+                        field_buffer_next[op_load_field_counter[i][0] - 1][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0];
                     end else begin
                         op_buffer_next[i][OP_VPORT_W-1:0] = op_vreg_data[i][OP_VPORT_W-1:0];
                     end
@@ -573,6 +624,28 @@ module vproc_vregunpack
     // Operand extraction logic   
     generate
         for (genvar i = 0; i < OP_CNT; i++) begin
+
+            logic [OP_W[i]-1:0] op_field_helper;
+
+            if(MEM_PORTS == 1 & OP_FIELD[i]) begin
+                always_comb begin
+                    op_field_helper = field_buffer_q[op_extract_field_counter[i][0] - 1];
+                end
+            end else if(OP_FIELD[i]) begin
+                always_comb begin
+                    // Default assignment to avoid latches
+                    op_field_helper = '0;
+
+                    for(int j = 0; j < MEM_PORTS; j++) begin
+                        if(op_extract_field_counter[i][j] > 0) begin
+                            op_field_helper[MEM_W*j +: MEM_W] = field_buffer_q[op_extract_field_counter[i][j] - 1][MEM_W-1:0];
+                        end
+                    end
+                end
+            end else begin
+                assign op_field_helper = '0; 
+            end
+
             always_comb begin
                 // operand is lower part of operand buffer by default
                 op_data[i]              = DONT_CARE_ZERO ? '0 : 'x;
@@ -608,12 +681,31 @@ module vproc_vregunpack
                             default: ;
                         endcase
                     end
-                end else if(FIELD_COUNT_USED & OP_FIELD[i] & op_extract_flags[i].field_instr) begin
+                end else if(FIELD_COUNT_USED & OP_FIELD[i] & op_extract_flags[i].lsu_instr & op_extract_flags[i].field_instr) begin
                     // take result value out of field buffer if it is turn of field
-                    for(int j = 0; j < 7; j++) begin
-                        if(op_extract_field_counter[i]) begin
-                            op_data[i][OP_W[i]-1:0] = field_buffer_q[op_extract_field_counter[i] - 1][OP_W[i]-1:0];
-                        end
+                    for(int j = 0; j < MEM_PORTS; j++) begin
+                        unique case (op_extract_eew[i])
+                            VSEW_8: begin
+                                if(op_extract_field_counter[i][j] > 0) begin
+                                    op_data[i][8*j +: 8] = field_buffer_q[op_extract_field_counter[i][j] - 1][7:0];
+                                end
+                            end
+                            VSEW_16: begin
+                                if(op_extract_field_counter[i][j] > 0) begin
+                                    op_data[i][16*j +: 16] = field_buffer_q[op_extract_field_counter[i][j] - 1][15:0];
+                                end
+                            end
+                            VSEW_32: begin
+                                if(op_extract_field_counter[i][j] > 0) begin
+                                    op_data[i][32*j +: 32] = field_buffer_q[op_extract_field_counter[i][j] - 1][31:0];
+                                end
+                            end
+                            default: ;
+                        endcase
+                    end
+
+                    if(~op_extract_flags[i].elemwise) begin
+                        op_data[i] = op_field_helper;
                     end
                 end else begin
                     // extend each element to twice its size if this operand is narrow.  If this is a vf4 extension extend to 4 times its size

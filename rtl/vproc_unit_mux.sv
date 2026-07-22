@@ -3,13 +3,14 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
 
-module vproc_unit_mux import vproc_pkg::*; #(
+module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         parameter bit [UNIT_CNT-1:0]                 UNITS           = '0,
         parameter int unsigned                       XIF_ID_W        = 3,
         parameter int unsigned                       XIF_ID_CNT      = 8,
         parameter int unsigned                       VREG_W          = 128,
         parameter int unsigned                       OP_CNT          = 2,
         parameter int unsigned                       MAX_OP_W        = 32,
+        parameter int unsigned                       MEM_W           = 0,
         parameter int unsigned                       RES_CNT         = 2,
         parameter int unsigned                       MAX_RES_W       = 32,
         parameter int unsigned                       VLSU_QUEUE_SZ   = 4,
@@ -18,6 +19,9 @@ module vproc_unit_mux import vproc_pkg::*; #(
         parameter type                               CTRL_T          = logic,
         parameter type                               COUNTER_T       = logic,
         parameter int unsigned                       COUNTER_W       = 0,
+        parameter int unsigned                       MEM_PORTS       = 1,
+        parameter obi_cfg_t                          OBI_CFG         = ObiDefaultConfig,
+        parameter int unsigned                       PORT_QUEUE_DEPTH         = 1,
         parameter bit                                DONT_CARE_ZERO  = 1'b0
     )
     (
@@ -51,8 +55,7 @@ module vproc_unit_mux import vproc_pkg::*; #(
 
         input  instr_state [XIF_ID_CNT         -1:0] instr_state_i,
 
-        vproc_xif.coproc_mem                         xif_mem_if,
-        vproc_xif.coproc_mem_result                  xif_memres_if,
+        OBI_BUS.Manager                              obi_bus [MEM_PORTS-1:0],
 
         output logic                                 trans_complete_valid_o,
         input  logic                                 trans_complete_ready_i,
@@ -105,10 +108,9 @@ module vproc_unit_mux import vproc_pkg::*; #(
         for (genvar i = 0; i < UNIT_CNT; i++) begin
             if (UNITS[i]) begin
                 // LSU-related signals
-                vproc_xif #(
-                    .X_ID_WIDTH  ( XIF_ID_W ),
-                    .X_MEM_WIDTH ( MAX_OP_W )
-                ) unit_xif ();
+                OBI_BUS #(
+                    .OBI_CFG     ( OBI_CFG   )
+                ) unit_obi_bus [MEM_PORTS-1:0] ();
                 logic                pending_load;
                 logic                pending_store;
                 logic                trans_complete_valid;
@@ -131,6 +133,7 @@ module vproc_unit_mux import vproc_pkg::*; #(
                     .VREG_W                    ( VREG_W                     ),
                     .OP_CNT                    ( OP_CNT                     ),
                     .MAX_OP_W                  ( MAX_OP_W                   ),
+                    .MEM_W                     ( MEM_W                      ),
                     .RES_CNT                   ( RES_CNT                    ),
                     .MAX_RES_W                 ( MAX_RES_W                  ),
                     .VLSU_QUEUE_SZ             ( VLSU_QUEUE_SZ              ),
@@ -139,6 +142,8 @@ module vproc_unit_mux import vproc_pkg::*; #(
                     .CTRL_T                    ( CTRL_T                     ),
                     .COUNTER_T                 ( COUNTER_T                  ),
                     .COUNTER_W                 ( COUNTER_W                  ),
+                    .MEM_PORTS                 ( MEM_PORTS                  ),
+                    .PORT_QUEUE_DEPTH          ( PORT_QUEUE_DEPTH           ),
                     .DONT_CARE_ZERO            ( DONT_CARE_ZERO             )
                 ) unit (
                     .clk_i                     ( clk_i                      ),
@@ -165,8 +170,7 @@ module vproc_unit_mux import vproc_pkg::*; #(
                     .pending_store_o           ( pending_store              ),
                     .vreg_pend_rd_i            ( vreg_pend_rd_i             ),
                     .instr_state_i             ( instr_state_i              ),
-                    .xif_mem_if                ( unit_xif                   ),
-                    .xif_memres_if             ( unit_xif                   ),
+                    .obi_bus                   ( unit_obi_bus               ),
                     .trans_complete_valid_o    ( trans_complete_valid       ),
                     .trans_complete_ready_i    ( trans_complete_ready       ),
                     .trans_complete_id_o       ( trans_complete_id          ),
@@ -185,24 +189,28 @@ module vproc_unit_mux import vproc_pkg::*; #(
                 if (op_unit'(i) == UNIT_LSU) begin
                     assign pending_load_o            = pending_load;
                     assign pending_store_o           = pending_store;
-                    assign xif_mem_if.mem_valid      = unit_xif.mem_valid;
-                    assign unit_xif.mem_ready        = xif_mem_if.mem_ready;
-                    assign xif_mem_if.mem_req.id     = unit_xif.mem_req.id;
-                    assign xif_mem_if.mem_req.addr   = unit_xif.mem_req.addr;
-                    assign xif_mem_if.mem_req.mode   = unit_xif.mem_req.mode;
-                    assign xif_mem_if.mem_req.we     = unit_xif.mem_req.we;
-                    assign xif_mem_if.mem_req.be     = unit_xif.mem_req.be;
-                    assign xif_mem_if.mem_req.wdata  = unit_xif.mem_req.wdata;
-                    assign xif_mem_if.mem_req.last   = unit_xif.mem_req.last;
-                    assign xif_mem_if.mem_req.spec   = unit_xif.mem_req.spec;
-                    assign unit_xif.mem_resp.exc     = xif_mem_if.mem_resp.exc;
-                    assign unit_xif.mem_resp.exccode = xif_mem_if.mem_resp.exccode;
-                    assign unit_xif.mem_resp.dbg     = xif_mem_if.mem_resp.dbg;
-                    assign unit_xif.mem_result_valid = xif_memres_if.mem_result_valid;
-                    assign unit_xif.mem_result.id    = xif_memres_if.mem_result.id;
-                    assign unit_xif.mem_result.rdata = xif_memres_if.mem_result.rdata;
-                    assign unit_xif.mem_result.err   = xif_memres_if.mem_result.err;
-                    assign unit_xif.mem_result.dbg   = xif_memres_if.mem_result.dbg;
+
+                    for (genvar j = 0; j < MEM_PORTS; j++) begin
+                        assign obi_bus[j].req               = unit_obi_bus[j].req;
+                        assign obi_bus[j].reqpar            = unit_obi_bus[j].reqpar;
+                        assign unit_obi_bus[j].gnt          = obi_bus[j].gnt;
+                        assign unit_obi_bus[j].gntpar       = obi_bus[j].gntpar;
+                        assign obi_bus[j].addr              = unit_obi_bus[j].addr;
+                        assign obi_bus[j].we                = unit_obi_bus[j].we;
+                        assign obi_bus[j].be                = unit_obi_bus[j].be;
+                        assign obi_bus[j].wdata             = unit_obi_bus[j].wdata;
+                        assign obi_bus[j].aid               = unit_obi_bus[j].aid;
+                        assign obi_bus[j].a_optional        = unit_obi_bus[j].a_optional;
+                        assign unit_obi_bus[j].rvalid       = obi_bus[j].rvalid;
+                        assign unit_obi_bus[j].rvalidpar    = obi_bus[j].rvalidpar;
+                        assign obi_bus[j].rready            = unit_obi_bus[j].rready;
+                        assign obi_bus[j].rreadypar         = unit_obi_bus[j].rreadypar;
+                        assign unit_obi_bus[j].rdata        = obi_bus[j].rdata;
+                        assign unit_obi_bus[j].rid          = obi_bus[j].rid;
+                        assign unit_obi_bus[j].err          = obi_bus[j].err;
+                        assign unit_obi_bus[j].r_optional   = obi_bus[j].r_optional;
+                    end
+
                     assign trans_complete_valid_o    = trans_complete_valid;
                     assign trans_complete_ready      = trans_complete_ready_i;
                     assign trans_complete_id_o       = trans_complete_id;

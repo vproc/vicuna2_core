@@ -181,7 +181,7 @@ module vproc_sld #(
         if (~pipe_in_ctrl_i.first_cycle & state_ex_q.alt_count_valid) begin
             operand_low_valid_d = 1'b1;
             for (int i = 0; i < SLD_OP_W / 8; i++) begin
-                if (~pipe_in_ctrl_i.mode.sld.slide1 | (i <= pipe_in_ctrl_i.vl_part)) begin
+                if (~pipe_in_ctrl_i.mode.sld.slide1 | (i <= pipe_in_ctrl_i.vl_part | pipe_in_ctrl_i.mode.sld.dir == SLD_UP)) begin
                     operand_low_d[i*8 +: 8] = operand_high_q[i*8 +: 8];
                 end
             end
@@ -217,6 +217,13 @@ module vproc_sld #(
             end else begin
                 result_d     [i*8 +: 8] = operand_high_q[($clog2(SLD_OP_W)'(             i) - {3'b000, slide_bytes}) * 8 +: 8];
                 result_mask_d[i]        = state_ex_q.alt_count_valid;
+            end
+
+            if(state_ex_q.mode.sld.dir == SLD_DOWN) begin
+                if(state_ex_q.vl_idx[i] + state_ex_q.op_xval >= state_ex_q.vlmax | state_ex_q.op_xval > state_ex_q.vlmax) begin
+                    result_d     [i*8 +: 8] = '0;
+                    result_mask_d[i] = 1;
+                end
             end
         end
 
