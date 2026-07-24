@@ -126,8 +126,6 @@ set(DESIGN_RTL_DIR_COMMON ${CMAKE_CURRENT_SOURCE_DIR}/pulp_common_cells)
 set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                               #Vicuna sources
                     ${DESIGN_RTL_DIR_VICUNA}/../vproc_config.sv 
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_xif.sv
-                    ${DESIGN_RTL_DIR_VICUNA}/obi_pkg.sv
-                    ${DESIGN_RTL_DIR_VICUNA}/obi_intf.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_core.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_vregpack.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_vregunpack.sv
@@ -222,9 +220,12 @@ set(CVFPU_INCLUDE   ${DESIGN_RTL_DIR_CVFPU}
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/opene906/E906_RTL_FACTORY/gen_rtl/clk/rtl
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/opene906/E906_RTL_FACTORY/gen_rtl/fpu/rtl
                     )               
-                   
-                 
-                   
+
+set(DESIGN_SRC_OBI  ${DESIGN_RTL_DIR_VICUNA}/../obi/obi_pkg.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/../obi/obi_intf.sv PARENT_SCOPE) #include OBI header separately if needed to not conflict with other definitions
+
+set(INCLUDE_OBI ${CMAKE_CURRENT_SOURCE_DIR}/obi PARENT_SCOPE)
+
 ##############
 #Generate vproc_config.sv for chosen configuration.
 ##############
