@@ -467,7 +467,10 @@ module vproc_vregunpack
                 always_comb begin
                     // retain current value by default
                     op_default = op_buffer[i][OP_W[i]-1:0];
-                    op_mem_default[0] = op_buffer[i][OP_W[i]-1:0];
+                    
+                    for(int j = 0; j < MEM_PORTS; j++) begin
+                    	op_mem_default[j] = op_buffer[i][OP_W[i]-1:0];
+                    end
 
                     if(FIELD_COUNT_USED) begin
 
@@ -554,8 +557,10 @@ module vproc_vregunpack
                 // lower part
                 op_buffer_next[i] = {op_buffer[i][MAX_VPORT_W-1:OP_W[i]], op_default};
                 
-                for(int k = 0; k < 7; k++) begin
-                    field_buffer_next[k] = field_buffer_q[k];
+                if(OP_FIELD[i]) begin
+		        for(int k = 0; k < 7; k++) begin
+		            field_buffer_next[k] = field_buffer_q[k];
+		        end
                 end
 
                 if(op_load_flags[i].lsu_instr) begin

@@ -450,6 +450,7 @@ module vproc_lsu import vproc_pkg::*; #(
     
     always_comb begin
         pipe_out_valid_o = state_rdata.mem_req_valid;
+        pipe_out_res_o = '{default: 0};
 
         for(int i = 0; i < MEM_PORTS; i++) begin
             pipe_out_res_o[i][VMEM_W-1:0] = rdata_buf[i];
