@@ -41,10 +41,6 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         output logic                  fsm_load_o,
         output logic                  fsm_store_o
     );
-
-    assign fsm_load_o = scratch_state_q.fsm_state != IDLE & ~scratch_state_q.store;
-    assign fsm_store_o = scratch_state_q.fsm_state != IDLE & scratch_state_q.store;
-
     function automatic logic [MEM_PORTS-1:0] rotate_left(input logic [MEM_PORTS-1:0] port_in);
         // By using shift operators instead of indexed part-selects, 
         // we bypass the negative index elaboration error completely.
@@ -87,6 +83,9 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     } scratch_state_t;
 
     scratch_state_t scratch_state_q, scratch_state_d;
+
+    assign fsm_load_o = scratch_state_q.fsm_state != IDLE & ~scratch_state_q.store;
+    assign fsm_store_o = scratch_state_q.fsm_state != IDLE & scratch_state_q.store;
 
     /////////////////////////////////input queue////////////////////////////////
     logic               input_queue_valid_out;
@@ -234,6 +233,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
         // checks which might stall the pipeline (destination vector register
         // available, instruction committed) must be done *before* generating
         // the memory requests.
+        // TODO: Pipeline already handles this case?  All data is available/destination register is checked before instruction is issued?
         if (BUF_RDATA) begin
             always_ff @(posedge clk_i or negedge async_rst_ni) begin : vproc_lsu_stage_rdata_valid
                 if (~async_rst_ni) begin
@@ -267,6 +267,7 @@ module vproc_lsu_extension import vproc_pkg::*; #(
     // complete and while the instruction is speculative; for the LSU stalling
     // has to happen at the request stage, since later stalling is not possible
     // Also stall if incoming instruction is speculative OR a current instruction has not finished
+    // TODO: Pipeline handles this case?  All instructions that reach this point should be non-speculative?
     assign state_req_stall = (~state_req_red_i.mode.store & state_req_red_i.res_store & vreg_pend_rd_i[state_req_red_i.res_vaddr]) |
                              (instr_state_i[state_req_red_i.id] == INSTR_SPECULATIVE) & state_req_red_i.state_req_valid_q;          
 
