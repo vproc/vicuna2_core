@@ -228,7 +228,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
     } state_t;
 
     // identify the unit of the supplied instruction
-    logic unit_lsu, unit_alu, unit_mul, unit_sld, unit_elem, unit_div, unit_fpu, unit_zvbb, unit_zvbc;
+    logic unit_lsu, unit_alu, unit_mul, unit_sld, unit_elem, unit_div, unit_fpu, unit_zvbb, unit_zvbc, unit_custom;
     assign unit_lsu  = UNITS[UNIT_LSU ] & (pipe_in_data_i.unit == UNIT_LSU );
     assign unit_alu  = UNITS[UNIT_ALU ] & (pipe_in_data_i.unit == UNIT_ALU );
     assign unit_mul  = UNITS[UNIT_MUL ] & (pipe_in_data_i.unit == UNIT_MUL );

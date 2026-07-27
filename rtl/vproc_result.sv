@@ -43,7 +43,6 @@ module vproc_result #(
         input  logic [31:0]         result_csr_data_i,
         input  logic [31:0]         result_csr_data_delayed_i,
 
-        vproc_xif.coproc_issue      xif_issue_if,
         vproc_xif.coproc_result     xif_result_if,
         vproc_xif.coproc_commit     xif_commit_if
     );
