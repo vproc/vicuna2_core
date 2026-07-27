@@ -33,6 +33,7 @@ module vproc_decoder #(
         output vproc_pkg::cfg_emul      emul_o,       // LMUL setting for this instruction
         output vproc_pkg::cfg_vxrm      vxrm_o,       // rounding mode for this instruction
         output logic [CFG_VL_W-1:0]     vl_o,         // vector length for this instruction
+        output logic [CFG_VL_W:0]       vlmax_o,         // vector length for this instruction
         output vproc_pkg::op_unit       unit_o,       //
         output vproc_pkg::op_mode       mode_o,
         output vproc_pkg::op_widenarrow widenarrow_o,
@@ -2385,10 +2386,31 @@ module vproc_decoder #(
 
     logic emul_invalid;
     always_comb begin
+        logic[CFG_VL_W:0] elem_per_vl;
+
         vsew_o       = DONT_CARE_ZERO ? cfg_vsew'('0) : cfg_vsew'('x);
         emul_o       = DONT_CARE_ZERO ? cfg_emul'('0) : cfg_emul'('x);
         vl_o         = DONT_CARE_ZERO ? '0 : 'x;
         emul_invalid = 1'b0;
+        vlmax_o      = '0;
+
+        unique case(vsew_i)
+            VSEW_8: elem_per_vl = VREG_W/8;
+            VSEW_16: elem_per_vl = VREG_W/16;
+            VSEW_32: elem_per_vl = VREG_W/32;
+            default: elem_per_vl = VREG_W/8;
+        endcase
+
+        unique case (lmul_i)
+            LMUL_F8: vlmax_o[CFG_VL_W-3:0] = elem_per_vl[CFG_VL_W:3];
+            LMUL_F4: vlmax_o[CFG_VL_W-2:0] = elem_per_vl[CFG_VL_W:2];
+            LMUL_F2: vlmax_o[CFG_VL_W-1:0] = elem_per_vl[CFG_VL_W:1];
+            LMUL_1: vlmax_o = elem_per_vl;
+            LMUL_2: vlmax_o[CFG_VL_W:1] = elem_per_vl[CFG_VL_W-1:0];
+            LMUL_4: vlmax_o[CFG_VL_W:2] = elem_per_vl[CFG_VL_W-2:0];
+            LMUL_8: vlmax_o[CFG_VL_W:3] = elem_per_vl[CFG_VL_W-3:0];
+            default: ;
+        endcase
 
          if (unit_o == UNIT_LSU) begin
 

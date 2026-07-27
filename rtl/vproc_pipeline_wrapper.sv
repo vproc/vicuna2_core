@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
 
-module vproc_pipeline_wrapper import vproc_pkg::*; #(
+module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned          VREG_W             = 128,  // width in bits of vector registers
         parameter int unsigned          CFG_VL_W           = 7,    // width of VL reg in bits (= log2(VREG_W))
         parameter int unsigned          XIF_ID_W           = 3,    // width in bits of instruction IDs
@@ -25,10 +25,14 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         parameter bit [VPORT_CNT-1:0]   VPORT_BUFFER       = '0,   // buffer port
         parameter bit                   VPORT_V0           = '0,   // use dedicated v0 read port
         parameter int unsigned          MAX_OP_W           = 64,   // operand width in bits
+        parameter int unsigned          MEM_W              = 0,
         parameter int unsigned           VLSU_QUEUE_SZ     = 4,
         parameter bit [VLSU_FLAGS_W-1:0] VLSU_FLAGS        = '0,
         parameter mul_type               MUL_TYPE          = MUL_GENERIC,
         parameter type                  DECODER_DATA_T     = logic,
+        parameter int unsigned          MEM_PORTS          = 1,
+        parameter obi_cfg_t             OBI_CFG            = ObiDefaultConfig,
+        parameter int unsigned          PORT_QUEUE_DEPTH   = 1,
         parameter bit                   DONT_CARE_ZERO     = 1'b0  // initialize don't care values to zero
     )(
         input  logic                    clk_i,
@@ -62,8 +66,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         output logic                    pending_load_o,
         output logic                    pending_store_o,
 
-        vproc_xif.coproc_mem            xif_mem_if,
-        vproc_xif.coproc_mem_result     xif_memres_if,
+        OBI_BUS.Manager                 obi_bus [MEM_PORTS-1:0],
 
         output logic                    trans_complete_valid_o,
         input  logic                    trans_complete_ready_i,
@@ -212,6 +215,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         cfg_emul                         emul;              // effective MUL factor
         cfg_vxrm                         vxrm;
         logic        [CFG_VL_W     -1:0] vl;
+        logic        [CFG_VL_W       :0] vlmax;
         logic                            vl_0;
         logic                     [31:0] xval;
         unpack_flags [OP_CNT -1:0]       op_flags;
@@ -371,9 +375,53 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             end
             else if (pipe_in_data_i.mode.sld.dir == SLD_UP) begin
                 unique case (pipe_in_data_i.vsew)
-                    VSEW_8:  state_init.alt_count_init = -{1'b0, pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)   +: ALT_COUNT_W-1]};
-                    VSEW_16: state_init.alt_count_init = -{1'b0, pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)-1 +: ALT_COUNT_W-1]};
-                    VSEW_32: state_init.alt_count_init = -{1'b0, pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)-2 +: ALT_COUNT_W-1]};
+                    VSEW_8:  state_init.alt_count_init = -pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)   +: ALT_COUNT_W];
+                    VSEW_16: state_init.alt_count_init = -pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)-1 +: ALT_COUNT_W];
+                    VSEW_32: state_init.alt_count_init = -pipe_in_data_i.rs1.r.xval[$clog2(MAX_OP_W/8)-2 +: ALT_COUNT_W];
+                    default: ;
+                endcase
+                
+                unique case (pipe_in_data_i.emul)
+                    EMUL_1: begin
+                        if(pipe_in_data_i.rs1.r.xval > VREG_W/8) begin
+                            unique case (pipe_in_data_i.vsew)
+                                VSEW_8:  state_init.alt_count_init = -((VREG_W/8) >> ($clog2(MAX_OP_W/8)));
+                                VSEW_16: state_init.alt_count_init = -((VREG_W/16) >> ($clog2(MAX_OP_W/8) - 1));
+                                VSEW_32: state_init.alt_count_init = -((VREG_W/32) >> ($clog2(MAX_OP_W/8) - 2));
+                                default: ;
+                            endcase
+                        end
+                    end
+                    EMUL_2: begin
+                        if(pipe_in_data_i.rs1.r.xval > 2*VREG_W/8) begin
+                            unique case (pipe_in_data_i.vsew)
+                                VSEW_8:  state_init.alt_count_init = -((2*VREG_W/8) >> ($clog2(MAX_OP_W/8)));
+                                VSEW_16: state_init.alt_count_init = -((2*VREG_W/16) >> ($clog2(MAX_OP_W/8) - 1));
+                                VSEW_32: state_init.alt_count_init = -((2*VREG_W/32) >> ($clog2(MAX_OP_W/8) - 2));
+                                default: ;
+                            endcase
+                        end
+                    end
+                    EMUL_4: begin
+                        if(pipe_in_data_i.rs1.r.xval > 4*VREG_W/8) begin
+                            unique case (pipe_in_data_i.vsew)
+                                VSEW_8:  state_init.alt_count_init = -((4*VREG_W/8) >> ($clog2(MAX_OP_W/8)));
+                                VSEW_16: state_init.alt_count_init = -((4*VREG_W/16) >> ($clog2(MAX_OP_W/8) - 1));
+                                VSEW_32: state_init.alt_count_init = -((4*VREG_W/32) >> ($clog2(MAX_OP_W/8) - 2));
+                                default: ;
+                            endcase
+                        end
+                    end
+                    EMUL_8: begin
+                        if(pipe_in_data_i.rs1.r.xval > 8*VREG_W/8) begin
+                            unique case (pipe_in_data_i.vsew)
+                                VSEW_8:  state_init.alt_count_init = -((8*VREG_W/8) >> ($clog2(MAX_OP_W/8)));
+                                VSEW_16: state_init.alt_count_init = -((8*VREG_W/16) >> ($clog2(MAX_OP_W/8) - 1));
+                                VSEW_32: state_init.alt_count_init = -((8*VREG_W/32) >> ($clog2(MAX_OP_W/8) - 2));
+                                default: ;
+                            endcase
+                        end
+                    end
                     default: ;
                 endcase
             end else begin
@@ -471,6 +519,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         state_init.unit           = pipe_in_data_i.unit;
         state_init.vxrm           = pipe_in_data_i.vxrm;
         state_init.vl             = pipe_in_data_i.vl;
+        state_init.vlmax          = pipe_in_data_i.vlmax;
         state_init.vl_0           = pipe_in_data_i.vl_0;
         state_init.xval           = pipe_in_data_i.rs1.r.xval;
 
@@ -515,6 +564,11 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
         state_init.res_narrow[0] = '0;
         state_init.res_vaddr     = pipe_in_data_i.rd.addr;
 
+        for(int i = 0; i < OP_CNT; i++) begin
+            state_init.op_flags[i].lsu_instr   = 0;
+            state_init.op_flags[i].field_instr = 0;
+        end
+
         if (unit_lsu) begin 
             state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.lsu.masked;
             state_init.op_flags[0       ].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
@@ -523,6 +577,10 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
             state_init.op_vaddr[1       ]          =  pipe_in_data_i.rd.addr;
             state_init.op_flags[OP_CNT-1].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
             state_init.res_vreg[0       ]          = ~pipe_in_data_i.mode.lsu.store;
+            for(int i = 0; i < OP_CNT; i++) begin
+                state_init.op_flags[i].lsu_instr   = 1;
+                state_init.op_flags[i].field_instr = state_init.field_init_count > 0 ? 1 : 0;
+            end
         end
         if (unit_alu) begin
             state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.alu.op_mask != ALU_MASK_NONE;
@@ -636,6 +694,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -665,11 +724,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 1) begin
             localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
@@ -705,6 +768,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -734,11 +798,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 2) begin
             localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
@@ -774,6 +842,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -803,11 +872,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 8) begin
             localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
@@ -843,6 +916,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -872,6 +946,9 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .MEM_PORTS           ( MEM_PORTS           ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
@@ -912,6 +989,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -941,11 +1019,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 4 && RES_CNT == 2) begin
             localparam int unsigned OP_W           [4] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
@@ -981,6 +1063,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -1010,11 +1093,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 5 && RES_CNT == 1) begin
             localparam int unsigned OP_W           [5] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
@@ -1050,6 +1137,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -1079,11 +1167,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 5 && RES_CNT == 2) begin
             localparam int unsigned OP_W           [5] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
@@ -1119,6 +1211,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -1148,11 +1241,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 6 && RES_CNT == 1) begin
             localparam int unsigned OP_W           [6] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
@@ -1188,6 +1285,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -1217,11 +1315,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 6 && RES_CNT == 2) begin
             localparam int unsigned OP_W           [6] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
@@ -1257,6 +1359,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VADDR_W             ( VADDR_W             ),
                 .VPORT_BUFFER        ( VPORT_BUFFER        ),
                 .MAX_OP_W            ( MAX_OP_W            ),
+                .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
                 .OP_W                ( OP_W                ),
                 .OP_STAGE            ( OP_STAGE            ),
@@ -1286,11 +1389,15 @@ module vproc_pipeline_wrapper import vproc_pkg::*; #(
                 .VLSU_FLAGS          ( VLSU_FLAGS          ),
                 .MUL_TYPE            ( MUL_TYPE            ),
                 .INIT_STATE_T        ( state_t             ),
+                .OBI_CFG             ( OBI_CFG             ),
+                .PORT_QUEUE_DEPTH    ( PORT_QUEUE_DEPTH    ),
                 .DONT_CARE_ZERO      ( DONT_CARE_ZERO      )
             ) pipeline (
                 .pipe_in_state_i     ( state_init          ),
+                .obi_bus             ( obi_unused          ),
                 .*
             );
+            OBI_BUS obi_unused [1]();
         end
         else begin
             $fatal(1, "A pipeline with %d operands and %d results is not supported.",

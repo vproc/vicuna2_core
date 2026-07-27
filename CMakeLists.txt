@@ -27,9 +27,26 @@ message(STATUS "CMake Version ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CM
 #Currently Supported: rv32im_zve32x, rv32imf_zve32f, rv32imf_zfh_zve32f_zvfh, rv32im_zve32x_zvbb, rv32im_zve32x_zvbc, rv32im_zve32x_zvbb_zvbc
 #Defaults are overwritten with user configurations defined on command line
 set(RISCV_ARCH rv32im_zve32x CACHE STRING "Specify the configuration")
-set(VREG_W 128 CACHE STRING "VREG_W")
-set(VMEM_W 32 CACHE STRING "VMEM_W")
-set(VLANE_W 32 CACHE STRING "VLANE_W")
+# --- VREG_W ---
+if(DEFINED ENV{VREG_W})
+    set(VREG_W "$ENV{VREG_W}" CACHE STRING "VREG_W")
+else()
+    set(VREG_W "128" CACHE STRING "VREG_W")
+endif()
+
+# --- VMEM_W ---
+if(DEFINED ENV{VMEM_W})
+    set(VMEM_W "$ENV{VMEM_W}" CACHE STRING "VMEM_W")
+else()
+    set(VMEM_W "32" CACHE STRING "VMEM_W")
+endif()
+
+# --- VLANE_W ---
+if(DEFINED ENV{VLANE_W})
+    set(VLANE_W "$ENV{VLANE_W}" CACHE STRING "VLANE_W")
+else()
+    set(VLANE_W "32" CACHE STRING "VLANE_W")
+endif()
 
 ##############
 # Configuration Selection
@@ -120,6 +137,7 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_elem.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_fpu.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_lsu.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_lsu_extension.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul_block.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_zvbb.sv
@@ -128,6 +146,7 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline_wrapper.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_queue.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_queue_dyn_flow.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_result.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_sld.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_unit_mux.sv
@@ -201,9 +220,12 @@ set(CVFPU_INCLUDE   ${DESIGN_RTL_DIR_CVFPU}
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/opene906/E906_RTL_FACTORY/gen_rtl/clk/rtl
                     ${DESIGN_RTL_DIR_CVFPU}/../vendor/opene906/E906_RTL_FACTORY/gen_rtl/fpu/rtl
                     )               
-                   
-                 
-                   
+
+set(DESIGN_SRC_OBI  ${DESIGN_RTL_DIR_VICUNA}/../obi/obi_pkg.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/../obi/obi_intf.sv PARENT_SCOPE) #include OBI header separately if needed to not conflict with other definitions
+
+set(INCLUDE_OBI ${CMAKE_CURRENT_SOURCE_DIR}/obi PARENT_SCOPE)
+
 ##############
 #Generate vproc_config.sv for chosen configuration.
 ##############
@@ -215,8 +237,6 @@ set(ENV{VLANE_W} ${VLANE_W})
 execute_process(COMMAND rm -f vproc_config.sv
                 COMMAND make -f config.mk VPROC_CONFIG_PKG=vproc_config.sv
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-
-
 
 
 ##############
