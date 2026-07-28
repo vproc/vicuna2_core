@@ -81,6 +81,18 @@ module vproc_vregunpack
 
     import vproc_pkg::*;
 
+    vproc_pkg::cfg_vsew                    pipe_in_eew_q;
+    vproc_pkg::op_unit                     pipe_in_unit_q;
+      always_ff @(posedge clk_i) begin
+    if (~sync_rst_ni) begin
+        pipe_in_eew_q <= '0;
+        pipe_in_unit_q <= '0;
+    end else begin
+        pipe_in_eew_q <= pipe_in_eew_i;  //Need to buffer this value, temporary fix.  
+        pipe_in_unit_q <= pipe_in_unit_i;
+    end
+  end
+
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
             if (VPORT_W[i] > MAX_VPORT_W) begin
@@ -126,7 +138,7 @@ module vproc_vregunpack
         stage_0.ctrl     = pipe_in_ctrl_i;
         stage_0.unit     = pipe_in_unit_i;
         stage_0.alt_eew  = pipe_in_alt_eew_i;
-        stage_0.eew      = pipe_in_eew_i;
+        stage_0.eew      = pipe_in_eew_q;
         stage_0.op_load  = pipe_in_op_load_i;
         stage_0.op_vaddr = pipe_in_op_vaddr_i;
         stage_0.op_flags = pipe_in_op_flags_i;
@@ -138,7 +150,7 @@ module vproc_vregunpack
             stage_0.ctrl     = pipe_in_ctrl_i;
             stage_0.unit     = pipe_in_unit_i;
             stage_0.alt_eew  = pipe_in_alt_eew_i;
-            stage_0.eew      = pipe_in_eew_i;
+            stage_0.eew      = pipe_in_eew_q;
             stage_0.op_load  = pipe_in_op_load_i;
             stage_0.op_vaddr = pipe_in_op_vaddr_i;
             stage_0.op_flags = pipe_in_op_flags_i;

@@ -252,6 +252,13 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         end
     end
 
+    logic [2:0] test_eew_pipe_in, test_eew_state_q, test_state_next_eew;
+    assign test_eew_pipe_in = pipe_in_state_i.eew;
+
+    assign test_eew_state_q = state_q.eew;
+
+    assign test_state_next_eew = state_next.eew;
+
     // Next-state logic
     always_comb begin
         state_next = state_q;
@@ -281,7 +288,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
 
             // TODO: this block is needed for the unpack unit since
             // it seems that signals do not stay valid long enough
-            if (pipe_in_valid_i) begin
+            if (pipe_in_valid_i) begin  //Fix this during unpack rewrite
                 state_next.eew = pipe_in_state_i.eew;
                 state_next.unit  = pipe_in_state_i.unit;
             end else begin
