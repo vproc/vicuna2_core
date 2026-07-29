@@ -313,7 +313,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // Stall instruction offloading in case the instruction ID is already used
     // by another instruction which is not complete
     logic instr_valid, issue_id_used;
-    assign instr_valid = xif_issue_if.issue_valid & ~issue_id_used & source_xreg_valid;
+    assign instr_valid = xif_issue_if.issue_valid & ~issue_id_used & source_xreg_valid & !result_fifo_full_stall;
 
     logic dec_vl_override;
 
@@ -366,7 +366,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // vset[i]vl[i] instruction that will change the configuration in the next
     // cycle and any subsequent offloaded instruction must be validated w.r.t.
     // the new configuration.
-    assign xif_issue_if.issue_ready          = dec_ready & ~issue_id_used & source_xreg_valid;
+
+    logic result_fifo_full_stall; //Stall issue in case another committed instruction cannot be accepted since commit cannot stall
+
+    assign xif_issue_if.issue_ready          = dec_ready & ~issue_id_used & source_xreg_valid & !result_fifo_full_stall;
 
     assign xif_issue_if.issue_resp.accept    = dec_valid;
     assign xif_issue_if.issue_resp.writeback = dec_valid & (((instr_unit == UNIT_ELEM) & instr_mode.elem.xreg) | (instr_unit == UNIT_CFG));
@@ -1190,6 +1193,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .result_csr_delayed_i      ( result_csr_delayed         ),
         .result_csr_data_i         ( result_csr_data            ),
         .result_csr_data_delayed_i ( csr_vl_o                   ),
+        .result_fifo_full_stall_o  (result_fifo_full_stall      ),
         .xif_result_if             ( xif_result_if              ),
         .xif_commit_if             ( xif_commit_if              )
 

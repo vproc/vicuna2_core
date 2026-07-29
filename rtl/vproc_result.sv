@@ -43,6 +43,8 @@ module vproc_result #(
         input  logic [31:0]         result_csr_data_i,
         input  logic [31:0]         result_csr_data_delayed_i,
 
+        output logic                result_fifo_full_stall_o,
+
         vproc_xif.coproc_result     xif_result_if,
         vproc_xif.coproc_commit     xif_commit_if
     );
@@ -55,6 +57,7 @@ module vproc_result #(
   ////////////////
   logic [XIF_ID_W-1:0] res_id_fifo_out;
   logic                res_id_fifo_empty;
+  logic                res_id_fifo_full;
   fifo_v3 #(
     .FALL_THROUGH (1'b0        ), //TODO: Disable fallthrough?  Cannot occur
     .dtype        (logic [XIF_ID_W-1:0]),
@@ -67,9 +70,11 @@ module vproc_result #(
     .push_i     (xif_commit_if.commit_valid & !xif_commit_if.commit.commit_kill),
     .data_o     (res_id_fifo_out                                        ),
     .pop_i      (xif_result_if.result_valid & xif_result_if.result_ready),
-    .empty_o    (res_id_fifo_empty)
+    .empty_o    (res_id_fifo_empty                                      ),
+    .full_o     (res_id_fifo_full                                       )  // Commit interface cannot stall, stall issue interface instead.  For CVA6, this prevents offloading.  For CV32E40X, TODO: investigate this
   );
 
+  assign result_fifo_full_stall_o = res_id_fifo_full;
   ////////////////
   // FIFO of results from each source.
   // Each source is guarunteed to signal in order, but might not be in order relative to each other (i.e. load vector load followed by an independent vector alu operation)
