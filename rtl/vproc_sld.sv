@@ -219,7 +219,7 @@ module vproc_sld #(
                 result_mask_d[i]        = state_ex_q.alt_count_valid;
             end
 
-            if(state_ex_q.mode.sld.dir == SLD_DOWN) begin
+            if(state_ex_q.mode.sld.dir == SLD_DOWN && !state_ex_q.mode.sld.slide1) begin
                 if(state_ex_q.vl_idx[i] + state_ex_q.op_xval >= state_ex_q.vlmax | state_ex_q.op_xval > state_ex_q.vlmax) begin
                     result_d     [i*8 +: 8] = '0;
                     result_mask_d[i] = 1;
