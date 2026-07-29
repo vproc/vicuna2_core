@@ -336,10 +336,23 @@ module vproc_lsu import vproc_pkg::*; #(
     // that could be tricky because the LSU cannot accept a memory response transaction while
     // dequeueing a suppressed request
     logic [MEM_PORTS-1:0] req_suppress;
+    CTRL_T state_req_sel;
+    logic [MEM_PORTS-1:0][31:0] req_addr_sel;
+    logic [MEM_PORTS-1:0][VMEM_W-1:0] wdata_buf_sel;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] wmask_buf_sel;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] vmsk_tmp_sel;
+
+    always_comb begin
+        state_req_sel = state_req_valid_q ? state_req_q : state_req_d;
+        req_addr_sel  = state_req_valid_q ? req_addr_q : req_addr_d;
+        wdata_buf_sel = state_req_valid_q ? wdata_buf_q : wdata_buf_d;
+        wmask_buf_sel = state_req_valid_q ? wmask_buf_q : wmask_buf_d;
+        vmsk_tmp_sel  = state_req_valid_q ? vmsk_tmp_q : vmsk_tmp_d;
+    end
 
     always_comb begin
         for(int i = 0; i < MEM_PORTS; i++) begin
-            req_suppress[i] = (instr_state_i[state_req_q.id] == INSTR_KILLED) | state_req_q.mem_req_vl_part_0[i];
+            req_suppress[i] = (instr_state_i[state_req_sel.id] == INSTR_KILLED) | state_req_sel.mem_req_vl_part_0[i];
         end
     end
 
@@ -350,30 +363,30 @@ module vproc_lsu import vproc_pkg::*; #(
         state_req_red              = DONT_CARE_ZERO ? '0 : 'x;
         state_req_red.state_req_valid_q = state_req_valid_q;
         state_req_red.state_req_valid_d = state_req_valid_d;
-        state_req_red.first_cycle  = state_req_q.first_cycle;
-        state_req_red.last_cycle   = state_req_q.last_cycle;
-        state_req_red.id           = state_req_q.id;
-        state_req_red.mode         = state_req_q.mode.lsu;
-        state_req_red.vl_part      = state_req_q.vl_part;
-        state_req_red.vl_part_0    = state_req_q.vl_part_0;
-        state_req_red.last_vl_part = state_req_q.last_vl_part;
-        state_req_red.res_vaddr    = state_req_q.res_vaddr;
-        state_req_red.res_store    = state_req_q.res_store;
-        state_req_red.res_shift    = state_req_q.res_shift;
-        state_req_red.vreg_idx     = state_req_q.vreg_idx;
+        state_req_red.first_cycle  = state_req_sel.first_cycle;
+        state_req_red.last_cycle   = state_req_sel.last_cycle;
+        state_req_red.id           = state_req_sel.id;
+        state_req_red.mode         = state_req_sel.mode.lsu;
+        state_req_red.vl_part      = state_req_sel.vl_part;
+        state_req_red.vl_part_0    = state_req_sel.vl_part_0;
+        state_req_red.last_vl_part = state_req_sel.last_vl_part;
+        state_req_red.res_vaddr    = state_req_sel.res_vaddr;
+        state_req_red.res_store    = state_req_sel.res_store;
+        state_req_red.res_shift    = state_req_sel.res_shift;
+        state_req_red.vreg_idx     = state_req_sel.vreg_idx;
         state_req_red.suppressed   = req_suppress;
         state_req_red.exc          = '0; // xif_mem_if.mem_resp.exc & ~req_suppress; TODO handle exception
         state_req_red.exccode      = '0; // xif_mem_if.mem_resp.exccode;
-        state_req_red.req_addr_q   = req_addr_q;
-        state_req_red.wdata_buf_q  = wdata_buf_q;
-        state_req_red.wmask_buf_q  = wmask_buf_q;
-        state_req_red.vmsk_tmp_q   = vmsk_tmp_q;
-        state_req_red.field_init_count = state_req_q.field_init_count;
-        state_req_red.field_counter = state_req_q.field_counter;
-        state_req_red.mem_req_vl_part = state_req_q.mem_req_vl_part;
-        state_req_red.mem_req_vl_part_0 = state_req_q.mem_req_vl_part_0;
-        state_req_red.mem_req_valid = state_req_q.mem_req_valid;
-        state_req_red.field_done = state_req_q.field_done;
+        state_req_red.req_addr_q   = req_addr_sel;
+        state_req_red.wdata_buf_q  = wdata_buf_sel;
+        state_req_red.wmask_buf_q  = wmask_buf_sel;
+        state_req_red.vmsk_tmp_q   = vmsk_tmp_sel;
+        state_req_red.field_init_count = state_req_sel.field_init_count;
+        state_req_red.field_counter = state_req_sel.field_counter;
+        state_req_red.mem_req_vl_part = state_req_sel.mem_req_vl_part;
+        state_req_red.mem_req_vl_part_0 = state_req_sel.mem_req_vl_part_0;
+        state_req_red.mem_req_valid = state_req_sel.mem_req_valid;
+        state_req_red.field_done = state_req_sel.field_done;
     end
 
 
