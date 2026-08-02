@@ -974,11 +974,11 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     generate
         for (genvar i = 0; i < PIPE_CNT; i++) begin
-`ifndef VERILATOR
+//`ifndef VERILATOR
             // Currently not possible in Verilator due to https://github.com/verilator/verilator/issues/3433
-            localparam int unsigned PIPE_VPORT_W[PIPE_VPORT_CNT[i]]  = VPORT_RD_W[PIPE_VPORT_IDX[i] +: PIPE_VPORT_CNT[i]];
+            //localparam int unsigned PIPE_VPORT_W[PIPE_VPORT_CNT[i]]  = 128;
             localparam int unsigned PIPE_VADDR_W[PIPE_VPORT_CNT[i]]  = VADDR_RD_W[PIPE_VPORT_IDX[i] +: PIPE_VPORT_CNT[i]];
-`endif
+//`endif
             localparam int unsigned PIPE_MAX_VPORT_W = MAX_VPORT_RD_SLICE(VPORT_RD_W, PIPE_VPORT_IDX[i], PIPE_VPORT_CNT[i]);
             localparam int unsigned PIPE_MAX_VADDR_W = MAX_VPORT_RD_SLICE(VADDR_RD_W, PIPE_VPORT_IDX[i], PIPE_VPORT_CNT[i]);
 
@@ -1023,17 +1023,17 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .UNITS                    ( PIPE_UNITS[i]              ),
                 .MAX_VPORT_W              ( PIPE_MAX_VPORT_W           ),
                 .MAX_VADDR_W              ( PIPE_MAX_VADDR_W           ),
-                .VPORT_CNT                ( PIPE_VPORT_CNT[i]          ),
-`ifdef VERILATOR
-                // Workaround for Verilator due to https://github.com/verilator/verilator/issues/3433
-                .VPORT_OFFSET             ( PIPE_VPORT_IDX[i]          ),
-                .VREGFILE_VPORT_CNT       ( VPORT_RD_CNT               ),
-                .VREGFILE_VPORT_W         ( VPORT_RD_W                 ),
-                .VREGFILE_VADDR_W         ( VADDR_RD_W                 ),
-`else
-                .VPORT_W                  ( PIPE_VPORT_W               ),
+                .VPORT_CNT                ( VPORT_RD_CNT               ),
+// `ifdef VERILATOR
+//                 // Workaround for Verilator due to https://github.com/verilator/verilator/issues/3433
+//                 .VPORT_OFFSET             ( PIPE_VPORT_IDX[i]          ),
+//                 .VREGFILE_VPORT_CNT       ( VPORT_RD_CNT               ),
+//                 .VREGFILE_VPORT_W         ( VPORT_RD_W                 ),
+//                 .VREGFILE_VADDR_W         ( VADDR_RD_W                 ),
+// `else
+                //.VPORT_W                  ( PIPE_VPORT_W               ),
                 .VADDR_W                  ( PIPE_VADDR_W               ),
-`endif
+//`endif
                 .VPORT_BUFFER             ( PIPE_VPORT_BUFFER          ),
                 .VPORT_V0                 ( 1'b1                       ),
                 .MAX_OP_W                 ( PIPE_W[i]                  ),
