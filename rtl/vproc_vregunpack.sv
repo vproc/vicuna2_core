@@ -28,6 +28,8 @@ module vreg_shift_register
     output logic [VADDR_W-1:0]                    vreg_rd_addr_o,
     input  logic [VREG_PORT_W-1:0]                vreg_rd_data_i,
 
+    output logic                                      finished_o,
+
     //Pipeline handshake with functional units
     input  logic                                     vfu_ready_i,
     output logic                                vfu_data_valid_o,
@@ -38,18 +40,18 @@ module vreg_shift_register
     //Control signals for operand shift register
     typedef struct packed {
     logic [VADDR_W-1:0] current_vreg;
-    logic [2:0]             vreg_reads_remaining;//up to 8 vregs need to be read (LMUL8)
+    logic [3:0]             vreg_reads_remaining;//up to 8 vregs need to be read (LMUL8)
     cfg_vsew                eew;
     logic [$clog2(VREG_PORT_W / PIPE_OP_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise + widening ops
+    logic                   valid_data;
     } shift_reg_ctrl;
 
     shift_reg_ctrl ctrl_d, ctrl_q;
 
     // State machine for the operand shift register
-    typedef enum logic [1:0] {
-        IDLE            = 2'b00,
-        VREG_LOAD       = 2'b01,
-        VREG_SHIFT      = 2'b10
+    typedef enum logic {
+        IDLE            = 1'b0,
+        VREG_SHIFT      = 1'b1
     } shift_reg_state;
 
     shift_reg_state state_d, state_q;
@@ -69,46 +71,42 @@ module vreg_shift_register
         state_d = state_q;
         ctrl_d = ctrl_q;
         vreg_rd_req_o = 1'b0;
+        finished_o = 1'b0;
         unique case (state_q)
             IDLE: begin
                 if (pipe_in_valid_i) begin
-                    state_d = VREG_LOAD;
+                    state_d = VREG_SHIFT;
+                    ctrl_d.shifts_remaining = '0;
                     ctrl_d.current_vreg = operand_vaddr_base_i;
                     ctrl_d.eew = operand_eew_i;
+                    ctrl_d.valid_data = 1'b0;
                     unique case (operand_emul_i)
-                        EMUL_1: ctrl_d.vreg_reads_remaining = 0;
-                        EMUL_2: ctrl_d.vreg_reads_remaining = 1;
-                        EMUL_4: ctrl_d.vreg_reads_remaining = 3;
-                        EMUL_8: ctrl_d.vreg_reads_remaining = 7;
+                        EMUL_1: ctrl_d.vreg_reads_remaining = 1;
+                        EMUL_2: ctrl_d.vreg_reads_remaining = 2;
+                        EMUL_4: ctrl_d.vreg_reads_remaining = 4;
+                        EMUL_8: ctrl_d.vreg_reads_remaining = 8;
                     endcase
                 end
             end
 
-            VREG_LOAD: begin
-                vreg_rd_req_o = 1'b1;
-                if (vreg_rd_gnt_i) begin
-                    ctrl_d.shifts_remaining = '1;
-                    ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
-                    state_d = VREG_SHIFT;
-                end
-            end
-
             VREG_SHIFT: begin
-                if (vfu_ready_i) begin
+                if (vfu_ready_i & ctrl_q.valid_data) begin
                     ctrl_d.shifts_remaining = ctrl_q.shifts_remaining - 1; //Only shift if vector functional unit is ready
-                    if (ctrl_q.shifts_remaining == 0) begin
-                        if (ctrl_q.vreg_reads_remaining == 0) begin //if all reads complete, return to idle
-                            state_d = IDLE; 
-                        end else begin
+                end
+                if (ctrl_q.shifts_remaining == 0) begin
+                    if (ctrl_q.vreg_reads_remaining == 0) begin //if all reads complete, return to idle
+                        state_d = IDLE;
+                        finished_o = 1'b1;
+                        ctrl_d.valid_data = 1'b0; 
+                    end else begin
+                        vreg_rd_req_o = 1'b1;
+                        if (vreg_rd_gnt_i) begin //On successful load, set shift counter
                             ctrl_d.vreg_reads_remaining = ctrl_q.vreg_reads_remaining - 1;
-                            vreg_rd_req_o = 1'b1;
-                            if (vreg_rd_gnt_i) begin //Special case if next vector register value/port is available on last cycle of previous shift, can save a cycle by reading now
-                                ctrl_d.shifts_remaining = '1;
-                                ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
-                                state_d = VREG_SHIFT;
-                            end else begin
-                                state_d = VREG_LOAD;
-                            end
+                            ctrl_d.shifts_remaining = '1;
+                            ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
+                            ctrl_d.valid_data = 1'b1;
+                        end else begin
+                            ctrl_d.valid_data = 1'b0; //On failed read, set data valid to 0
                         end
                     end
                 end
@@ -129,7 +127,7 @@ module vreg_shift_register
 
     always_comb begin
         shift_reg_d = shift_reg_q;
-        if(state_q == VREG_LOAD || (state_q == VREG_SHIFT && ctrl_q.shifts_remaining == 0 && vfu_ready_i)) begin
+        if(state_q == VREG_SHIFT && ctrl_q.shifts_remaining == '0 && vfu_ready_i) begin
             shift_reg_d = vreg_rd_data_i;
         end else if (state_q == VREG_SHIFT) begin
             if (vfu_ready_i) begin
@@ -139,10 +137,12 @@ module vreg_shift_register
         end
     end
 
+    assign vreg_rd_addr_o = ctrl_q.current_vreg;
+
     //Output assignments
     always_comb begin
         vfu_data_o = shift_reg_q[PIPE_OP_W-1:0];
-        vfu_data_valid_o = (state_q == VREG_SHIFT);
+        vfu_data_valid_o = ctrl_q.valid_data; //ouput valid when valid data in the shift register
         shift_reg_ready_o = (state_q == IDLE);
     end
 
@@ -190,6 +190,7 @@ module vproc_vregunpack
 
         parameter int unsigned                        UNPACK_STAGES      = 2,    // stage count
         parameter type                                FLAGS_T            = logic,// load struct type
+        parameter type                                METADATA_T         = logic,
         parameter int unsigned                        CTRL_DATA_W        = 0,    // ctrl data width
         parameter bit                                 DONT_CARE_ZERO     = 1'b0,  // set don't care 0
 
@@ -197,45 +198,43 @@ module vproc_vregunpack
         parameter bit                                 FIELD_COUNT_USED   = 1'b0,
         parameter bit [VPORT_CNT-1:0]                    OP_FIELD           = '0
     )(
-        input  logic                                  clk_i,
-        input  logic                                  async_rst_ni,
-        input  logic                                  sync_rst_ni,
+        input  logic                                     clk_i,
+        input  logic                                     async_rst_ni,
+        input  logic                                     sync_rst_ni,
 
         // vector register file read ports
-        output logic [VPORT_CNT-1:0][MAX_VADDR_W-1:0] vreg_rd_addr_o,       // vreg read address
-        input  logic [VPORT_CNT-1:0][MAX_VPORT_W-1:0] vreg_rd_data_i,       // vreg read data
-        input  logic                [VPORT_V0_W -1:0] vreg_rd_v0_i,         // vreg v0 read data
+        output logic [VPORT_CNT-1:0][MAX_VADDR_W-1:0]    vreg_rd_addr_o,       // vreg read address
+        input  logic [VPORT_CNT-1:0][MAX_VPORT_W-1:0]    vreg_rd_data_i,       // vreg read data
+        input  logic                [VPORT_V0_W -1:0]    vreg_rd_v0_i,         // vreg v0 read data
 
         // pipeline in
-        input  logic                                  pipe_in_valid_i,
-        output logic                                  pipe_in_ready_o,
-        input  logic               [CTRL_DATA_W-1:0]  pipe_in_ctrl_i,       // pipeline control sigs
-        input  vproc_pkg::op_unit                     pipe_in_unit_i,
-        input  vproc_pkg::cfg_vsew                    pipe_in_alt_eew_i,
-        input  vproc_pkg::cfg_vsew                    pipe_in_eew_i,        // current element width
+        input  logic                                     pipe_in_valid_i,
+        output logic                                     pipe_in_ready_o,
+        input  METADATA_T                                pipe_in_ctrl_i,       // pipeline control sigs
+        input  vproc_pkg::op_unit                        pipe_in_unit_i,
+        input  vproc_pkg::cfg_vsew                       pipe_in_alt_eew_i,
+        input  vproc_pkg::cfg_vsew                       pipe_in_eew_i,        // current element width
         input  logic   [VPORT_CNT-1:0]                   pipe_in_op_load_i,    // load signals of ops
         input  logic   [VPORT_CNT-1:0][MAX_VADDR_W-1:0]  pipe_in_op_vaddr_i,   // vreg addresses of ops
         input  FLAGS_T [VPORT_CNT-1:0]                   pipe_in_op_flags_i,   // unpack flags of ops
         input  logic   [VPORT_CNT-1:0][31           :0]  pipe_in_op_xval_i,    // X reg values for ops
-        input  logic   [MEM_PORTS-1:0]                pipe_in_mem_req_valid_i,
-        input  logic   [MEM_PORTS-1:0][2:0]           pipe_in_field_counter_i,
+        input  logic   [MEM_PORTS-1:0]                   pipe_in_mem_req_valid_i,
+        input  logic   [MEM_PORTS-1:0][2:0]              pipe_in_field_counter_i,
 
         // pipeline out
-        output logic                                  pipe_out_valid_o,
-        input  logic                                  pipe_out_ready_i,
-        output logic               [CTRL_DATA_W-1:0]  pipe_out_ctrl_o,      // pipeline control sigs
+        output logic                                     pipe_out_valid_o,
+        input  logic                                     pipe_out_ready_i,
+        output METADATA_T                                pipe_out_ctrl_o,      // pipeline control sigs
         output logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0]  pipe_out_op_data_o,   // unpacked operands
 
         // pending vector register read mask
-        output logic [(1<<MAX_VADDR_W)-1:0]           pending_vreg_reads_o,
+        output logic [(1<<MAX_VADDR_W)-1:0]              pending_vreg_reads_o,
 
         // stage valid and control signals flags
-        output logic                                  stage_valid_any_o,
-        output logic [CTRL_DATA_W-1:0]                ctrl_flags_any_o,
-        output logic [CTRL_DATA_W-1:0]                ctrl_flags_all_o
+        output logic                                     stage_valid_any_o,
+        output logic [CTRL_DATA_W-1:0]                   ctrl_flags_any_o,
+        output logic [CTRL_DATA_W-1:0]                   ctrl_flags_all_o
     );
-
-
 
     //////////
     // Top Level Unpack state machine
@@ -247,13 +246,17 @@ module vproc_vregunpack
 
     unpack_state state_d, state_q;
 
+    logic [VPORT_CNT-1:0] active_ops_d, active_ops_q; //Keep track of how many shift regs are active for transition back to ready
+
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
             state_q <= READY;
             shift_reg_in_valid_q <= 1'b0;
+            active_ops_q <= '0;
         end else begin
             state_q <= state_d;
             shift_reg_in_valid_q <= shift_reg_in_valid_d;
+            active_ops_q <= active_ops_d;
         end
     end
 
@@ -264,13 +267,15 @@ module vproc_vregunpack
         shift_reg_in_valid_d = 1'b0;
         unique case (state_q)
             READY: begin
+                pipe_in_ready_o = 1'b1;
                 if (pipe_in_valid_i) begin
                     state_d = SHIFTING;
                     shift_reg_in_valid_d = 1'b1;
                 end
             end
             SHIFTING: begin
-                if (&shift_regs_ready) begin
+                pipe_in_ready_o = 1'b0;
+                if ((active_ops_d == '0) & !shift_reg_in_valid_q) begin //Dont transition out of shifting state if loading data in OR until all shift registers are ready
                     state_d = READY;
                 end
             end
@@ -281,23 +286,23 @@ module vproc_vregunpack
     *   Buffer for metadata of instruction currently being unpacked.  Latched on first valid cycle and held
     */
     typedef struct packed {
-        logic               [CTRL_DATA_W-1:0] ctrl;
-        op_unit                               unit;
-        cfg_vsew                              eew;
-        cfg_vsew                              alt_eew;
-        logic   [MEM_PORTS-1:0]               mem_req_valid;
-        logic   [MEM_PORTS-1:0][2:0]          field_counter;
+        METADATA_T                               ctrl;
+        op_unit                                  unit; //Most of these should already be present inside of metadata_t
+        cfg_vsew                                 eew;
+        cfg_vsew                                 alt_eew;
+        logic   [MEM_PORTS-1:0]                  mem_req_valid;
+        logic   [MEM_PORTS-1:0][2:0]             field_counter;
         logic   [VPORT_CNT-1:0]                  op_load;
         logic   [VPORT_CNT-1:0][MAX_VADDR_W-1:0] op_vaddr;
         FLAGS_T [VPORT_CNT-1:0]                  op_flags;
-        logic   [VPORT_CNT-1:0][31           :0] op_xval;
+        logic   [2-1:0][31           :0]         op_xval; //Maximum 2 of these.  TODO: PARAMETERIZE
         logic   [VPORT_CNT-1:0][MAX_VPORT_W-1:0] op_buffer;
         logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0] op_data;
     } vregunpack_state_t;
 
     vregunpack_state_t metadata_d, metadata_q;
 
-     always_ff @(posedge clk_i) begin
+    always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
             metadata_q <=  vregunpack_state_t'(DONT_CARE_ZERO ? '0 : 'x);;
         end else begin
@@ -306,7 +311,7 @@ module vproc_vregunpack
     end
 
     always_comb begin
-        metadata_d = state_q;
+        metadata_d = metadata_q;
         if (state_q == READY) begin
             metadata_d.ctrl     = pipe_in_ctrl_i;
             metadata_d.unit     = pipe_in_unit_i;
@@ -315,32 +320,16 @@ module vproc_vregunpack
             metadata_d.op_load  = pipe_in_op_load_i;
             metadata_d.op_vaddr = pipe_in_op_vaddr_i;
             metadata_d.op_flags = pipe_in_op_flags_i;
-            metadata_d.op_xval  = pipe_in_op_xval_i;
+            metadata_d.op_xval  = pipe_in_ctrl_i.op_xval;
             metadata_d.mem_req_valid = pipe_in_mem_req_valid_i;
             metadata_d.field_counter = pipe_in_field_counter_i;
         end
     end
 
-    //////////////
-    //Output signalling
-    //////////////
-    logic [VPORT_CNT-1:0] shift_regs_valid;
-
-    //get list of active shift regs.  TODO: Should be improved with better metadata signalling and this logic can be eliminated
-    logic [VPORT_CNT-1:0] active_and_valid;
-    generate
-        for (genvar i = 0; i < VPORT_CNT; i++) begin
-            assign active_and_valid[i] = shift_regs_valid[i] & metadata_q.op_load[i];
-        end
-    endgenerate
-
-    always_comb begin
-        pipe_out_valid_o = &active_and_valid; //TODO: For desynced operands, this signal will be needed per operand
-        pipe_out_ctrl_o = metadata_q.ctrl;
-                                              //TODO: trigger first and last cycle here
-    end
-
     //Shift registers 
+    //Maximum 3 Ports, rs1, rs2, rd
+    logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0]  shift_reg_outputs;
+    logic   [VPORT_CNT-1:0]                   shift_reg_done;
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
             vreg_shift_register #(
@@ -353,11 +342,13 @@ module vproc_vregunpack
                 //.async_rst_ni,
                 .sync_rst_ni(sync_rst_ni),
 
-                .pipe_in_valid_i(shift_reg_in_valid_q & metadata_q.op_load[i]),    //TODO: op_load flag used to not trigger unessecary read ports.  Improve this metadata passing
+                .pipe_in_valid_i(shift_reg_in_valid_q & metadata_q.op_flags[i].vreg),    //TODO: op_load flag used to not trigger unessecary read ports.  Improve this metadata passing
                 .shift_reg_ready_o(shift_regs_ready[i]),
                 .operand_eew_i(metadata_q.eew),            //TODO: Mixed precision operations will need an EEW/operand
                 .operand_emul_i(EMUL_1),                   //TODO: VALUE NOT PASSED 
                 .operand_vaddr_base_i(metadata_q.op_vaddr[i]), 
+
+                .finished_o(shift_reg_done[i]),
 
                 .vreg_rd_gnt_i(1'b1),                       //TODO: arbitration of the read ports? at vproc_core level giving preference to oldest instruction
                 .vreg_rd_req_o(),                              //TODO: arbitration of the read port
@@ -366,12 +357,107 @@ module vproc_vregunpack
 
                 .vfu_ready_i(pipe_out_ready_i),                            //TODO: For desynced operands, will need a ready signal per operand
                 .vfu_data_valid_o(shift_regs_valid[i]),
-                .vfu_data_o(pipe_out_op_data_o[i])
+                .vfu_data_o(shift_reg_outputs[i])
             );
         end
     endgenerate
 
+    //////////////
+    //Output signalling
+    //////////////
+    logic [VPORT_CNT-1:0] shift_regs_valid;
 
+    //get list of active shift regs.  TODO: Should be improved with better metadata signalling and then this logic can be eliminated
+    logic [VPORT_CNT-1:0] active_and_valid;
+    generate
+        for (genvar i = 0; i < VPORT_CNT; i++) begin
+            assign active_and_valid[i] = shift_regs_valid[i] & metadata_q.op_flags[i].vreg;
+        end
+    endgenerate
+
+    //Unpack needs to generate a single cycle pulse for the first cycle of an operation
+    //First cycle is the first valid output after shift regs have been activated.
+
+    logic first_cycle_d, first_cycle_q;
+
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_ni) begin
+            first_cycle_q <=  1'b0;
+        end else begin
+            first_cycle_q <= first_cycle_d;
+        end
+    end
+
+    always_comb begin
+        first_cycle_d = first_cycle_q;
+        if (pipe_in_valid_i & pipe_in_ready_o) begin
+            first_cycle_d = 1'b0;
+        end else if (!first_cycle_q & (|active_and_valid)& pipe_out_ready_i) begin //only signal first cycle if vfu is ready to receive the first cycle of data
+            first_cycle_d = 1'b1;
+        end
+    end
+
+    //Unpack needs to generate a single cycle pulse for the first
+    //First cycle is the first valid output after shift regs have been activated.
+    logic last_cycle_d, last_cycle_q;
+
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_ni) begin
+            last_cycle_q <=  1'b0;
+        end else begin
+            last_cycle_q <= last_cycle_d;
+        end
+    end
+
+    always_comb begin
+        if (state_q == READY && pipe_in_valid_i) begin
+            for (int i = 0; i < VPORT_CNT; i++) begin
+                active_ops_d[i] = pipe_in_ctrl_i.op_flags[i].vreg; //Set active ops for all vreg ops
+            end
+        end else begin
+            active_ops_d = shift_reg_done ^ active_ops_q; //as ops finish, mark done.
+        end
+    end
+
+    //Actual output signals
+    always_comb begin
+        pipe_out_valid_o = |active_and_valid; //TODO: For desynced operands, this signal will be needed per operand
+        pipe_out_ctrl_o = metadata_q.ctrl;
+        pipe_out_ctrl_o.first_cycle = (|active_and_valid) & !first_cycle_q; //Only signal on first valid result
+        pipe_out_ctrl_o.last_cycle = (active_ops_d == '0);  //signal last cycle when last shift reg has finished.  Value held until next operation started
+    end
+
+    //Argument outputs either come from the shift registers OR from the scalar register input values
+    //TODO: SIGN/ZERO extending for scalar inputs
+    generate
+        for (genvar i = 0; i < VPORT_CNT; i++) begin
+            always_comb begin
+                pipe_out_op_data_o[i] = shift_reg_outputs[i];
+                if (i <= 1) begin //Only Ops 0 and 1 can take from the associated scalar input  //TODO: OP0 only needs the xreg value for LSU
+                    if (metadata_q.op_flags[i].xreg) begin
+                        unique case (metadata_q.eew)
+                            VSEW_8: begin
+                                for (int j = 0; j < MAX_OP_W / 8; j++) begin
+                                    pipe_out_op_data_o[i][j*8 +:8] = metadata_q.op_xval[i][j*8 +:8];
+                                end
+                            end
+                            VSEW_16: begin
+                                for (int j = 0; j < MAX_OP_W / 16; j++) begin
+                                    pipe_out_op_data_o[i][j*16 +:16] = metadata_q.op_xval[i][j*16 +:16];
+                                end
+                            end
+                            VSEW_32: begin
+                                for (int j = 0; j < MAX_OP_W / 32; j++) begin
+                                    pipe_out_op_data_o[i][j*32 +:32] = metadata_q.op_xval[i][j*32 +:32];
+                                end
+                            end
+                            VSEW_INVALID: pipe_out_op_data_o[i] = '1;//SHOULD NEVER GET HERE
+                        endcase
+                    end
+                end 
+            end
+        end
+    endgenerate
 
 
 //// OLD

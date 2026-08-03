@@ -552,11 +552,14 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         state_init.op_flags[0].vf4_ext = (pipe_in_data_i.widenarrow == OP_WIDENING_EXT4);
         state_init.op_vaddr[0]        = pipe_in_data_i.rs2.r.vaddr;
         state_init.op_xval [0]        = pipe_in_data_i.rs2.r.xval;
+        state_init.op_flags[0].xreg   = pipe_in_data_i.rs2.xreg;
 
         state_init.op_flags[1].vreg   = pipe_in_data_i.rs1.vreg;
         state_init.op_flags[1].narrow = pipe_in_data_i.widenarrow != OP_SINGLEWIDTH;
         state_init.op_vaddr[1]        = pipe_in_data_i.rs1.r.vaddr;
         state_init.op_xval [1]        = pipe_in_data_i.rs1.r.xval;
+        state_init.op_flags[1].xreg   = pipe_in_data_i.rs1.xreg;
+
 
         state_init.op_flags[OP_CNT-1].vreg = DONT_CARE_ZERO ? 1'b0 : 1'bx;
 

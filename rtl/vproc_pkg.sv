@@ -439,6 +439,7 @@ typedef struct packed {
     logic shift;
     logic hold;
     logic vreg;
+    logic xreg;
     logic elemwise;
     logic narrow;
     logic vf4_ext;

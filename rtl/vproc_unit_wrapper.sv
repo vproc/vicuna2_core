@@ -195,6 +195,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_flags_o[0].sig             = unit_out_ctrl.mode.alu.sigext;
                 pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
                 pipe_out_res_data_o [0]                 = unit_out_res_alu;
+                pipe_out_res_flags_o[0].first_cycle     = unit_out_ctrl.first_cycle;
                 pipe_out_res_mask_o [0][MAX_OP_W/8-1:0] = unit_out_mask;
                 pipe_out_res_flags_o[0].vreg_idx        = unit_out_ctrl.vreg_idx;
 

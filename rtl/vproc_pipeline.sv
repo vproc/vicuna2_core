@@ -131,12 +131,12 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         logic                            vl_0;
         logic        [32/8-1:0]          vl_part;
         logic                            vl_part_0;
-        logic                     [31:0] xval;
+        logic                     [31:0] xval;  //Why twice?
         unpack_flags [OP_CNT -1:0]       op_flags;
         logic        [OP_CNT -1:0]       op_load;
         logic        [OP_CNT -1:0][4 :0] op_init_vaddr;
         logic        [OP_CNT -1:0][4 :0] op_vaddr;
-        logic        [OP_CNT -1:0][31:0] op_xval;
+        logic        [OP_CNT -1:0][31:0] op_xval; //Why twice?  This is the better one
         logic        [RES_CNT-1:0]       res_vreg;
         logic        [RES_CNT-1:0]       res_narrow;
         logic                     [4 :0] res_init_vaddr;
@@ -179,11 +179,11 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         metadata_i.vl_0                    = pipe_in_state_i.vl_0;
         metadata_i.vl_part                 = '1;  //TODO: Remove this, handle with mask
         metadata_i.vl_part_0              = '0;  //TODO: Remove this, handle with mask
-        metadata_i.xval                    = pipe_in_state_i.xval;
+        metadata_i.xval                    = pipe_in_state_i.xval;//
         metadata_i.op_flags                = pipe_in_state_i.op_flags;
         metadata_i.op_init_vaddr           = pipe_in_state_i.op_vaddr;
         metadata_i.op_vaddr                = pipe_in_state_i.op_vaddr;
-        metadata_i.op_xval                 = pipe_in_state_i.op_xval;
+        metadata_i.op_xval                 = pipe_in_state_i.op_xval;//
         metadata_i.res_vreg                = pipe_in_state_i.res_vreg;
         metadata_i.res_narrow              = pipe_in_state_i.res_narrow;
         metadata_i.res_init_vaddr          = pipe_in_state_i.res_vaddr;
@@ -224,6 +224,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .OP_ALLOW_ELEMWISE    ( OP_ALLOW_ELEMWISE            ),
         .OP_ALWAYS_ELEMWISE   ( OP_ALWAYS_ELEMWISE           ),
         .FLAGS_T              ( unpack_flags                 ),
+        .METADATA_T           ( metadata_t                   ),
         .CTRL_DATA_W          ( $bits(metadata_t)            ),
         .FIELD_COUNT_USED     ( FIELD_COUNT_USED             ),
         .OP_FIELD             ( OP_FIELD                     ),
@@ -374,19 +375,19 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .clk_i                       ( clk_i                   ),
         .async_rst_ni                ( async_rst_ni            ),
         .sync_rst_ni                 ( sync_rst_ni             ),
-        .pipe_in_valid_i             ( unit_out_valid          ),
-        .pipe_in_ready_o             ( unit_out_ready          ),
-        .pipe_in_instr_id_i          ( unit_out_instr_id       ),
-        .pipe_in_eew_i               ( unit_out_eew            ),
-        .pipe_in_vaddr_i             ( unit_out_vaddr          ),
-        .pipe_in_res_store_i         ( unit_out_res_store      ),
-        .pipe_in_res_valid_i         ( unit_out_res_valid      ),
-        .pipe_in_res_flags_i         ( unit_out_res_flags      ),
-        .pipe_in_res_data_i          ( unit_out_res_data       ),
-        .pipe_in_res_mask_i          ( unit_out_res_mask       ),
-        .pipe_in_pend_clr_i          ( unit_out_pend_clear     ),
-        .pipe_in_pend_clr_cnt_i      ( unit_out_pend_clear_cnt ),
-        .pipe_in_instr_done_i        ( unit_out_instr_done     ),
+        .pipe_in_valid_i             ( mux_out_valid          ),
+        .pipe_in_ready_o             ( mux_out_ready          ),
+        .pipe_in_instr_id_i          ( mux_out_instr_id       ),
+        .pipe_in_eew_i               ( mux_out_eew            ),
+        .pipe_in_vaddr_i             ( mux_out_vaddr          ),
+        .pipe_in_res_store_i         ( mux_out_res_store      ),
+        .pipe_in_res_valid_i         ( mux_out_res_valid      ),
+        .pipe_in_res_flags_i         ( mux_out_res_flags      ),
+        .pipe_in_res_data_i          ( mux_out_res_data       ),
+        .pipe_in_res_mask_i          ( mux_out_res_mask       ),
+        .pipe_in_pend_clr_i          ( mux_out_pend_clear     ),
+        .pipe_in_pend_clr_cnt_i      ( mux_out_pend_clear_cnt ),
+        .pipe_in_instr_done_i        ( mux_out_instr_done     ),
         .vreg_wr_valid_o             ( vreg_wr_valid_o         ),
         .vreg_wr_ready_i             ( vreg_wr_ready_i         ),
         .vreg_wr_addr_o              ( vreg_wr_addr_o          ),

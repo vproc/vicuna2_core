@@ -883,8 +883,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .wr_data_i    ( vregfile_wr_data_q ),
         .wr_be_i      ( vregfile_wr_mask_q ),
         .wr_we_i      ( vregfile_wr_en_q   ),
-        .rd_addr_i    ( vregfile_rd_addr   ),
-        .rd_data_o    ( vregfile_rd_data   )
+        .rd_addr_i    ( vreg_rd_addr[1]   ), //TODO: NO ARBITER.  ARBITRATE THIS
+        .rd_data_o    ( vreg_rd_data[1]   )
     );
 
     logic [VREG_W-1:0] vreg_mask;
@@ -924,6 +924,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
             // two cycles should cause no issues. This adds two unnecessary
             // extra stall cycles in case a write is blocked by a pending read
             // but that should happen rarely anyways.
+            // TODO: This should be unecessary
             always_ff @(posedge clk_i) begin
                 pipe_vreg_pend_rd_by_q <= pipe_vreg_pend_rd_by_d;
                 pipe_vreg_pend_rd_to_q <= pipe_vreg_pend_rd_to_d;
@@ -967,6 +968,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic [4:0]          elem_xreg_addr;
     logic [31:0]         elem_xreg_data;
 
+    //TODO: Vector Read port arbiter
+    logic [PIPE_CNT-1:0][VPORT_RD_CNT-1:0][4       :0] vreg_rd_addr;
+    logic [PIPE_CNT-1:0][VPORT_RD_CNT-1:0][VREG_W-1:0] vreg_rd_data;
+
     `ifdef RISCV_ZVE32F
     logic                elem_freg;
 
@@ -984,14 +989,16 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
             localparam bit [PIPE_VPORT_CNT[i]-1:0] PIPE_VPORT_BUFFER = {{(PIPE_VPORT_CNT[i]-1){1'b0}}, 1'b1};
 
-            logic [PIPE_VPORT_CNT[i]-1:0][4       :0] vreg_rd_addr;
-            logic [PIPE_VPORT_CNT[i]-1:0][VREG_W-1:0] vreg_rd_data;
-            always_comb begin
-                vregfile_rd_addr[PIPE_VPORT_IDX[i]+PIPE_VPORT_CNT[i]-1:PIPE_VPORT_IDX[i]] = vreg_rd_addr[PIPE_VPORT_CNT[i]-1:0];
-                for (int j = 0; j < PIPE_VPORT_CNT[i]; j++) begin
-                    vreg_rd_data[j] = vregfile_rd_data[PIPE_VPORT_IDX[i] + j];
-                end
-            end
+            // logic [PIPE_VPORT_CNT[i]-1:0][4       :0] vreg_rd_addr;
+            // logic [PIPE_VPORT_CNT[i]-1:0][VREG_W-1:0] vreg_rd_data;
+            // always_comb begin
+            //     vregfile_rd_addr[PIPE_VPORT_IDX[i]+PIPE_VPORT_CNT[i]-1:PIPE_VPORT_IDX[i]] = vreg_rd_addr[PIPE_VPORT_CNT[i]-1:0];
+            //     for (int j = 0; j < PIPE_VPORT_CNT[i]; j++) begin
+            //         vreg_rd_data[j] = vregfile_rd_data[PIPE_VPORT_IDX[i] + j];
+            //     end
+            // end
+
+
 
             // LSU-related signals
             OBI_BUS #(
@@ -1059,8 +1066,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .instr_state_i            ( instr_state_q              ),
                 .instr_done_valid_o       ( instr_complete_valid[i]    ),
                 .instr_done_id_o          ( instr_complete_id   [i]    ),
-                .vreg_rd_addr_o           ( vreg_rd_addr               ),
-                .vreg_rd_data_i           ( vreg_rd_data               ),
+                .vreg_rd_addr_o           ( vreg_rd_addr[i]            ),
+                .vreg_rd_data_i           ( vreg_rd_data[i]            ),
                 .vreg_rd_v0_i             ( vreg_mask                  ),
                 .vreg_wr_valid_o          ( pipe_vreg_wr_valid  [i]    ),
                 .vreg_wr_ready_i          ( pipe_vreg_wr_ready  [i]    ),

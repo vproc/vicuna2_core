@@ -78,6 +78,7 @@ module vproc_vregpack #(
     cfg_vsew                                    eew;
     logic [$clog2(VPORT_W / MAX_RES_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise + widening ops
     logic [INSTR_ID_W            -1:0]          instr_id;
+    logic                                       valid;
     } repack_reg_ctrl;
 
     repack_reg_ctrl ctrl_d, ctrl_q;
@@ -92,6 +93,7 @@ module vproc_vregpack #(
 
     always_comb begin
         ctrl_d = ctrl_q;
+        ctrl_d.valid = pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !vreg_wr_ready_i); //Hold valid signal if write port is blocked on last write
         if (pipe_in_valid_i) begin
             if(pipe_in_res_flags_i[0].first_cycle) begin //Load configuration from the pipeline  //TODO: Only one set of result flags should be passed through the pipeline
                 ctrl_d.current_vreg = pipe_in_vaddr_i;
@@ -108,6 +110,8 @@ module vproc_vregpack #(
                     ctrl_d.shifts_remaining = ctrl_q.shifts_remaining-1;
                 end
             end
+        end else begin
+
         end
     end
 
@@ -144,7 +148,7 @@ module vproc_vregpack #(
     // register write port logic
     //////
     always_comb begin
-        vreg_wr_valid_o = (ctrl_q.shifts_remaining == '0);
+        vreg_wr_valid_o = (ctrl_q.shifts_remaining == '0) & ctrl_q.valid;  //Only write on last cycle and when the instruction is valid
         vreg_wr_addr_o  = ctrl_q.current_vreg;
         vreg_wr_be_o    = '1; //TODO: Handle masked results
         vreg_wr_data_o  = shift_reg_q;
