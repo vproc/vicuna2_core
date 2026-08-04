@@ -797,7 +797,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .CFG_VL_W       ( CFG_VL_W                ),
         .VREG_W         ( VREG_W                  ),
         .DONT_CARE_ZERO ( DONT_CARE_ZERO          )
-        
     ) queue_pending_wr (
         .vsew_i         ( queue_data_d.vsew       ),
         .emul_i         ( queue_data_d.emul       ),
@@ -855,7 +854,17 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     ///////////////////////////////////////////////////////////////////////////
     // REGISTER FILE AND EXECUTION UNITS
 
-    // register file:
+    //////////////// write signals
+    logic [PIPE_CNT-1:0]               vreg_wr_req;
+    logic [PIPE_CNT-1:0]               vreg_wr_gnt;
+    logic [PIPE_CNT-1:0]               vreg_wr_id;
+    logic [PIPE_CNT-1:0][4:0]          pipe_vreg_wr_addr;
+    logic [PIPE_CNT-1:0][VREG_W  -1:0] pipe_vreg_wr_data;
+    logic [PIPE_CNT-1:0][VREG_W/8-1:0] pipe_vreg_wr_be;
+    logic [PIPE_CNT-1:0]               pipe_vreg_wr_clr;
+    logic [PIPE_CNT-1:0][1:0]          pipe_vreg_wr_clr_cnt;
+
+    // register file: //TODO: Cleanup these signals to make them clearer
    logic [VPORT_WR_CNT-1:0]               vregfile_wr_en_q /* verilator public */;
     logic [VPORT_WR_CNT-1:0]               vregfile_wr_en_d;
     logic [VPORT_WR_CNT-1:0][4:0]          vregfile_wr_addr_q /* verilator public */;
@@ -883,7 +892,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .wr_data_i    ( vregfile_wr_data_q ),
         .wr_be_i      ( vregfile_wr_mask_q ),
         .wr_we_i      ( vregfile_wr_en_q   ),
-        .rd_addr_i    ( vreg_rd_addr[1]   ), //TODO: NO ARBITER.  ARBITRATE THIS
+        .rd_addr_i    ( vreg_rd_addr[1]   ), //TODO: Add mux for read ports
         .rd_data_o    ( vreg_rd_data[1]   )
     );
 
@@ -891,29 +900,50 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     assign vreg_mask           = vregfile_rd_data[0];
     assign vregfile_rd_addr[0] = 5'b0;
 
-    generate
-        if (BUF_FLAGS[BUF_VREG_WR]) begin
-            always_ff @(posedge clk_i) begin
-                for (int i = 0; i < VPORT_WR_CNT; i++) begin
-                    vregfile_wr_en_q  [i] <= vregfile_wr_en_d  [i];
-                    vregfile_wr_addr_q[i] <= vregfile_wr_addr_d[i];
-                    vregfile_wr_data_q[i] <= vregfile_wr_data_d[i];
-                    vregfile_wr_mask_q[i] <= vregfile_wr_mask_d[i];
-                end
-            end
-        end else begin
+    //Regfile arbiter has ensured only one pipeline can access each port in a single cycle (only one grant signal is given)
+    //generate  //TODO: Currently hardcoded to only one write port (are more even necessary?)
+        //for (genvar port = 0; port < NUM_PORTS_WR; port++) begin 
             always_comb begin
-                for (int i = 0; i < VPORT_WR_CNT; i++) begin
-                    vregfile_wr_en_q  [i] = vregfile_wr_en_d  [i];
-                    vregfile_wr_addr_q[i] = vregfile_wr_addr_d[i];
-                    vregfile_wr_data_q[i] = vregfile_wr_data_d[i];
-                    vregfile_wr_mask_q[i] = vregfile_wr_mask_d[i];
+                vregfile_wr_addr_q = '0;
+                vregfile_wr_en_q = '0;
+                vregfile_wr_data_q = '0;
+                vregfile_wr_mask_q = '0;
+                for (int i = 0; i < PIPE_CNT; i ++) begin
+                    if (arb_wr_gnt_o == (1 << i)) begin //onehot mux
+                        vregfile_wr_addr_q = pipe_vreg_wr_addr[i];
+                        vregfile_wr_en_q = arb_wr_gnt_o[i];
+                        vregfile_wr_data_q = pipe_vreg_wr_data[i];
+                        vregfile_wr_mask_q = pipe_vreg_wr_be[i];
+                    end
                 end
             end
-        end
-    endgenerate
+        //end
+    //endgenerate
 
 
+    // generate
+    //     if (BUF_FLAGS[BUF_VREG_WR]) begin
+    //         always_ff @(posedge clk_i) begin
+    //             for (int i = 0; i < VPORT_WR_CNT; i++) begin
+    //                 vregfile_wr_en_q  [i] <= vregfile_wr_en_d  [i];
+    //                 vregfile_wr_addr_q[i] <= vregfile_wr_addr_d[i];
+    //                 vregfile_wr_data_q[i] <= vregfile_wr_data_d[i];
+    //                 vregfile_wr_mask_q[i] <= vregfile_wr_mask_d[i];
+    //             end
+    //         end
+    //     end else begin
+    //         always_comb begin
+    //             for (int i = 0; i < VPORT_WR_CNT; i++) begin
+    //                 vregfile_wr_en_q  [i] = vregfile_wr_en_d  [i];
+    //                 vregfile_wr_addr_q[i] = vregfile_wr_addr_d[i];
+    //                 vregfile_wr_data_q[i] = vregfile_wr_data_d[i];
+    //                 vregfile_wr_mask_q[i] = vregfile_wr_mask_d[i];
+    //             end
+    //         end
+    //     end
+    // endgenerate
+
+    /////////////////////  Why does this exist
     // Pending reads
     logic [PIPE_CNT-1:0][31:0] pipe_vreg_pend_rd_by_q, pipe_vreg_pend_rd_by_d;
     logic [PIPE_CNT-1:0][31:0] pipe_vreg_pend_rd_to_q, pipe_vreg_pend_rd_to_d;
@@ -948,13 +978,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         end
     end
 
-    logic [PIPE_CNT-1:0]               pipe_vreg_wr_valid;
-    logic [PIPE_CNT-1:0]               pipe_vreg_wr_ready;
-    logic [PIPE_CNT-1:0][4:0]          pipe_vreg_wr_addr;
-    logic [PIPE_CNT-1:0][VREG_W  -1:0] pipe_vreg_wr_data;
-    logic [PIPE_CNT-1:0][VREG_W/8-1:0] pipe_vreg_wr_be;
-    logic [PIPE_CNT-1:0]               pipe_vreg_wr_clr;
-    logic [PIPE_CNT-1:0][1:0]          pipe_vreg_wr_clr_cnt;
+    //////
 
     logic                lsu_trans_complete_valid;
     logic                lsu_trans_complete_ready;
@@ -968,9 +992,11 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic [4:0]          elem_xreg_addr;
     logic [31:0]         elem_xreg_data;
 
-    //TODO: Vector Read port arbiter
     logic [PIPE_CNT-1:0][VPORT_RD_CNT-1:0][4       :0] vreg_rd_addr;
     logic [PIPE_CNT-1:0][VPORT_RD_CNT-1:0][VREG_W-1:0] vreg_rd_data;
+    logic [PIPE_CNT-1:0][VPORT_RD_CNT-1:0]             vreg_rd_gnt;
+    logic [PIPE_CNT-1:0][VPORT_RD_CNT-1:0]             vreg_rd_req;
+    logic [PIPE_CNT-1:0][XIF_ID_W-1:0]                 vreg_rd_id;
 
     `ifdef RISCV_ZVE32F
     logic                elem_freg;
@@ -1069,11 +1095,16 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .vreg_rd_addr_o           ( vreg_rd_addr[i]            ),
                 .vreg_rd_data_i           ( vreg_rd_data[i]            ),
                 .vreg_rd_v0_i             ( vreg_mask                  ),
-                .vreg_wr_valid_o          ( pipe_vreg_wr_valid  [i]    ),
-                .vreg_wr_ready_i          ( pipe_vreg_wr_ready  [i]    ),
+                .vreg_rd_gnt_i            ( vreg_rd_gnt[i]             ),
+                .vreg_rd_req_o            ( vreg_rd_req[i]             ),
+                .vreg_rd_id_o             ( vreg_rd_id[i]              ),
+                .vreg_wr_req_o            ( vreg_wr_req  [i]           ),
+                .vreg_wr_gnt_i            ( vreg_wr_gnt  [i]           ),
                 .vreg_wr_addr_o           ( pipe_vreg_wr_addr   [i]    ),
                 .vreg_wr_be_o             ( pipe_vreg_wr_be     [i]    ),
                 .vreg_wr_data_o           ( pipe_vreg_wr_data   [i]    ),
+                .vreg_wr_id_o             ( vreg_wr_id[i]              ),
+                .pend_wr_clear_i          ( pend_vreg_wr_clr           ),
                 .vreg_wr_clr_o            ( pipe_vreg_wr_clr    [i]    ),
                 .vreg_wr_clr_cnt_o        ( pipe_vreg_wr_clr_cnt[i]    ),
                 .pending_load_o           ( pending_load               ),
@@ -1138,13 +1169,14 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         end
     endgenerate
 
+    //Can remove this
     vproc_vreg_wr_mux #(
         .VREG_W             ( VREG_W                              ),
         .VPORT_WR_CNT       ( VPORT_WR_CNT                        ),
         .PIPE_CNT           ( PIPE_CNT                            ),
         .PIPE_UNITS         ( PIPE_UNITS                          ),
         .PIPE_VPORT_WR      ( PIPE_VPORT_WR                       ),
-        .TIMEPRED           ( BUF_FLAGS[BUF_VREG_WR_MUX_TIMEPRED] ),
+        .TIMEPRED           ( BUF_FLAGS[BUF_VREG_WR_MUX_TIMEPRED] ), //??
         .DONT_CARE_ZERO     ( DONT_CARE_ZERO                      )
     ) vreg_wr_mux (
         .clk_i              ( clk_i                               ),
@@ -1157,12 +1189,80 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .vreg_wr_data_i     ( pipe_vreg_wr_data                   ),
         .vreg_wr_clr_i      ( pipe_vreg_wr_clr                    ),
         .vreg_wr_clr_cnt_i  ( pipe_vreg_wr_clr_cnt                ),
-        .pend_vreg_wr_clr_o ( pend_vreg_wr_clr                    ),
+        //.pend_vreg_wr_clr_o ( pend_vreg_wr_clr                    ),
         .vregfile_wr_en_o   ( vregfile_wr_en_d                    ),
         .vregfile_wr_addr_o ( vregfile_wr_addr_d                  ),
         .vregfile_wr_be_o   ( vregfile_wr_mask_d                  ),
         .vregfile_wr_data_o ( vregfile_wr_data_d                  )
     );
+
+    //Arbiter for vregfile read and write ports.  Ensures the oldest instruction always receives access in the event of simultaneous access attempts to maintain timing predictability
+    logic arb_set_i;
+    assign arb_set_i = |(pipe_instr_valid & pipe_instr_ready); //on sucessful dispatch
+
+    logic arb_clear_i;
+    logic [XIF_ID_W-1:0] arb_clear_id_i;
+    assign arb_clear_i = |instr_complete_valid;
+    //generate
+        always_comb begin
+            arb_clear_id_i = '0;
+            for (integer i = 0; i < PIPE_CNT; i++) begin
+                if (instr_complete_valid[i]) begin
+                    arb_clear_id_i = instr_complete_id[i];
+                end
+            end
+        end
+    //endgenerate
+
+    logic[PIPE_CNT-1:0][VPORT_RD_CNT-1:0]             arb_rd_req_i;
+    logic[PIPE_CNT-1:0][XIF_ID_W-1:0]                 arb_rd_req_id_i;
+    logic[PIPE_CNT-1:0][VPORT_RD_CNT-1:0]             arb_rd_gnt_o;
+
+    logic[PIPE_CNT-1:0][VPORT_WR_CNT-1:0]             arb_wr_req_i;
+    logic[PIPE_CNT-1:0][XIF_ID_W-1:0]                 arb_wr_req_id_i;
+    logic[PIPE_CNT-1:0][VPORT_WR_CNT-1:0]             arb_wr_gnt_o;
+
+    //VREG read port arbiter connections
+    assign arb_rd_req_i    = vreg_rd_req;
+    assign arb_rd_req_id_i = vreg_rd_id;
+    assign vreg_rd_gnt     = arb_rd_gnt_o;
+
+    //VREG write port arbiter connections
+    assign arb_wr_req_i    = vreg_wr_req;
+    assign arb_wr_req_id_i = vreg_wr_id;
+    assign vreg_wr_gnt     = arb_wr_gnt_o;
+    vproc_vreg_arbiter #(
+        .ID_W               (XIF_ID_W),
+        .REQUESTORS         (PIPE_CNT),
+        .NUM_PORTS_RD       (VPORT_RD_CNT),
+        .NUM_PORTS_WR       (VPORT_WR_CNT)
+    ) vproc_vreg_arbiter (
+        .clk_i(clk_i),
+        .rst_ni(rst_ni),
+
+        //add new entries when instruction is dispatched (max one per cycle)
+        .set_i(arb_set_i),
+        .set_id_i(pipe_instr_data.id),
+
+        //clear entry when instruction is completed (max one per cycle)
+        .clear_i(arb_clear_i),  //TODO: Confirm only one instruction is capable of signalling complete at once
+        .clear_id_i(arb_clear_id_i),
+
+        //Arbiter Interfaces
+        .rd_req_i(arb_rd_req_i),
+        .rd_req_id_i(arb_rd_req_id_i),
+        .rd_gnt_o(arb_rd_gnt_o),
+
+        .wr_req_i(arb_wr_req_i),
+        .wr_req_id_i(arb_wr_req_id_i),
+        .wr_gnt_o(arb_wr_gnt_o),
+
+        .wr_addr_i(pipe_vreg_wr_addr),
+        .pend_wr_clr_o(pend_vreg_wr_clr)
+    );
+
+
+    //On successful (granted) write, generate signal to clear pending writes for pipelines
 
 
     ///////////////////////////////////////////////////////////////////////////

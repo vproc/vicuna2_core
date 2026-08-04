@@ -54,13 +54,20 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         output logic [VPORT_CNT-1:0][MAX_VADDR_W-1:0] vreg_rd_addr_o,       // vreg read address
         input  logic [VPORT_CNT-1:0][MAX_VPORT_W-1:0] vreg_rd_data_i,       // vreg read data
         input  logic                [VREG_W     -1:0] vreg_rd_v0_i,         // vreg v0 read data
+        input  logic [VPORT_CNT-1:0]                  vreg_rd_gnt_i,        // gnt signal for read ports
+        output logic [VPORT_CNT-1:0]                  vreg_rd_req_o,        // req signal for read ports
+        output logic [XIF_ID_W-1:0]                   vreg_rd_id_o,         // instruction id for read port arbitration
 
-        output logic                    vreg_wr_valid_o,
-        input  logic                    vreg_wr_ready_i,
+        output logic                    vreg_wr_req_o,
+        input  logic                    vreg_wr_gnt_i,
         output logic [4:0]              vreg_wr_addr_o,
         output logic [VREG_W/8-1:0]     vreg_wr_be_o,
         output logic [VREG_W  -1:0]     vreg_wr_data_o,
-        output logic                    vreg_wr_clr_o,
+        output logic [XIF_ID_W-1:0]     vreg_wr_id_o,
+
+        input  logic   [31:0]           pend_wr_clear_i,
+
+        output logic                    vreg_wr_clr_o, //deprecated signals
         output logic [1:0]              vreg_wr_clr_cnt_o,
 
         output logic                    pending_load_o,

@@ -28,8 +28,8 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         input  logic                                 async_rst_ni,
         input  logic                                 sync_rst_ni,
 
-        input  logic                                 pipe_in_valid_i,
-        output logic                                 pipe_in_ready_o,
+        input  logic    [OP_CNT -1:0]                pipe_in_valid_i,
+        output logic    [OP_CNT -1:0]                pipe_in_ready_o,
         input  CTRL_T                                pipe_in_ctrl_i,
         input  logic    [OP_CNT -1:0][MAX_OP_W -1:0] pipe_in_op_data_i,
 
@@ -70,6 +70,13 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         output logic    [4:0]                        xreg_addr_o,
         output logic    [31:0]                       xreg_data_o
     );
+
+    logic [OP_CNT-1:0]  necessary_ops_test;
+    for (genvar i = 0; i < OP_CNT; i++) begin
+        assign necessary_ops_test[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
+    end
+    logic  [OP_CNT-1:0] valid_reduction_test;
+    assign valid_reduction_test =  &(~(pipe_in_valid_i ^ necessary_ops_test));
 
     generate
         if (UNIT == UNIT_LSU) begin
@@ -156,6 +163,21 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             logic [MAX_OP_W  -1:0] unit_out_res_alu;
             logic [MAX_OP_W/8-1:0] unit_out_res_cmp;
             logic [MAX_OP_W/8-1:0] unit_out_mask;
+
+            //For ALU, only signal ready when all necessary operands are valid
+            logic [OP_CNT-1:0]  necessary_ops;
+            for (genvar i = 0; i < OP_CNT; i++) begin
+                assign necessary_ops[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
+            end
+
+            logic                  unit_in_valid_i;
+            assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & |pipe_in_valid_i; //Input valid only if all necessary ops are valid
+            
+            logic                  unit_ready_in_o;
+            for (genvar i = 0; i < OP_CNT; i++) begin
+                assign pipe_in_ready_o[i] = unit_ready_in_o & unit_in_valid_i; //Unit ready only if all necessary ops are valid
+            end
+
             vproc_alu #(
                 .ALU_OP_W           ( MAX_OP_W                                    ),
                 .CTRL_T             ( CTRL_T                                      ),
@@ -164,8 +186,8 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 .clk_i              ( clk_i                                       ),
                 .async_rst_ni       ( async_rst_ni                                ),
                 .sync_rst_ni        ( sync_rst_ni                                 ),
-                .pipe_in_valid_i    ( pipe_in_valid_i                             ),
-                .pipe_in_ready_o    ( pipe_in_ready_o                             ),
+                .pipe_in_valid_i    ( unit_in_valid_i                             ),
+                .pipe_in_ready_o    ( unit_ready_in_o                             ),
                 .pipe_in_ctrl_i     ( pipe_in_ctrl_i                              ),
                 .pipe_in_op1_i      ( pipe_in_op_data_i[1]                        ),
                 .pipe_in_op2_i      ( pipe_in_op_data_i[0]                        ),
@@ -196,6 +218,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
                 pipe_out_res_data_o [0]                 = unit_out_res_alu;
                 pipe_out_res_flags_o[0].first_cycle     = unit_out_ctrl.first_cycle;
+                pipe_out_res_flags_o[0].last_cycle     = unit_out_ctrl.last_cycle;
                 pipe_out_res_mask_o [0][MAX_OP_W/8-1:0] = unit_out_mask;
                 pipe_out_res_flags_o[0].vreg_idx        = unit_out_ctrl.vreg_idx;
 

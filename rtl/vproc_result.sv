@@ -59,7 +59,7 @@ module vproc_result #(
   logic                res_id_fifo_empty;
   logic                res_id_fifo_full;
   fifo_v3 #(
-    .FALL_THROUGH (1'b0        ), //TODO: Disable fallthrough?  Cannot occur
+    .FALL_THROUGH (1'b0        ),
     .dtype        (logic [XIF_ID_W-1:0]),
     .DEPTH        (4           )   //might need to be bigger?
   ) commit_id_fifo (

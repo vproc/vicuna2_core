@@ -71,13 +71,20 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         output logic [VPORT_CNT-1:0][MAX_VADDR_W-1:0] vreg_rd_addr_o,       // vreg read address
         input  logic [VPORT_CNT-1:0][MAX_VPORT_W-1:0] vreg_rd_data_i,       // vreg read data
         input  logic                [VREG_W     -1:0] vreg_rd_v0_i,         // vreg v0 read data
+        input  logic [VPORT_CNT-1:0]                  vreg_rd_gnt_i,        // gnt signal for read ports
+        output logic [VPORT_CNT-1:0]                  vreg_rd_req_o,        // req signal for read ports
+        output logic [XIF_ID_W-1:0]                   vreg_rd_id_o,         // instruction id for read port arbitration
 
-        output logic                    vreg_wr_valid_o,
-        input  logic                    vreg_wr_ready_i,
+        output logic                    vreg_wr_req_o,
+        input  logic                    vreg_wr_gnt_i,
         output logic [4:0]              vreg_wr_addr_o,
         output logic [VREG_W/8-1:0]     vreg_wr_be_o,
         output logic [VREG_W  -1:0]     vreg_wr_data_o,
-        output logic                    vreg_wr_clr_o,
+        output logic [XIF_ID_W-1:0]     vreg_wr_id_o,
+
+        input  logic   [31:0]           pend_wr_clear_i,
+
+        output logic                    vreg_wr_clr_o, //Deprecated signals
         output logic [1:0]              vreg_wr_clr_cnt_o,
 
         output logic                    pending_load_o,
@@ -198,8 +205,8 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
     //////////
 
     //Handshake signals between unpack and unit_mux
-    logic                               unpack_out_valid;
-    logic                               unpack_out_ready;
+    logic               [OP_CNT   -1:0] unpack_out_valid;
+    logic               [OP_CNT   -1:0] unpack_out_ready;
     metadata_t                          unpack_out_ctrl;
     logic [OP_CNT   -1:0][MAX_OP_W-1:0] unpack_out_ops;
 
@@ -237,6 +244,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .vreg_rd_addr_o             ( vreg_rd_addr_o               ),
         .vreg_rd_data_i             ( vreg_rd_data_i               ),
         .vreg_rd_v0_i               ( vreg_rd_v0_i                 ),
+        .vreg_rd_gnt_i              ( vreg_rd_gnt_i                ),
+        .vreg_rd_req_o              ( vreg_rd_req_o                ),
+        .vreg_rd_id_o               ( vreg_rd_id_o                 ),
 
         .pipe_in_valid_i            ( pipe_in_valid_i              ),
         .pipe_in_ready_o            ( pipe_in_ready_o              ),
@@ -248,6 +258,8 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .pipe_in_op_vaddr_i         ( metadata_i.op_vaddr          ),
         .pipe_in_op_flags_i         ( metadata_i.op_flags          ),
         .pipe_in_op_xval_i          ( metadata_i.op_xval           ),
+        .pend_wr_map_i              ( vreg_pend_wr_i               ),
+        .pend_wr_clear_i            ( pend_wr_clear_i              ),
         // .pipe_in_mem_req_valid_i    ( unpack_ctrl.mem_req_valid    ),
         // .pipe_in_field_counter_i    ( unpack_ctrl.field_counter    ),
         .pipe_out_valid_o           ( unpack_out_valid             ),
@@ -388,11 +400,12 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .pipe_in_pend_clr_i          ( mux_out_pend_clear     ),
         .pipe_in_pend_clr_cnt_i      ( mux_out_pend_clear_cnt ),
         .pipe_in_instr_done_i        ( mux_out_instr_done     ),
-        .vreg_wr_valid_o             ( vreg_wr_valid_o         ),
-        .vreg_wr_ready_i             ( vreg_wr_ready_i         ),
+        .vreg_wr_req_o               ( vreg_wr_req_o          ),
+        .vreg_wr_gnt_i               ( vreg_wr_gnt_i          ),
         .vreg_wr_addr_o              ( vreg_wr_addr_o          ),
         .vreg_wr_be_o                ( vreg_wr_be_o            ),
         .vreg_wr_data_o              ( vreg_wr_data_o          ),
+        .vreg_wr_id_o                ( vreg_wr_id_o            ),
         .vreg_wr_clr_o               ( vreg_wr_clr_o           ),
         .vreg_wr_clr_cnt_o           ( vreg_wr_clr_cnt_o       ),
         .pending_vreg_reads_i        ( vreg_pend_rd_i          ),

@@ -29,8 +29,8 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         input  logic                                 async_rst_ni,
         input  logic                                 sync_rst_ni,
 
-        input  logic                                 pipe_in_valid_i,
-        output logic                                 pipe_in_ready_o,
+        input  logic                   [OP_CNT -1:0] pipe_in_valid_i,
+        output logic                   [OP_CNT -1:0] pipe_in_ready_o,
         input  CTRL_T                                pipe_in_ctrl_i,
         input  logic    [OP_CNT -1:0][MAX_OP_W -1:0] pipe_in_op_data_i,
 
@@ -73,22 +73,18 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         output logic    [31:0]                       xreg_data_o
     );
 
-    logic [UNIT_CNT-1:0] unit_in_valid;
-    logic [UNIT_CNT-1:0] unit_in_ready;
-    logic                unit_queue_enq_valid;
-    logic                unit_queue_enq_ready;
+    // Ready signal
+    logic [UNIT_CNT-1:0][OP_CNT -1:0] unit_in_ready;
     always_comb begin
-        unit_in_valid        = '0;
-        unit_queue_enq_valid = '0;
-        pipe_in_ready_o      = unit_queue_enq_ready;
-        if (pipe_in_valid_i) begin
-            unit_in_valid[pipe_in_ctrl_i.unit]  = unit_queue_enq_ready;
-            unit_queue_enq_valid                = unit_in_ready[pipe_in_ctrl_i.unit] &
-                                                  pipe_in_ctrl_i.first_cycle;
-            pipe_in_ready_o                    &= unit_in_ready[pipe_in_ctrl_i.unit];
+        pipe_in_ready_o = '0;
+        for (int i = 0; i < UNIT_CNT; i++) begin
+            if (UNITS[i] & |pipe_in_valid_i & (op_unit'(i) == pipe_in_ctrl_i.unit)) begin
+                pipe_in_ready_o = unit_in_ready[i];
+            end
         end
     end
 
+    // Output Signals
     logic      [UNIT_CNT-1:0]                             unit_out_valid;
     logic      [UNIT_CNT-1:0]                             unit_out_ready;
     logic      [UNIT_CNT-1:0][XIF_ID_W              -1:0] unit_out_instr_id;
@@ -107,6 +103,11 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
     generate
         for (genvar i = 0; i < UNIT_CNT; i++) begin
             if (UNITS[i]) begin
+                // Input logic
+                logic [OP_CNT -1:0] unit_valid;
+                for (genvar j = 0; j < OP_CNT; j++) begin
+                    assign unit_valid[j] = pipe_in_valid_i[j] & (pipe_in_ctrl_i.unit == op_unit'(i));
+                end
                 // LSU-related signals
                 OBI_BUS #(
                     .OBI_CFG     ( OBI_CFG   )
@@ -149,12 +150,12 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                     .clk_i                     ( clk_i                      ),
                     .async_rst_ni              ( async_rst_ni               ),
                     .sync_rst_ni               ( sync_rst_ni                ),
-                    .pipe_in_valid_i           ( unit_in_valid          [i] ),
+                    .pipe_in_valid_i           ( unit_valid                 ),
                     .pipe_in_ready_o           ( unit_in_ready          [i] ),
                     .pipe_in_ctrl_i            ( pipe_in_ctrl_i             ),
                     .pipe_in_op_data_i         ( pipe_in_op_data_i          ),
                     .pipe_out_valid_o          ( unit_out_valid         [i] ),
-                    .pipe_out_ready_i          ( unit_out_ready         [i] ),
+                    .pipe_out_ready_i          ( pipe_out_ready_i           ),
                     .pipe_out_instr_id_o       ( unit_out_instr_id      [i] ),
                     .pipe_out_eew_o            ( unit_out_eew           [i] ),
                     .pipe_out_vaddr_o          ( unit_out_vaddr         [i] ),
@@ -228,34 +229,29 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         end
     endgenerate
 
-    // Get the next valid unit from the unit queue (ensures that instructions
-    // enter and exit the unit multiplexer in order; note that instructions
-    // must remain in order to avoid data dependency issues, where one instr
-    // would wait for data from another instr, while simultaneously denying
-    // that other instr access to the output pipe).
-    logic                      unit_queue_deq_valid;
-    logic [$bits(op_unit)-1:0] unit_queue_deq_unit_vector;
-    op_unit                    unit_queue_deq_unit;
-    vproc_queue #(
-        .WIDTH        ( $bits(op_unit)                                              ),
-        .DEPTH        ( 4                                                           )
+    op_unit unit_queue_deq_unit;
+    logic [UNIT_CNT-1:0 ] unit_queue_deq_valid;
+    for (genvar i = 0; i < UNIT_CNT; i++) begin
+        if (UNITS[i]) begin
+            assign unit_queue_deq_valid[i] = unit_out_res_flags[i][0].last_cycle & unit_out_valid[i];
+        end
+    end
+
+    fifo_v3 #(
+        .FALL_THROUGH (1'b0        ),
+        .dtype        (op_unit),
+        .DEPTH        (2           )   //might need to be bigger?
     ) unit_queue (
-        .clk_i        ( clk_i                                                       ),
-        .async_rst_ni ( async_rst_ni                                                ),
-        .sync_rst_ni  ( sync_rst_ni                                                 ),
-        .enq_ready_o  ( unit_queue_enq_ready                                        ),
-        .enq_valid_i  ( unit_queue_enq_valid                                        ),
-        .enq_data_i   ( pipe_in_ctrl_i.unit                                         ),
-        .deq_ready_i  ( pipe_out_valid_o & pipe_out_ready_i & pipe_out_instr_done_o ),
-        .deq_valid_o  ( unit_queue_deq_valid                                        ),
-        .deq_data_o   ( unit_queue_deq_unit_vector                                  ),
-        .flags_any_o  (                                                             ),
-        .flags_all_o  (                                                             )
+        .clk_i,
+        .rst_ni     (sync_rst_ni),
+        .flush_i    (1'b0                                                   ),
+        .data_i     (pipe_in_ctrl_i.unit                                    ),
+        .push_i     (pipe_in_ctrl_i.first_cycle),
+        .data_o     (unit_queue_deq_unit                                    ),
+        .pop_i      (|unit_queue_deq_valid),
+        .empty_o    (),
+        .full_o     ()
     );
-    assign unit_queue_deq_unit = op_unit'(unit_queue_deq_unit_vector);
-    assign unit_out_ready      = {
-        {(UNIT_CNT-1){1'b0}}, unit_queue_deq_valid & pipe_out_ready_i
-    } << unit_queue_deq_unit;
 
     // Output logic
     always_comb begin
@@ -272,7 +268,7 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         pipe_out_pend_clear_cnt_o =          DONT_CARE_ZERO ?             '0  :             'x   ;
         pipe_out_instr_done_o     =          DONT_CARE_ZERO ?             '0  :             'x   ;
         for (int i = 0; i < UNIT_CNT; i++) begin
-            if (UNITS[i] & unit_queue_deq_valid & (op_unit'(i) == unit_queue_deq_unit)) begin
+            if (UNITS[i] & (op_unit'(i) == unit_queue_deq_unit)) begin
                 pipe_out_valid_o          = unit_out_valid         [i];
                 pipe_out_instr_id_o       = unit_out_instr_id      [i];
                 pipe_out_eew_o            = unit_out_eew           [i];

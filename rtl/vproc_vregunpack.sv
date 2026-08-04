@@ -20,10 +20,10 @@ module vreg_shift_register
     output logic                               shift_reg_ready_o,
     input  vproc_pkg::cfg_vsew                     operand_eew_i,
     input  vproc_pkg::cfg_emul                    operand_emul_i,
-    input  logic [VADDR_W-1:0]              operand_vaddr_base_i, 
+    input  logic [VADDR_W-1:0]              operand_vaddr_base_i,
 
     //vreg read port interface
-    input  logic                                   vreg_rd_gnt_i, //TODO: arbitration of the read ports? at vproc_core level giving preference to oldest instruction
+    input  logic                                   vreg_rd_gnt_i,
     output logic                                   vreg_rd_req_o,
     output logic [VADDR_W-1:0]                    vreg_rd_addr_o,
     input  logic [VREG_PORT_W-1:0]                vreg_rd_data_i,
@@ -127,7 +127,7 @@ module vreg_shift_register
 
     always_comb begin
         shift_reg_d = shift_reg_q;
-        if(state_q == VREG_SHIFT && ctrl_q.shifts_remaining == '0 && vfu_ready_i) begin
+        if(state_q == VREG_SHIFT && ctrl_q.shifts_remaining == '0) begin
             shift_reg_d = vreg_rd_data_i;
         end else if (state_q == VREG_SHIFT) begin
             if (vfu_ready_i) begin
@@ -173,6 +173,7 @@ module vproc_vregunpack
         parameter int unsigned                        VADDR_W[VPORT_CNT] = '{5}, // address widths
         parameter bit [VPORT_CNT-1:0]                 VPORT_BUFFER       = '0,   // buffer port
         parameter int unsigned                        VPORT_V0_W         = 128,  // width of v0 port
+        parameter int unsigned                        ID_W               = 5,
 
         // vector register operands configuration
         parameter int unsigned                        MAX_OP_W           = 64,   // max op width
@@ -206,6 +207,9 @@ module vproc_vregunpack
         output logic [VPORT_CNT-1:0][MAX_VADDR_W-1:0]    vreg_rd_addr_o,       // vreg read address
         input  logic [VPORT_CNT-1:0][MAX_VPORT_W-1:0]    vreg_rd_data_i,       // vreg read data
         input  logic                [VPORT_V0_W -1:0]    vreg_rd_v0_i,         // vreg v0 read data
+        input  logic [VPORT_CNT-1:0]                     vreg_rd_gnt_i,        // gnt signal for read ports
+        output logic [VPORT_CNT-1:0]                     vreg_rd_req_o,        // req signal for read ports
+        output logic [ID_W-1:0]                          vreg_rd_id_o,         // instruction ID of requestor for arbitration
 
         // pipeline in
         input  logic                                     pipe_in_valid_i,
@@ -221,9 +225,12 @@ module vproc_vregunpack
         input  logic   [MEM_PORTS-1:0]                   pipe_in_mem_req_valid_i,
         input  logic   [MEM_PORTS-1:0][2:0]              pipe_in_field_counter_i,
 
+        input  logic   [31:0]                            pend_wr_map_i,        //Pending writes (as of the instruction being issued)
+        input  logic   [31:0]                            pend_wr_clear_i,      //Writes that have been completed
+
         // pipeline out
-        output logic                                     pipe_out_valid_o,
-        input  logic                                     pipe_out_ready_i,
+        output logic   [VPORT_CNT-1:0]                   pipe_out_valid_o,
+        input  logic   [VPORT_CNT-1:0]                   pipe_out_ready_i,
         output METADATA_T                                pipe_out_ctrl_o,      // pipeline control sigs
         output logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0]  pipe_out_op_data_o,   // unpacked operands
 
@@ -298,6 +305,7 @@ module vproc_vregunpack
         logic   [2-1:0][31           :0]         op_xval; //Maximum 2 of these.  TODO: PARAMETERIZE
         logic   [VPORT_CNT-1:0][MAX_VPORT_W-1:0] op_buffer;
         logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0] op_data;
+        logic   [31:0]                           pend_wr_map;
     } vregunpack_state_t;
 
     vregunpack_state_t metadata_d, metadata_q;
@@ -312,6 +320,7 @@ module vproc_vregunpack
 
     always_comb begin
         metadata_d = metadata_q;
+        metadata_d.pend_wr_map = metadata_q.pend_wr_map & (~pend_wr_clear_i);
         if (state_q == READY) begin
             metadata_d.ctrl     = pipe_in_ctrl_i;
             metadata_d.unit     = pipe_in_unit_i;
@@ -323,6 +332,7 @@ module vproc_vregunpack
             metadata_d.op_xval  = pipe_in_ctrl_i.op_xval;
             metadata_d.mem_req_valid = pipe_in_mem_req_valid_i;
             metadata_d.field_counter = pipe_in_field_counter_i;
+            metadata_d.pend_wr_map = pend_wr_map_i & (~pend_wr_clear_i); //in case a pending write is cleared this cycle
         end
     end
 
@@ -330,6 +340,14 @@ module vproc_vregunpack
     //Maximum 3 Ports, rs1, rs2, rd
     logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0]  shift_reg_outputs;
     logic   [VPORT_CNT-1:0]                   shift_reg_done;
+    logic   [VPORT_CNT-1:0]                   shift_reg_req;
+    generate
+        for (genvar i = 0; i < VPORT_CNT; i++) begin
+            assign vreg_rd_req_o[i] = shift_reg_req[i] & ~metadata_q.pend_wr_map[vreg_rd_addr_o[i]]; //Request signal from shift reg valid if not marked as pending write (not a data hazard)
+        end
+    endgenerate
+    assign vreg_rd_id_o     = metadata_q.ctrl.id;
+
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
             vreg_shift_register #(
@@ -342,20 +360,20 @@ module vproc_vregunpack
                 //.async_rst_ni,
                 .sync_rst_ni(sync_rst_ni),
 
-                .pipe_in_valid_i(shift_reg_in_valid_q & metadata_q.op_flags[i].vreg),    //TODO: op_load flag used to not trigger unessecary read ports.  Improve this metadata passing
+                .pipe_in_valid_i(shift_reg_in_valid_q & metadata_q.op_flags[i].vreg),    //TODO: op_load flag used to not trigger unnecessary read ports.  Improve this metadata passing
                 .shift_reg_ready_o(shift_regs_ready[i]),
-                .operand_eew_i(metadata_q.eew),            //TODO: Mixed precision operations will need an EEW/operand
-                .operand_emul_i(EMUL_1),                   //TODO: VALUE NOT PASSED 
+                .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
+                .operand_emul_i(EMUL_1),                                                 //TODO: VALUE NOT PASSED 
                 .operand_vaddr_base_i(metadata_q.op_vaddr[i]), 
 
                 .finished_o(shift_reg_done[i]),
 
-                .vreg_rd_gnt_i(1'b1),                       //TODO: arbitration of the read ports? at vproc_core level giving preference to oldest instruction
-                .vreg_rd_req_o(),                              //TODO: arbitration of the read port
+                .vreg_rd_gnt_i(vreg_rd_gnt_i[i]),
+                .vreg_rd_req_o(shift_reg_req[i]),
                 .vreg_rd_addr_o(vreg_rd_addr_o[i]),
                 .vreg_rd_data_i(vreg_rd_data_i[i]),
 
-                .vfu_ready_i(pipe_out_ready_i),                            //TODO: For desynced operands, will need a ready signal per operand
+                .vfu_ready_i(pipe_out_ready_i),                                          //TODO: For desynced operands, will need a ready signal per operand
                 .vfu_data_valid_o(shift_regs_valid[i]),
                 .vfu_data_o(shift_reg_outputs[i])
             );
@@ -367,11 +385,11 @@ module vproc_vregunpack
     //////////////
     logic [VPORT_CNT-1:0] shift_regs_valid;
 
-    //get list of active shift regs.  TODO: Should be improved with better metadata signalling and then this logic can be eliminated
+    //get list of active shift regs.  Scalar input arguments are immediately marked valid as well
     logic [VPORT_CNT-1:0] active_and_valid;
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
-            assign active_and_valid[i] = shift_regs_valid[i] & metadata_q.op_flags[i].vreg;
+            assign active_and_valid[i] = shift_regs_valid[i] & metadata_q.op_flags[i].vreg | metadata_q.op_flags[i].xreg;
         end
     endgenerate
 
@@ -392,20 +410,8 @@ module vproc_vregunpack
         first_cycle_d = first_cycle_q;
         if (pipe_in_valid_i & pipe_in_ready_o) begin
             first_cycle_d = 1'b0;
-        end else if (!first_cycle_q & (|active_and_valid)& pipe_out_ready_i) begin //only signal first cycle if vfu is ready to receive the first cycle of data
+        end else if (!first_cycle_q & (|(active_and_valid & pipe_out_ready_i))) begin //only signal first cycle if vfu is ready to receive the first cycle of data
             first_cycle_d = 1'b1;
-        end
-    end
-
-    //Unpack needs to generate a single cycle pulse for the first
-    //First cycle is the first valid output after shift regs have been activated.
-    logic last_cycle_d, last_cycle_q;
-
-    always_ff @(posedge clk_i) begin
-        if (~sync_rst_ni) begin
-            last_cycle_q <=  1'b0;
-        end else begin
-            last_cycle_q <= last_cycle_d;
         end
     end
 
@@ -419,11 +425,11 @@ module vproc_vregunpack
         end
     end
 
-    //Actual output signals
+    //output signals
     always_comb begin
-        pipe_out_valid_o = |active_and_valid; //TODO: For desynced operands, this signal will be needed per operand
+        pipe_out_valid_o = active_and_valid;
         pipe_out_ctrl_o = metadata_q.ctrl;
-        pipe_out_ctrl_o.first_cycle = (|active_and_valid) & !first_cycle_q; //Only signal on first valid result
+        pipe_out_ctrl_o.first_cycle = (|(active_and_valid & pipe_out_ready_i)) & !first_cycle_q; //Only signal on first valid result that is accepted
         pipe_out_ctrl_o.last_cycle = (active_ops_d == '0);  //signal last cycle when last shift reg has finished.  Value held until next operation started
     end
 

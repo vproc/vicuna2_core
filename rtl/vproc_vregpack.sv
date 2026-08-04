@@ -47,11 +47,13 @@ module vproc_vregpack #(
         input  logic                                pipe_in_instr_done_i,   // instr done flag
 
         // vector register file write port
-        output logic                                vreg_wr_valid_o,
-        input  logic                                vreg_wr_ready_i,
+        output logic                                vreg_wr_req_o,
+        input  logic                                vreg_wr_gnt_i,
         output logic   [VADDR_W               -1:0] vreg_wr_addr_o,         // vreg write address
         output logic   [VPORT_W/8             -1:0] vreg_wr_be_o,           // vreg byte enable
         output logic   [VPORT_W               -1:0] vreg_wr_data_o,         // vreg write data
+        output logic   [INSTR_ID_W-1:0]             vreg_wr_id_o,           // vreg write id for port arbitration
+
         output logic                                vreg_wr_clr_o,          // clear addr from pend writes
         output logic   [$clog2(VADDR_W-1)     -1:0] vreg_wr_clr_cnt_o,      // number of vregs to clear
 
@@ -79,6 +81,7 @@ module vproc_vregpack #(
     logic [$clog2(VPORT_W / MAX_RES_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise + widening ops
     logic [INSTR_ID_W            -1:0]          instr_id;
     logic                                       valid;
+    logic                                       last_cycle;
     } repack_reg_ctrl;
 
     repack_reg_ctrl ctrl_d, ctrl_q;
@@ -93,33 +96,30 @@ module vproc_vregpack #(
 
     always_comb begin
         ctrl_d = ctrl_q;
-        ctrl_d.valid = pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !vreg_wr_ready_i); //Hold valid signal if write port is blocked on last write
-        if (pipe_in_valid_i) begin
-            if(pipe_in_res_flags_i[0].first_cycle) begin //Load configuration from the pipeline  //TODO: Only one set of result flags should be passed through the pipeline
+        ctrl_d.valid = pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !vreg_wr_gnt_i); //Hold valid signal if write port is blocked on last write
+        ctrl_d.last_cycle = pipe_in_res_flags_i[0].last_cycle | (ctrl_q.last_cycle & ctrl_q.shifts_remaining == '0 & !vreg_wr_gnt_i);
+        if (pipe_in_valid_i && pipe_in_res_flags_i[0].first_cycle ) begin
+            //Load configuration from the pipeline  //TODO: Only one set of result flags should be passed through the pipeline
                 ctrl_d.current_vreg = pipe_in_vaddr_i;
                 ctrl_d.eew = pipe_in_eew_i;
                 ctrl_d.instr_id = pipe_in_instr_id_i;
                 ctrl_d.shifts_remaining = '1; //will need to be adjusted for elemwise ops
-            end else begin
-                if (ctrl_q.shifts_remaining == '0) begin //Full register data ready to write
-                    ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
-                    if (vreg_wr_ready_i) begin
-                        ctrl_d.shifts_remaining = '1; // only reset counter here if write can be performed this cycle
-                    end
-                end else begin
-                    ctrl_d.shifts_remaining = ctrl_q.shifts_remaining-1;
+        end else if (ctrl_q.valid) begin
+            if (ctrl_q.shifts_remaining == '0) begin //Full register data ready to write
+                ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
+                if (vreg_wr_gnt_i) begin
+                    ctrl_d.shifts_remaining = '1; // only reset counter here if write can be performed this cycle
                 end
+            end else begin
+                ctrl_d.shifts_remaining = ctrl_q.shifts_remaining-1;
             end
-        end else begin
-
         end
     end
 
     //////
     // Handshake logic with unit mux
     //////
-    
-    assign pipe_in_ready_o = !(ctrl_q.shifts_remaining == '0) || vreg_wr_ready_i; //unpack is ready whenever the shift register is not full, or when a sucessful register write will occur
+    assign pipe_in_ready_o = !(ctrl_q.shifts_remaining == '0) || vreg_wr_gnt_i; //unpack is ready whenever the shift register is not full, or when a sucessful register write will occur
 
     //////
     // Result Assembly Shift Register
@@ -138,20 +138,29 @@ module vproc_vregpack #(
     always_comb begin
         shift_reg_d = shift_reg_q;
         if (pipe_in_valid_i) begin
-            if (!(ctrl_q.shifts_remaining == '0) || vreg_wr_ready_i) begin
+            if (!(ctrl_q.shifts_remaining == '0) || vreg_wr_gnt_i) begin
                 shift_reg_d = {pipe_in_res_data_i, shift_reg_q[VPORT_W-1 : MAX_RES_W]}; //TODO:Will need special case shifts
             end
         end
     end
-    
+
     //////
     // register write port logic
     //////
     always_comb begin
-        vreg_wr_valid_o = (ctrl_q.shifts_remaining == '0) & ctrl_q.valid;  //Only write on last cycle and when the instruction is valid
+        vreg_wr_req_o = (ctrl_q.shifts_remaining == '0) & ctrl_q.valid;  //Only write on last cycle and when the instruction is valid
         vreg_wr_addr_o  = ctrl_q.current_vreg;
         vreg_wr_be_o    = '1; //TODO: Handle masked results
         vreg_wr_data_o  = shift_reg_q;
+        vreg_wr_id_o    = ctrl_q.instr_id;
+    end
+
+    // signalling completion logic
+    assign test_valid = ctrl_q.valid;
+    assign test_last_cycle = ctrl_q.last_cycle;
+    always_comb begin
+        instr_done_valid_o = vreg_wr_gnt_i & ctrl_q.valid & ctrl_q.last_cycle; //Done on last valid write
+        instr_done_id_o = ctrl_q.instr_id;
     end
 
 
