@@ -33,6 +33,10 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         input  CTRL_T                                pipe_in_ctrl_i,
         input  logic    [OP_CNT -1:0][MAX_OP_W -1:0] pipe_in_op_data_i,
 
+        input  logic                   [OP_CNT -1:0] pipe_in_mask_valid_i,
+        output logic                   [OP_CNT -1:0] pipe_in_mask_ready_o,
+        input  logic               [MAX_OP_W/8 -1:0] pipe_in_mask_data_i,
+
         output logic                                 pipe_out_valid_o,
         input  logic                                 pipe_out_ready_i,
         output logic    [XIF_ID_W              -1:0] pipe_out_instr_id_o,
@@ -170,13 +174,14 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 assign necessary_ops[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
             end
 
-            logic                  unit_in_valid_i;
-            assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & |pipe_in_valid_i; //Input valid only if all necessary ops are valid
-            
-            logic                  unit_ready_in_o;
+            logic  unit_in_valid_i;
+            assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & |pipe_in_valid_i & pipe_in_mask_valid_i; //Input valid only if all necessary ops are valid (including mask)
+
+            logic  unit_ready_in_o;
             for (genvar i = 0; i < OP_CNT; i++) begin
                 assign pipe_in_ready_o[i] = unit_ready_in_o & unit_in_valid_i; //Unit ready only if all necessary ops are valid
             end
+            assign pipe_in_mask_ready_o = unit_ready_in_o & unit_in_valid_i; //Mask ready synchronized with other arguments
 
             vproc_alu #(
                 .ALU_OP_W           ( MAX_OP_W                                    ),
@@ -191,7 +196,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 .pipe_in_ctrl_i     ( pipe_in_ctrl_i                              ),
                 .pipe_in_op1_i      ( pipe_in_op_data_i[1]                        ),
                 .pipe_in_op2_i      ( pipe_in_op_data_i[0]                        ),
-                .pipe_in_mask_i     ( pipe_in_op_data_i[OP_CNT-1][MAX_OP_W/8-1:0] ),
+                .pipe_in_mask_i     ( pipe_in_mask_data_i                         ),
                 .pipe_out_valid_o   ( pipe_out_valid_o                            ),
                 .pipe_out_ready_i   ( pipe_out_ready_i                            ),
                 .pipe_out_ctrl_o    ( unit_out_ctrl                               ),

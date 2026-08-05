@@ -70,9 +70,10 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         // connections to register file
         output logic [VPORT_CNT-1:0][MAX_VADDR_W-1:0] vreg_rd_addr_o,       // vreg read address
         input  logic [VPORT_CNT-1:0][MAX_VPORT_W-1:0] vreg_rd_data_i,       // vreg read data
-        input  logic                [VREG_W     -1:0] vreg_rd_v0_i,         // vreg v0 read data
         input  logic [VPORT_CNT-1:0]                  vreg_rd_gnt_i,        // gnt signal for read ports
         output logic [VPORT_CNT-1:0]                  vreg_rd_req_o,        // req signal for read ports
+        input  logic                [MAX_VPORT_W -1:0] vreg_rd_v0_i,         // vreg v0 read data
+
         output logic [XIF_ID_W-1:0]                   vreg_rd_id_o,         // instruction id for read port arbitration
 
         output logic                    vreg_wr_req_o,
@@ -124,6 +125,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
     typedef struct packed {
         logic                            first_cycle;
         logic                            last_cycle;
+        logic                            masked; //TODO: get assignment for this from issue
         logic                            alt_last_cycle;
         logic                            init_addr;      // initialize address (used by LSU)
         logic                            requires_flush;
@@ -133,8 +135,8 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         cfg_vsew                         eew;            // effective element width
         cfg_emul                         emul;           // effective MUL factor
         cfg_vxrm                         vxrm;
-        logic        [CFG_VL_W     -1:0] vl;
-        logic        [CFG_VL_W       :0] vlmax;
+        logic        [CFG_VL_W     -1:0] vl;        // why twice?
+        logic        [CFG_VL_W       :0] vlmax;     // why twice
         logic                            vl_0;
         logic        [32/8-1:0]          vl_part;
         logic                            vl_part_0;
@@ -172,6 +174,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         metadata_i.first_cycle             = 1'b1; // These should be set in vregunpack
         metadata_i.last_cycle              = 1'b1; // These should be set in vregunpack
         metadata_i.init_addr               = 1'b1;
+        metadata_i.masked                  = 1'b0;
         metadata_i.requires_flush          = pipe_in_state_i.requires_flush;
         metadata_i.id                      = pipe_in_state_i.id;
         metadata_i.mode                    = pipe_in_state_i.mode;
@@ -209,6 +212,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
     logic               [OP_CNT   -1:0] unpack_out_ready;
     metadata_t                          unpack_out_ctrl;
     logic [OP_CNT   -1:0][MAX_OP_W-1:0] unpack_out_ops;
+    logic                               unpack_out_mask_valid;
+    logic                               unpack_out_mask_ready;
+    logic              [MAX_OP_W/8-1:0] unpack_out_mask;
 
 
   vproc_vregunpack #(
@@ -223,6 +229,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .MEM_W                ( MEM_W                        ),
         .MEM_PORTS            ( MEM_PORTS                    ),
         .OP_W                 ( OP_W                         ),
+        .CFG_VL_W             ( CFG_VL_W                     ),
         .OP_DYN_ADDR_SRC      ( OP_DYN_ADDR_SRC              ),
         .OP_DYN_ADDR          ( OP_DYN_ADDR                  ),
         .OP_MASK              ( OP_MASK                      ),
@@ -243,18 +250,18 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
 
         .vreg_rd_addr_o             ( vreg_rd_addr_o               ),
         .vreg_rd_data_i             ( vreg_rd_data_i               ),
-        .vreg_rd_v0_i               ( vreg_rd_v0_i                 ),
         .vreg_rd_gnt_i              ( vreg_rd_gnt_i                ),
         .vreg_rd_req_o              ( vreg_rd_req_o                ),
+        .vreg_rd_v0_i               ( vreg_rd_v0_i                 ),
         .vreg_rd_id_o               ( vreg_rd_id_o                 ),
 
         .pipe_in_valid_i            ( pipe_in_valid_i              ),
         .pipe_in_ready_o            ( pipe_in_ready_o              ),
         .pipe_in_ctrl_i             ( metadata_i                   ),
-        .pipe_in_unit_i             ( metadata_i.unit              ),
+        .pipe_in_unit_i             ( metadata_i.unit              ), //TODO: Passing metadata already, all other not necessary
         .pipe_in_alt_eew_i          ( metadata_i.mode.lsu.alt_eew  ),
         .pipe_in_eew_i              ( metadata_i.eew               ),
-        .pipe_in_op_load_i          ( metadata_i.op_load           ), //TODO: Generate this signal
+        .pipe_in_op_load_i          ( metadata_i.op_load           ),
         .pipe_in_op_vaddr_i         ( metadata_i.op_vaddr          ),
         .pipe_in_op_flags_i         ( metadata_i.op_flags          ),
         .pipe_in_op_xval_i          ( metadata_i.op_xval           ),
@@ -266,7 +273,10 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .pipe_out_ready_i           ( unpack_out_ready             ),
         .pipe_out_ctrl_o            ( unpack_out_ctrl              ),
         .pipe_out_op_data_o         ( unpack_out_ops               ),
-        //.pending_vreg_reads_o       ( unpack_pend_rd               ),//TODO: handle this signal (possibly in the vector register file arbiter?)
+        .pipe_out_mask_data_o       ( unpack_out_mask              ),
+        .pipe_out_mask_ready_i      ( unpack_out_mask_ready        ),
+        .pipe_out_mask_valid_o      ( unpack_out_mask_valid        ),
+        //.pending_vreg_reads_o       ( unpack_pend_rd             ),
         .stage_valid_any_o          (                              ),
         .ctrl_flags_any_o           ( unpack_ctrl_flags            ),
         .ctrl_flags_all_o           (                              )
@@ -326,6 +336,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .pipe_in_ready_o           ( unpack_out_ready         ),
         .pipe_in_ctrl_i            ( unpack_out_ctrl          ),
         .pipe_in_op_data_i         ( unpack_out_ops           ),
+        .pipe_in_mask_valid_i      ( unpack_out_mask_valid    ),
+        .pipe_in_mask_ready_o      ( unpack_out_mask_ready    ),
+        .pipe_in_mask_data_i       ( unpack_out_mask          ),
 
         .pipe_out_valid_o          ( mux_out_valid            ),
         .pipe_out_ready_i          ( mux_out_ready            ),

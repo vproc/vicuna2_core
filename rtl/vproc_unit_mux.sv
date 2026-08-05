@@ -34,6 +34,10 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         input  CTRL_T                                pipe_in_ctrl_i,
         input  logic    [OP_CNT -1:0][MAX_OP_W -1:0] pipe_in_op_data_i,
 
+        input  logic                   [OP_CNT -1:0] pipe_in_mask_valid_i,
+        output logic                   [OP_CNT -1:0] pipe_in_mask_ready_o,
+        input  logic               [MAX_OP_W/8 -1:0] pipe_in_mask_data_i,
+
         output logic                                 pipe_out_valid_o,
         input  logic                                 pipe_out_ready_i,
         output logic    [XIF_ID_W              -1:0] pipe_out_instr_id_o,
@@ -154,6 +158,9 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                     .pipe_in_ready_o           ( unit_in_ready          [i] ),
                     .pipe_in_ctrl_i            ( pipe_in_ctrl_i             ),
                     .pipe_in_op_data_i         ( pipe_in_op_data_i          ),
+                    .pipe_in_mask_valid_i      ( pipe_in_mask_valid_i       ),
+                    .pipe_in_mask_ready_o      ( pipe_in_mask_ready_o       ),
+                    .pipe_in_mask_data_i       ( pipe_in_mask_data_i        ),
                     .pipe_out_valid_o          ( unit_out_valid         [i] ),
                     .pipe_out_ready_i          ( pipe_out_ready_i           ),
                     .pipe_out_instr_id_o       ( unit_out_instr_id      [i] ),

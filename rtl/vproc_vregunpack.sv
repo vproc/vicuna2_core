@@ -148,19 +148,148 @@ module vreg_shift_register
 
 endmodule
 
+//This module is responsible for loading the mask register v0(if necessary), taking in the current vl, and generating a byte mask to be passed to the pipeline
+module mask_reg_shift_register
+#(
+     // vector register ports configuration
+    parameter int unsigned                        VREG_PORT_W        = 128,  // max port width
+    parameter int unsigned                        CFG_VL_W           = 7,
+    parameter int unsigned                        PIPE_OP_W          = 32   // datapath width of functional unit 
 
-// //This module is responsible for generating the byte mask for the pipeline based on VL.  For masked ops, additionally load the mask register and combine
-// module mask_shift_register
-// #(
+)(
+    input  logic                                  clk_i,
+    input  logic                                  async_rst_ni,
+    input  logic                                  sync_rst_ni,
 
-// )(
+    //Handshake with vregunpack controller/dispatch
+    input  logic                                 pipe_in_valid_i,
+    output logic                               shift_reg_ready_o,
+    input  vproc_pkg::cfg_vsew                     operand_eew_i,
+    input  vproc_pkg::cfg_emul                    operand_emul_i,
+    input  logic [CFG_VL_W-1:0]                             vl_i,
+    input  logic                                          vl_0_i,
+    input  logic                                        masked_i,
 
-// );
+    //vreg read port interface
+    input  logic                                   vreg_rd_gnt_i,
+    input  logic [VREG_PORT_W-1:0]                vreg_rd_data_i,
+
+    output logic                                      finished_o,
+
+    //Pipeline handshake with functional units
+    input  logic                                     vfu_ready_i,
+    output logic                                vfu_data_valid_o,
+    output logic [PIPE_OP_W/8-1:0]                    vfu_mask_o
 
 
+);
 
-// endmodule
+    //Control signals for operand shift register
+    typedef struct packed {
+    cfg_vsew                eew;
+    logic [$clog2(VREG_PORT_W * 8 / PIPE_OP_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise + widening ops
+    logic                   valid_data;
+    logic                   masked;
+    } shift_reg_ctrl;
 
+    shift_reg_ctrl ctrl_d, ctrl_q;
+
+    // State machine for the operand shift register
+    typedef enum logic {
+        IDLE            = 1'b0,
+        VREG_SHIFT      = 1'b1
+    } shift_reg_state;
+
+    shift_reg_state state_d, state_q;
+
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_ni) begin
+            state_q <= IDLE;
+            ctrl_q <= '0;
+        end else begin
+            state_q <= state_d;
+            ctrl_q <= ctrl_d;
+        end
+    end
+
+    //state transitions and control signal assignments
+    always_comb begin
+        state_d = state_q;
+        ctrl_d = ctrl_q;
+        finished_o = 1'b0;
+        unique case (state_q)
+            IDLE: begin
+                if (pipe_in_valid_i) begin
+                    state_d = VREG_SHIFT;
+                    ctrl_d.eew = operand_eew_i;
+                    ctrl_d.valid_data = 1'b0;
+                    ctrl_d.masked     = masked_i;
+                    unique case (operand_emul_i) //Set # of remaining shifts based on emul
+                        EMUL_1: ctrl_d.shifts_remaining = VREG_PORT_W/PIPE_OP_W;
+                        EMUL_2: ctrl_d.shifts_remaining = 2 * VREG_PORT_W/PIPE_OP_W;
+                        EMUL_4: ctrl_d.shifts_remaining = 4 * VREG_PORT_W/PIPE_OP_W;
+                        EMUL_8: ctrl_d.shifts_remaining = 8 * VREG_PORT_W/PIPE_OP_W;
+                    endcase
+                end
+            end
+
+            VREG_SHIFT: begin
+                if (vfu_ready_i & ctrl_q.valid_data) begin
+                    ctrl_d.shifts_remaining = ctrl_q.shifts_remaining - 1; //Only shift if vector functional unit is ready
+                end
+                if (ctrl_q.shifts_remaining == 0) begin //Only 1 register needs to be read/shifted, exit when no shifts remain
+                    state_d = IDLE;
+                    finished_o = 1'b1;
+                    ctrl_d.valid_data = 1'b0; 
+                end else begin
+                    if (vreg_rd_gnt_i | !ctrl_q.masked) begin
+                        ctrl_d.valid_data = 1'b1;
+                    end else begin
+                        ctrl_d.valid_data = 1'b0; //On failed read, set data valid to 0
+                    end
+                end
+            end
+        endcase
+    end
+
+    //VREG Shift register
+    logic [VREG_PORT_W/8-1:0] shift_reg_d, shift_reg_q;
+
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_ni) begin
+            shift_reg_q <= '0;
+        end else begin
+            shift_reg_q <= shift_reg_d;
+        end
+    end
+
+    always_comb begin
+        shift_reg_d = shift_reg_q;
+        if (state_q == IDLE) begin //generate initial state based on vl
+            shift_reg_d = '0;
+            if (!vl_0_i) begin
+                for (int i = 0; i <= vl_i; i++) begin //vl is passed as # bytes -1, so <= here + guard for vl=0.
+                    shift_reg_d[i] = 1'b1;
+                end
+            end
+        end else if(state_q == VREG_SHIFT && !ctrl_q.valid_data) begin
+            shift_reg_d = ctrl_q.masked ? vreg_rd_data_i & shift_reg_q : shift_reg_q; //If mask register needed, & with VL mask
+        end else if (state_q == VREG_SHIFT) begin
+            if (vfu_ready_i) begin
+                //TODO: Different shift patterns/rates should be handled here
+                shift_reg_d = {{(PIPE_OP_W/8){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/8]}; //standard shift case
+            end
+        end
+    end
+
+    //Output assignments
+    always_comb begin
+        vfu_mask_o = shift_reg_q[PIPE_OP_W/8-1:0];
+        vfu_data_valid_o = ctrl_q.valid_data; //ouput valid when valid data in the shift register
+        shift_reg_ready_o = (state_q == IDLE);
+    end
+
+endmodule
 
 // Unpacking vector registers to operands
 module vproc_vregunpack
@@ -174,6 +303,7 @@ module vproc_vregunpack
         parameter bit [VPORT_CNT-1:0]                 VPORT_BUFFER       = '0,   // buffer port
         parameter int unsigned                        VPORT_V0_W         = 128,  // width of v0 port
         parameter int unsigned                        ID_W               = 5,
+        parameter int unsigned                        CFG_VL_W          = 7,
 
         // vector register operands configuration
         parameter int unsigned                        MAX_OP_W           = 64,   // max op width
@@ -206,9 +336,9 @@ module vproc_vregunpack
         // vector register file read ports
         output logic [VPORT_CNT-1:0][MAX_VADDR_W-1:0]    vreg_rd_addr_o,       // vreg read address
         input  logic [VPORT_CNT-1:0][MAX_VPORT_W-1:0]    vreg_rd_data_i,       // vreg read data
-        input  logic                [VPORT_V0_W -1:0]    vreg_rd_v0_i,         // vreg v0 read data
         input  logic [VPORT_CNT-1:0]                     vreg_rd_gnt_i,        // gnt signal for read ports
         output logic [VPORT_CNT-1:0]                     vreg_rd_req_o,        // req signal for read ports
+        input  logic                [VPORT_V0_W -1:0]    vreg_rd_v0_i,         // vreg v0 read data
         output logic [ID_W-1:0]                          vreg_rd_id_o,         // instruction ID of requestor for arbitration
 
         // pipeline in
@@ -234,8 +364,10 @@ module vproc_vregunpack
         output METADATA_T                                pipe_out_ctrl_o,      // pipeline control sigs
         output logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0]  pipe_out_op_data_o,   // unpacked operands
 
-        // pending vector register read mask
-        output logic [(1<<MAX_VADDR_W)-1:0]              pending_vreg_reads_o,
+        //vector register read mask
+        output logic                                     pipe_out_mask_valid_o,
+        input  logic   [VPORT_CNT-1:0]                   pipe_out_mask_ready_i,
+        output logic   [MAX_OP_W/8-1:0]                 pipe_out_mask_data_o,
 
         // stage valid and control signals flags
         output logic                                     stage_valid_any_o,
@@ -335,9 +467,10 @@ module vproc_vregunpack
             metadata_d.pend_wr_map = pend_wr_map_i & (~pend_wr_clear_i); //in case a pending write is cleared this cycle
         end
     end
-
-    //Shift registers 
+    /////////////////
+    //Operand Shift registers 
     //Maximum 3 Ports, rs1, rs2, rd
+    /////////////////
     logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0]  shift_reg_outputs;
     logic   [VPORT_CNT-1:0]                   shift_reg_done;
     logic   [VPORT_CNT-1:0]                   shift_reg_req;
@@ -360,10 +493,10 @@ module vproc_vregunpack
                 //.async_rst_ni,
                 .sync_rst_ni(sync_rst_ni),
 
-                .pipe_in_valid_i(shift_reg_in_valid_q & metadata_q.op_flags[i].vreg),    //TODO: op_load flag used to not trigger unnecessary read ports.  Improve this metadata passing
+                .pipe_in_valid_i(shift_reg_in_valid_q & metadata_q.op_flags[i].vreg),
                 .shift_reg_ready_o(shift_regs_ready[i]),
                 .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
-                .operand_emul_i(EMUL_1),                                                 //TODO: VALUE NOT PASSED 
+                .operand_emul_i(pipe_in_ctrl_i.emul), 
                 .operand_vaddr_base_i(metadata_q.op_vaddr[i]), 
 
                 .finished_o(shift_reg_done[i]),
@@ -379,6 +512,43 @@ module vproc_vregunpack
             );
         end
     endgenerate
+
+    /////////////////
+    // Mask Shift Register
+    // Uses special v0 port
+    /////////////////
+
+    logic mask_reg_gnt;
+    assign mask_reg_gnt = ~metadata_q.pend_wr_map[0]; //mask reg can be read as long as there is not a pending write
+
+    mask_reg_shift_register #(
+        .VREG_PORT_W        (MAX_VPORT_W),
+        .CFG_VL_W           (CFG_VL_W),
+        .PIPE_OP_W          (MAX_OP_W)
+    ) mask_register (
+
+        .clk_i(clk_i),
+        //.async_rst_ni,
+        .sync_rst_ni(sync_rst_ni),
+
+        .pipe_in_valid_i(shift_reg_in_valid_q), //Mask shift reg triggered for every instruction
+        .shift_reg_ready_o(shift_regs_ready[i]),
+        .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
+        .operand_emul_i(pipe_in_ctrl_i.emul),
+
+        .vl_i(pipe_in_ctrl_i.vl),
+        .vl_0_i(pipe_in_ctrl_i.vl_0),
+        .masked_i(pipe_in_ctrl_i.masked),
+
+        //.finished_o(shift_reg_done[i]),   //Currently last cycle signalling ignored for shift reg.
+
+        .vreg_rd_gnt_i(mask_reg_gnt),
+        .vreg_rd_data_i(vreg_rd_v0_i),
+
+        .vfu_ready_i(pipe_out_mask_ready_i),
+        .vfu_data_valid_o(pipe_out_mask_valid_o),
+        .vfu_mask_o(pipe_out_mask_data_o)
+    );
 
     //////////////
     //Output signalling

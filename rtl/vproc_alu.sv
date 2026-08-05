@@ -276,10 +276,8 @@ module vproc_alu #(
     assign operand2_tmp_d     = operand2_32;
     assign operand_mask_tmp_d = operand_mask_q;
 
-    // result byte mask
-    logic [ALU_OP_W/8-1:0] vl_mask;
-    assign vl_mask       = ~state_ex2_q.vl_part_0 ? ({(ALU_OP_W/8){1'b1}} >> (~state_ex2_q.vl_part)) : '0;
-    assign result_mask_d = ((state_ex2_q.mode.alu.op_mask == ALU_MASK_WRITE) ? operand_mask_tmp_q : {(ALU_OP_W/8){1'b1}}) & vl_mask;
+    // result byte mask //Computed in unpack
+    assign result_mask_d = operand_mask_tmp_q;
 
     assign pipe_out_valid_o   = state_res_valid_q;
     assign pipe_out_ctrl_o    = state_res_q;
