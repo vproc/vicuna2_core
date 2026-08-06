@@ -34,8 +34,8 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         input  CTRL_T                                pipe_in_ctrl_i,
         input  logic    [OP_CNT -1:0][MAX_OP_W -1:0] pipe_in_op_data_i,
 
-        input  logic                   [OP_CNT -1:0] pipe_in_mask_valid_i,
-        output logic                   [OP_CNT -1:0] pipe_in_mask_ready_o,
+        input  logic                                 pipe_in_mask_valid_i,
+        output logic                                 pipe_in_mask_ready_o,
         input  logic               [MAX_OP_W/8 -1:0] pipe_in_mask_data_i,
 
         output logic                                 pipe_out_valid_o,
@@ -94,11 +94,11 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
     logic      [UNIT_CNT-1:0][XIF_ID_W              -1:0] unit_out_instr_id;
     cfg_vsew   [UNIT_CNT-1:0]                             unit_out_eew;
     logic      [UNIT_CNT-1:0][4:0]                        unit_out_vaddr;
-    logic      [UNIT_CNT-1:0][RES_CNT-1:0]                unit_out_res_store;
-    logic      [UNIT_CNT-1:0][RES_CNT-1:0]                unit_out_res_valid;
-    pack_flags [UNIT_CNT-1:0][RES_CNT-1:0]                unit_out_res_flags;
-    logic      [UNIT_CNT-1:0][RES_CNT-1:0][MAX_RES_W-1:0] unit_out_res_data;
-    logic      [UNIT_CNT-1:0][RES_CNT-1:0][MAX_RES_W-1:0] unit_out_res_mask;
+    logic      [UNIT_CNT-1:0]                unit_out_res_store;
+    logic      [UNIT_CNT-1:0]                unit_out_res_valid;
+    pack_flags [UNIT_CNT-1:0]                unit_out_res_flags;
+    logic      [UNIT_CNT-1:0][MAX_RES_W-1:0] unit_out_res_data;
+    logic      [UNIT_CNT-1:0][MAX_RES_W-1:0] unit_out_res_mask;
     logic      [UNIT_CNT-1:0]                             unit_out_pend_clear;
     logic      [UNIT_CNT-1:0][1:0]                        unit_out_pend_clear_cnt;
     logic      [UNIT_CNT-1:0]                             unit_out_instr_done;
@@ -240,7 +240,7 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
     logic [UNIT_CNT-1:0 ] unit_queue_deq_valid;
     for (genvar i = 0; i < UNIT_CNT; i++) begin
         if (UNITS[i]) begin
-            assign unit_queue_deq_valid[i] = unit_out_res_flags[i][0].last_cycle & unit_out_valid[i];
+            assign unit_queue_deq_valid[i] = unit_out_res_flags[i].last_cycle & unit_out_valid[i] & pipe_out_ready_i;
         end
     end
 

@@ -478,6 +478,8 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             state_init.mode.lsu.eew = pipe_in_data_i.mode.lsu.eew;
             state_init.mode.lsu.alt_count_lsu_use = 0;
 
+            state_init.op_flags[1].vreg   = 1'b0; //rs1 is always the base address for LSU (scalar value)
+            state_init.op_flags[1].xreg   = 1'b0; //This scalar value is passed separately
             unique case (pipe_in_data_i.mode.lsu.eew)
                 VSEW_8:  state_init.count_inc = COUNT_INC_1;
                 VSEW_16: state_init.count_inc = COUNT_INC_2;
@@ -565,7 +567,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         state_init.op_flags[1].narrow = pipe_in_data_i.widenarrow != OP_SINGLEWIDTH;
         state_init.op_vaddr[1]        = pipe_in_data_i.rs1.r.vaddr;
         state_init.op_xval [1]        = pipe_in_data_i.rs1.r.xval;
-        state_init.op_flags[1].xreg   = pipe_in_data_i.rs1.xreg;
+        state_init.op_flags[1].xreg   = unit_lsu ? 1'b0 : pipe_in_data_i.rs1.xreg; //dont set this bit for lsu
 
 
         state_init.op_flags[OP_CNT-1].vreg = DONT_CARE_ZERO ? 1'b0 : 1'bx;

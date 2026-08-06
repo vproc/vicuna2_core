@@ -33,8 +33,8 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         input  CTRL_T                                pipe_in_ctrl_i,
         input  logic    [OP_CNT -1:0][MAX_OP_W -1:0] pipe_in_op_data_i,
 
-        input  logic                   [OP_CNT -1:0] pipe_in_mask_valid_i,
-        output logic                   [OP_CNT -1:0] pipe_in_mask_ready_o,
+        input  logic                                 pipe_in_mask_valid_i,
+        output logic                                 pipe_in_mask_ready_o,
         input  logic               [MAX_OP_W/8 -1:0] pipe_in_mask_data_i,
 
         output logic                                 pipe_out_valid_o,
@@ -42,11 +42,11 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         output logic    [XIF_ID_W              -1:0] pipe_out_instr_id_o,
         output cfg_vsew                              pipe_out_eew_o,
         output logic    [4:0]                        pipe_out_vaddr_o,
-        output logic    [RES_CNT-1:0]                pipe_out_res_store_o,
-        output logic    [RES_CNT-1:0]                pipe_out_res_valid_o,
-        output pack_flags            [RES_CNT  -1:0] pipe_out_res_flags_o,
-        output logic    [RES_CNT-1:0][MAX_RES_W-1:0] pipe_out_res_data_o,
-        output logic    [RES_CNT-1:0][MAX_RES_W-1:0] pipe_out_res_mask_o,
+        output logic                                 pipe_out_res_store_o,
+        output logic                                 pipe_out_res_valid_o,
+        output pack_flags                            pipe_out_res_flags_o,
+        output logic                 [MAX_RES_W-1:0] pipe_out_res_data_o,
+        output logic                 [MAX_RES_W-1:0] pipe_out_res_mask_o,
         output logic                                 pipe_out_pend_clear_o,
         output logic    [1:0]                        pipe_out_pend_clear_cnt_o,
         output logic                                 pipe_out_instr_done_o,
@@ -75,19 +75,29 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
         output logic    [31:0]                       xreg_data_o
     );
 
-    logic [OP_CNT-1:0]  necessary_ops_test;
-    for (genvar i = 0; i < OP_CNT; i++) begin
-        assign necessary_ops_test[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
-    end
-    logic  [OP_CNT-1:0] valid_reduction_test;
-    assign valid_reduction_test =  &(~(pipe_in_valid_i ^ necessary_ops_test));
-
     generate
         if (UNIT == UNIT_LSU) begin
             CTRL_T                 unit_out_ctrl;
-            logic [MAX_OP_W  -1:0] unit_out_res [MEM_PORTS-1:0];
-            logic [MAX_OP_W/8-1:0] unit_out_mask [MEM_PORTS-1:0];
+            logic [MAX_OP_W  -1:0] unit_out_res;
+            logic [MAX_OP_W/8-1:0] unit_out_mask;
             logic [MEM_PORTS-1:0]  unit_out_valid;
+
+            //For LSU, only signal ready when all necessary operands are valid
+            logic [OP_CNT-1:0]  necessary_ops;
+            for (genvar i = 0; i < OP_CNT; i++) begin
+                assign necessary_ops[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
+            end
+
+            logic  unit_in_valid_i;
+            assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & (|pipe_in_valid_i | pipe_in_mask_valid_i); //Input valid only if all necessary ops are valid (including mask)
+
+            logic  unit_ready_in_o;
+            for (genvar i = 0; i < OP_CNT; i++) begin
+                assign pipe_in_ready_o[i] = unit_ready_in_o & unit_in_valid_i; //Unit ready only if all necessary ops are valid
+            end
+            assign pipe_in_mask_ready_o = unit_ready_in_o & unit_in_valid_i; //Mask ready synchronized with other arguments
+
+
             vproc_lsu #(
                 .MAX_OP_W                 ( MAX_OP_W                                    ),
                 .VMEM_W                   ( MEM_W                                       ),
@@ -104,12 +114,12 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 .clk_i                    ( clk_i                                       ),
                 .async_rst_ni             ( async_rst_ni                                ),
                 .sync_rst_ni              ( sync_rst_ni                                 ),
-                .pipe_in_valid_i          ( pipe_in_valid_i                             ),
-                .pipe_in_ready_o          ( pipe_in_ready_o                             ),
+                .pipe_in_valid_i          ( unit_in_valid_i                             ),
+                .pipe_in_ready_o          ( unit_ready_in_o                             ),
                 .pipe_in_ctrl_i           ( pipe_in_ctrl_i                              ),
                 .pipe_in_op1_i            ( pipe_in_op_data_i[0]                        ),
                 .pipe_in_op2_i            ( pipe_in_op_data_i[1]                        ),
-                .pipe_in_mask_i           ( pipe_in_op_data_i[OP_CNT-1][MAX_OP_W/8-1:0] ),
+                .pipe_in_mask_i           ( pipe_in_mask_data_i                         ),
                 .pipe_out_valid_o         ( unit_out_valid                              ),
                 .pipe_out_ready_i         ( pipe_out_ready_i                            ),
                 .pipe_out_ctrl_o          ( unit_out_ctrl                               ),
@@ -134,33 +144,38 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_flags_o = '{default: pack_flags'('0)};
                 pipe_out_res_mask_o  = '0;
                 pipe_out_valid_o = |unit_out_valid;
-                for(int i = 0; i < RES_CNT; i++) begin
-                    pipe_out_res_store_o[i] = 0;
-                    pipe_out_res_data_o[i] = '0;
-                    pipe_out_res_valid_o[i] = 0;
-                    pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = '0;
-                    pipe_out_res_flags_o[i].shift           = 0;
-                    pipe_out_res_flags_o[i].elemwise        = 0;
-                    pipe_out_res_flags_o[i].vreg_idx       = '0;
-                    pipe_out_res_flags_o[i].lsu_instr      = 0;
-                    pipe_out_res_flags_o[i].field_instr    = 0;
+                
+                for(int i = 0; i < 1; i++) begin
+                    pipe_out_res_store_o = 0;
+                    pipe_out_res_data_o = '0;
+                    pipe_out_res_valid_o = 0;
+                    pipe_out_res_mask_o [MAX_OP_W/8-1:0] = '0;
+                    pipe_out_res_flags_o.shift           = 0;
+                    pipe_out_res_flags_o.elemwise        = 0;
+                    pipe_out_res_flags_o.vreg_idx       = '0;
+                    pipe_out_res_flags_o.lsu_instr      = 0;
+                    pipe_out_res_flags_o.field_instr    = 0;
                     for(int j = 0; j < MEM_PORTS; j++) begin
                         if(i == unit_out_ctrl.field_counter[j] & unit_out_valid[j]) begin
-                            pipe_out_res_store_o[i] = unit_out_ctrl.res_store;
-                            pipe_out_res_data_o[i] = unit_out_res[j];
-                            pipe_out_res_valid_o[i] = unit_out_valid[j];
-                            pipe_out_res_mask_o [i][MAX_OP_W/8-1:0] = unit_out_mask[j];
-                            pipe_out_res_flags_o[i].shift           = unit_out_ctrl.res_shift;
-                            pipe_out_res_flags_o[i].elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
-                            pipe_out_res_flags_o[i].vreg_idx        = unit_out_ctrl.vreg_idx;
-                            pipe_out_res_flags_o[i].lsu_instr       = 1;
-                            pipe_out_res_flags_o[i].field_instr     = unit_out_ctrl.field_init_count > 0;
+                            pipe_out_res_store_o = unit_out_ctrl.res_store;
+                            pipe_out_res_data_o = unit_out_res;
+                            pipe_out_res_valid_o = unit_out_valid[j];
+                            pipe_out_res_mask_o [MAX_OP_W/8-1:0] = unit_out_mask;
+                            pipe_out_res_flags_o.shift           = unit_out_ctrl.res_shift;
+                            pipe_out_res_flags_o.elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
+                            pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
+                            pipe_out_res_flags_o.lsu_instr       = 1;
+                            pipe_out_res_flags_o.field_instr     = unit_out_ctrl.field_init_count > 0;
+                            pipe_out_res_flags_o.first_cycle     = unit_out_ctrl.first_cycle;
+                            pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
+                            pipe_out_instr_id_o = unit_out_ctrl.id;
                         end
                     end
                 end
             end
             assign pipe_out_pend_clear_cnt_o = '0;
             assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
+            
         end
         else if (UNIT == UNIT_ALU) begin
             CTRL_T                 unit_out_ctrl;
@@ -175,7 +190,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             end
 
             logic  unit_in_valid_i;
-            assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & |pipe_in_valid_i & pipe_in_mask_valid_i; //Input valid only if all necessary ops are valid (including mask)
+            assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & (|pipe_in_valid_i | pipe_in_mask_valid_i); //Input valid only if all necessary ops are valid (including mask)
 
             logic  unit_ready_in_o;
             for (genvar i = 0; i < OP_CNT; i++) begin
@@ -214,26 +229,26 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_data_o  = '0;
                 pipe_out_res_mask_o  = '0;
 
-                pipe_out_res_store_o[0]                 = unit_out_ctrl.res_store & ~unit_out_ctrl.mode.alu.cmp;
-                pipe_out_res_flags_o[0].shift           = unit_out_ctrl.res_shift;
-                pipe_out_res_flags_o[0].narrow          = unit_out_ctrl.res_narrow[0];
-                pipe_out_res_flags_o[0].narrow_frac     = unit_out_ctrl.res_narrow_frac;
-                pipe_out_res_flags_o[0].saturate        = unit_out_ctrl.mode.alu.sat_res;
-                pipe_out_res_flags_o[0].sig             = unit_out_ctrl.mode.alu.sigext;
-                pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
-                pipe_out_res_data_o [0]                 = unit_out_res_alu;
-                pipe_out_res_flags_o[0].first_cycle     = unit_out_ctrl.first_cycle;
-                pipe_out_res_flags_o[0].last_cycle     = unit_out_ctrl.last_cycle;
-                pipe_out_res_mask_o [0][MAX_OP_W/8-1:0] = unit_out_mask;
-                pipe_out_res_flags_o[0].vreg_idx        = unit_out_ctrl.vreg_idx;
+                pipe_out_res_store_o                 = unit_out_ctrl.res_store & ~unit_out_ctrl.mode.alu.cmp;
+                pipe_out_res_flags_o.shift           = unit_out_ctrl.res_shift;
+                pipe_out_res_flags_o.narrow          = unit_out_ctrl.res_narrow[0];
+                pipe_out_res_flags_o.narrow_frac     = unit_out_ctrl.res_narrow_frac;
+                pipe_out_res_flags_o.saturate        = unit_out_ctrl.mode.alu.sat_res;
+                pipe_out_res_flags_o.sig             = unit_out_ctrl.mode.alu.sigext;
+                pipe_out_res_valid_o                 = pipe_out_valid_o;
+                pipe_out_res_data_o                  = unit_out_res_alu;
+                pipe_out_res_flags_o.first_cycle     = unit_out_ctrl.first_cycle;
+                pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
+                pipe_out_res_mask_o [MAX_OP_W/8-1:0] = unit_out_mask;
+                pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
 
-                pipe_out_res_flags_o[1].mul_idx         = unit_out_ctrl.count_mul;
-                pipe_out_res_flags_o[1].vreg_idx        = unit_out_ctrl.vreg_idx;
-                pipe_out_res_flags_o[1].first_cycle     = unit_out_ctrl.first_cycle;
-                pipe_out_res_store_o[1]                 = unit_out_ctrl.res_store & unit_out_ctrl.mode.alu.cmp;
-                pipe_out_res_valid_o[1]                 = pipe_out_valid_o;
-                pipe_out_res_data_o [1][MAX_OP_W/8-1:0] = unit_out_res_cmp;
-                pipe_out_res_mask_o [1][MAX_OP_W/8-1:0] = unit_out_mask;
+                // pipe_out_res_flags_o[1].mul_idx         = unit_out_ctrl.count_mul;
+                // pipe_out_res_flags_o[1].vreg_idx        = unit_out_ctrl.vreg_idx;
+                // pipe_out_res_flags_o[1].first_cycle     = unit_out_ctrl.first_cycle;
+                // pipe_out_res_store_o[1]                 = unit_out_ctrl.res_store & unit_out_ctrl.mode.alu.cmp;
+                // pipe_out_res_valid_o[1]                 = pipe_out_valid_o;
+                // pipe_out_res_data_o [1][MAX_OP_W/8-1:0] = unit_out_res_cmp;
+                // pipe_out_res_mask_o [1][MAX_OP_W/8-1:0] = unit_out_mask;
             end
             assign pipe_out_pend_clear_o     = unit_out_ctrl.mode.alu.cmp ? unit_out_ctrl.last_cycle : unit_out_ctrl.res_store;
             assign pipe_out_pend_clear_cnt_o = '0;

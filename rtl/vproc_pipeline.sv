@@ -188,7 +188,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         metadata_i.vlmax                   = pipe_in_state_i.vlmax;
         metadata_i.vl_0                    = pipe_in_state_i.vl_0;
         metadata_i.vl_part                 = '1;  //TODO: Remove this, handle with mask
-        metadata_i.vl_part_0              = '0;  //TODO: Remove this, handle with mask
+        metadata_i.vl_part_0               = '0;  //TODO: Remove this, handle with mask
         metadata_i.xval                    = pipe_in_state_i.xval;//
         metadata_i.op_flags                = pipe_in_state_i.op_flags;
         metadata_i.op_init_vaddr           = pipe_in_state_i.op_vaddr;
@@ -199,8 +199,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         metadata_i.res_init_vaddr          = pipe_in_state_i.res_vaddr;
         metadata_i.res_narrow_frac         = pipe_in_state_i.res_narrow_frac;
         metadata_i.res_vaddr               = pipe_in_state_i.res_vaddr;
-        metadata_i.field_counter           = '0;
-        metadata_i.field_init_count        = '0;
+        metadata_i.field_counter           = '0; //set to 0 for not segment instructions
+        metadata_i.field_init_count        = '0; //set to 0 for non segment instructions
+        metadata_i.mem_req_valid           = pipe_in_state_i.unit == UNIT_LSU; //This signal should not be necessary
     end
 
     //////////

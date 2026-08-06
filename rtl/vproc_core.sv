@@ -892,7 +892,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .wr_data_i    ( vregfile_wr_data_q ),
         .wr_be_i      ( vregfile_wr_mask_q ),
         .wr_we_i      ( vregfile_wr_en_q   ),
-        .rd_addr_i    ( vreg_rd_addr[1]   ), //TODO: Add mux for read ports
+        .rd_addr_i    ( vreg_rd_addr[1]   ), //TODO: Add mux for read ports between pipelines
         .rd_data_o    ( vreg_rd_data[1]   )
     );
 
