@@ -29,23 +29,29 @@ module vproc_mem_port #(
     //Calculation of the request addr
     //TODO: Generation of multiple requests to enforce word aligment for reads/writes
     //////////
-    logic[31:0] req_addr, req_addr_q;
+    logic[31:0] req_addr_d, req_addr_q;
+    logic       valid_d, valid_q;
 
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
             req_addr_q <= '0;
+            valid_q <= '0;
         end else begin
-            req_addr_q <= req_addr;
+            req_addr_q <= req_addr_d;
+            valid_q <= valid_d;
+
         end
     end
 
     always_comb begin 
-        req_addr = req_addr_q;
+        req_addr_d = req_addr_q;
         if (valid_i & first_cycle) begin
-            req_addr = base_addr_i;
+            req_addr_d = base_addr_i;
         end else if (valid_i & ready_o) begin
-            req_addr = req_addr_q + PORT_WIDTH/8; //TODO: additional stride options
+            req_addr_d = req_addr_q + PORT_WIDTH/8; //TODO: additional stride options
         end
+
+        valid_d = valid_i & ready_o;
     end
 
     ///////////
@@ -81,14 +87,14 @@ module vproc_mem_port #(
     ///////////
     // Input handshake signals
     //////////
-    assign ready_o = !req_queue_full & obi_bus.gnt; //Ready for next input if queue is ready and obi bus is granted
+    assign ready_o = !req_queue_full; //Ready for next input if queue is ready and obi bus is granted
 
     ///////////
     // Generation of OBI memory request
     ///////////
 
-    assign obi_bus.req = !req_queue_full & valid_i; //TODO: Suppress requests if past end of vl or completely masked off
-    assign obi_bus.addr = req_addr;
+    assign obi_bus.req = !req_queue_full & valid_q; //TODO: Suppress requests if past end of vl or completely masked off
+    assign obi_bus.addr = req_addr_q;
     assign obi_bus.we   = 1'b0; //TODO: Support writes
     assign obi_bus.be   = mask_i;
     assign obi_bus.wdata = '0; //TODO: Support writes
@@ -217,7 +223,7 @@ module vproc_lsu #(
     fifo_v3 #(
     .FALL_THROUGH (1'b0      ),
     .dtype        (logic[1:0]), //TODO: Likely only need to buffer first/last_cycle signals
-    .DEPTH        (OUTSTANDING_REQ)
+    .DEPTH        (OUTSTANDING_REQ + 1) //due to latching of addresses in each port, an extra entry of metadata storage is required
     ) metadata_queue (
         .clk_i,
         .rst_ni     (sync_rst_ni),
