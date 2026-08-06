@@ -31,27 +31,33 @@ module vproc_mem_port #(
     //////////
     logic[31:0] req_addr_d, req_addr_q;
     logic       valid_d, valid_q;
+    logic[PORT_WIDTH/8-1:0] mask_d, mask_q;
 
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
             req_addr_q <= '0;
             valid_q <= '0;
+            mask_q <= '0;
         end else begin
             req_addr_q <= req_addr_d;
             valid_q <= valid_d;
-
+            mask_q <= mask_d;
         end
     end
 
     always_comb begin 
         req_addr_d = req_addr_q;
+        mask_d = mask_q;
         if (valid_i & first_cycle) begin
             req_addr_d = base_addr_i;
+            mask_d = mask_i;
         end else if (valid_i & ready_o) begin
             req_addr_d = req_addr_q + PORT_WIDTH/8; //TODO: additional stride options
+            mask_d = mask_i;
         end
 
         valid_d = valid_i & ready_o;
+
     end
 
     ///////////
@@ -59,12 +65,12 @@ module vproc_mem_port #(
     ///////////
 
     typedef struct packed {
-        logic[PORT_WIDTH-1:0] mask;
+        logic[PORT_WIDTH/8-1:0] mask;
         logic[$bits(obi_bus.rid)-1:0] req_id; //TODO: support out of order response of requests
     } req_metadata_t;
 
     req_metadata_t req_queue_data_in, req_queue_data_out;
-    assign req_queue_data_in.mask = mask_i;
+    assign req_queue_data_in.mask = mask_q;
     assign req_queue_data_in.req_id = '0;
 
     logic req_queue_full;
