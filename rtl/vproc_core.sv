@@ -873,13 +873,13 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic [VPORT_WR_CNT-1:0][VREG_W  -1:0] vregfile_wr_data_d;
     logic [VPORT_WR_CNT-1:0][VREG_W/8-1:0] vregfile_wr_mask_q /* verilator public */;
     logic [VPORT_WR_CNT-1:0][VREG_W/8-1:0] vregfile_wr_mask_d;
-    logic [VPORT_RD_CNT-1:0][4:0]          vregfile_rd_addr;
-    logic [VPORT_RD_CNT-1:0][VREG_W  -1:0] vregfile_rd_data;
+    logic [VPORT_RD_CNT:0][4:0]          vregfile_rd_addr; //
+    logic [VPORT_RD_CNT:0][VREG_W  -1:0] vregfile_rd_data;
     vproc_vregfile #(
         .VREG_W       ( VREG_W             ),
         .MAX_PORT_W   ( MAX_VPORT_W        ),
         .MAX_ADDR_W   ( MAX_VADDR_W        ),
-        .PORT_RD_CNT  ( VPORT_RD_CNT       ),
+        .PORT_RD_CNT  ( VPORT_RD_CNT       ), //extra dedicated v0 port
         .PORT_RD_W    ( VPORT_RD_W         ),
         .PORT_WR_CNT  ( VPORT_WR_CNT       ),
         .PORT_WR_W    ( VPORT_WR_W         ),
@@ -892,16 +892,16 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .wr_data_i    ( vregfile_wr_data_q ),
         .wr_be_i      ( vregfile_wr_mask_q ),
         .wr_we_i      ( vregfile_wr_en_q   ),
-        .rd_addr_i    ( vreg_rd_addr[1]   ), //TODO: Add mux for read ports between pipelines
-        .rd_data_o    ( vreg_rd_data[1]   )
+        .rd_addr_i    ( vregfile_rd_addr   ),
+        .rd_data_o    ( vregfile_rd_data   )
     );
 
     logic [VREG_W-1:0] vreg_mask;
-    assign vreg_mask           = vregfile_rd_data[0];
-    assign vregfile_rd_addr[0] = 5'b0;
+    // assign vreg_mask           = vregfile_rd_data[VPORT_RD_CNT];
+    // assign vregfile_rd_addr[VPORT_RD_CNT] = 5'b0;
 
     //Regfile arbiter has ensured only one pipeline can access each port in a single cycle (only one grant signal is given)
-    //generate  //TODO: Currently hardcoded to only one write port (are more even necessary?)
+    //generate  //TODO: Currently hardcoded to only one write port - Possible optimization for segmented loads to have more
         //for (genvar port = 0; port < NUM_PORTS_WR; port++) begin 
             always_comb begin
                 vregfile_wr_addr_q = '0;
@@ -909,7 +909,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 vregfile_wr_data_q = '0;
                 vregfile_wr_mask_q = '0;
                 for (int i = 0; i < PIPE_CNT; i ++) begin
-                    if (arb_wr_gnt_o == (1 << i)) begin //onehot mux
+                    if (arb_wr_gnt_o == (1 << i)) begin
                         vregfile_wr_addr_q = pipe_vreg_wr_addr[i];
                         vregfile_wr_en_q = arb_wr_gnt_o[i];
                         vregfile_wr_data_q = pipe_vreg_wr_data[i];
@@ -920,29 +920,19 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         //end
     //endgenerate
 
-
-    // generate
-    //     if (BUF_FLAGS[BUF_VREG_WR]) begin
-    //         always_ff @(posedge clk_i) begin
-    //             for (int i = 0; i < VPORT_WR_CNT; i++) begin
-    //                 vregfile_wr_en_q  [i] <= vregfile_wr_en_d  [i];
-    //                 vregfile_wr_addr_q[i] <= vregfile_wr_addr_d[i];
-    //                 vregfile_wr_data_q[i] <= vregfile_wr_data_d[i];
-    //                 vregfile_wr_mask_q[i] <= vregfile_wr_mask_d[i];
-    //             end
-    //         end
-    //     end else begin
-    //         always_comb begin
-    //             for (int i = 0; i < VPORT_WR_CNT; i++) begin
-    //                 vregfile_wr_en_q  [i] = vregfile_wr_en_d  [i];
-    //                 vregfile_wr_addr_q[i] = vregfile_wr_addr_d[i];
-    //                 vregfile_wr_data_q[i] = vregfile_wr_data_d[i];
-    //                 vregfile_wr_mask_q[i] = vregfile_wr_mask_d[i];
-    //             end
-    //         end
-    //     end
-    // endgenerate
-
+    generate
+        for (genvar port = 0; port < VPORT_RD_CNT; port++) begin 
+            always_comb begin
+                vregfile_rd_addr[port] = '0;
+                for (int pipe = 0; pipe < PIPE_CNT; pipe ++) begin
+                    vreg_rd_data[pipe][port] = vregfile_rd_data[port];
+                    if (|(arb_rd_gnt_o[pipe] & (1 << port))) begin
+                        vregfile_rd_addr[port] = vreg_rd_addr[pipe][port];
+                    end
+                end
+            end
+        end
+    endgenerate
     /////////////////////  Why does this exist
     // Pending reads
     logic [PIPE_CNT-1:0][31:0] pipe_vreg_pend_rd_by_q, pipe_vreg_pend_rd_by_d;
