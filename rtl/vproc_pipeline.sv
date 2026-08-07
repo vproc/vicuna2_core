@@ -174,7 +174,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         metadata_i.first_cycle             = 1'b1; // These should be set in vregunpack
         metadata_i.last_cycle              = 1'b1; // These should be set in vregunpack
         metadata_i.init_addr               = 1'b1;
-        metadata_i.masked                  = 1'b0;
+        metadata_i.masked                  = pipe_in_state_i.masked;
         metadata_i.requires_flush          = pipe_in_state_i.requires_flush;
         metadata_i.id                      = pipe_in_state_i.id;
         metadata_i.mode                    = pipe_in_state_i.mode;

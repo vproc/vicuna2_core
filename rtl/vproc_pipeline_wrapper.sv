@@ -232,6 +232,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         logic        [RES_CNT-1:0]       res_narrow;
         logic                            res_narrow_frac;
         logic                     [4 :0] res_vaddr;
+        logic                            masked;
     } state_t;
 
     // identify the unit of the supplied instruction
@@ -351,9 +352,11 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
 
     // set the initial pipeline state for the incoming instruction
     state_t state_init;
+    logic test;
+    assign test = pipe_in_data_i.masked;
     always_comb begin
         state_init = state_t'('0);
-
+        state_init.masked         = 1'b0;
         state_init.mode           = pipe_in_data_i.mode;
         state_init.emul           = pipe_in_data_i.emul;
         state_init.eew            = unit_lsu ? pipe_in_data_i.mode.lsu.eew : pipe_in_data_i.vsew;
@@ -582,7 +585,8 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         end
 
         if (unit_lsu) begin 
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.lsu.masked;
+            state_init.masked         = pipe_in_data_i.mode.lsu.masked;
+            //state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.lsu.masked;
             state_init.op_flags[0       ].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
             state_init.op_flags[1       ].vreg     =  pipe_in_data_i.mode.lsu.store;
             state_init.op_flags[1       ].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
@@ -595,7 +599,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             end
         end
         if (unit_alu) begin
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.alu.op_mask != ALU_MASK_NONE;
+            state_init.masked = pipe_in_data_i.mode.alu.op_mask;
             state_init.op_flags  [0        ].sigext =  pipe_in_data_i.mode.alu.sigext;
             state_init.op_flags  [1        ].sigext =  pipe_in_data_i.mode.alu.sigext;
             state_init.res_vreg  [0        ]        = ~pipe_in_data_i.mode.alu.cmp;
@@ -603,7 +607,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             state_init.res_vreg  [RES_CNT-1]        =  pipe_in_data_i.mode.alu.cmp;
         end
         if (unit_mul) begin
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.mul.masked;
+            state_init.masked = pipe_in_data_i.mode.mul.masked;
             state_init.op_vaddr[0]                          = pipe_in_data_i.mode.mul.op2_is_vd ? pipe_in_data_i.rd.addr : pipe_in_data_i.rs2.r.vaddr;
             state_init.op_flags[0].sigext                   = pipe_in_data_i.mode.mul.op2_signed;
             state_init.op_flags[1].sigext                   = pipe_in_data_i.mode.mul.op1_signed;
@@ -625,7 +629,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         end
         if (unit_fpu) begin
             //For widening ops always pad with 0s
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.fpu.masked;
+            state_init.masked = pipe_in_data_i.mode.fpu.masked;
             state_init.op_flags[0].sigext                   = 1'b0;
             state_init.op_flags[1].sigext                   = 1'b0;
             state_init.op_flags[0].elemwise                 = pipe_in_data_i.mode.fpu.op_reduction;
@@ -636,19 +640,19 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
 
         end
         if (unit_div) begin
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.div.masked;
+            state_init.masked = pipe_in_data_i.mode.div.masked;
         end
         if (unit_sld) begin
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.sld.masked;
+            state_init.masked = pipe_in_data_i.mode.sld.masked;
         end
         if (unit_elem) begin
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.elem.masked;
+            state_init.masked = pipe_in_data_i.mode.elem.masked;
         end
         if (unit_zvbb) begin
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbb.masked;
+            state_init.masked = pipe_in_data_i.mode.zvbb.masked;
         end
         if (unit_zvbc) begin
-            state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.zvbc.masked;
+            state_init.masked = pipe_in_data_i.mode.zvbc.masked;
         end
         if (unit_custom) begin
             /*
@@ -658,6 +662,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             * -Sign Extend ops using standard flow (ie not using vregunpack)
             * -Widening ops where custom FU performs widening (ie not using vregunpack)
             */
+            //state_init.masked
             state_init.op_flags[OP_CNT-1].vreg = 1'b0;
             state_init.op_flags[(OP_CNT >= 3) ? 2 : 0].vreg = 1'b1;
             state_init.op_vaddr[(OP_CNT >= 3) ? 2 : 0]      = pipe_in_data_i.rd.addr;

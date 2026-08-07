@@ -266,6 +266,8 @@ module mask_reg_shift_register
     //VREG Shift register
     logic [VREG_PORT_W-1:0] shift_reg_d, shift_reg_q; //Entire mask register loaded
 
+    logic [VREG_PORT_W-1:0] mask_reg_bytes; //translate mask register to byte register based on SEW
+
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
             shift_reg_q <= '0;
@@ -284,13 +286,31 @@ module mask_reg_shift_register
                 end
             end
         end else if(state_q == VREG_SHIFT && !ctrl_q.valid_data) begin
-            shift_reg_d = ctrl_q.masked ? vreg_rd_data_i & shift_reg_q : shift_reg_q; //If mask register needed, & with VL mask
+            shift_reg_d = ctrl_q.masked ? mask_reg_bytes & shift_reg_q : shift_reg_q; //If mask register needed, & with VL mask
         end else if (state_q == VREG_SHIFT) begin
             if (vfu_ready_i) begin
                 //TODO: Different shift patterns/rates should be handled here
                 shift_reg_d = {{(PIPE_OP_W/8){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/8]}; //standard shift case
             end
         end
+    end
+
+    always_comb begin
+        unique case (ctrl_q.eew)
+                VSEW_32: begin
+                    for (integer i = 0; i < VREG_PORT_W; i++) begin
+                        mask_reg_bytes[i] = vreg_rd_data_i[i>>2]; //every bit in mask register is 4 bits bytewise
+                    end
+                end
+                VSEW_16: begin
+                     for (integer i = 0; i < VREG_PORT_W; i++) begin
+                        mask_reg_bytes[i] = vreg_rd_data_i[i>>1]; //every bit in mask register is 4 bits bytewise
+                    end
+                end
+                VSEW_8:  begin
+                    mask_reg_bytes = vreg_rd_data_i;
+                end
+        endcase
     end
 
     //Output assignments
@@ -452,6 +472,7 @@ module vproc_vregunpack
         logic   [VPORT_CNT-1:0][MAX_VPORT_W-1:0] op_buffer;
         logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0] op_data;
         logic   [31:0]                           pend_wr_map;
+        logic                                    masked;
     } vregunpack_state_t;
 
     vregunpack_state_t metadata_d, metadata_q;
@@ -479,6 +500,7 @@ module vproc_vregunpack
             metadata_d.mem_req_valid = pipe_in_mem_req_valid_i;
             metadata_d.field_counter = pipe_in_field_counter_i;
             metadata_d.pend_wr_map = pend_wr_map_i & (~pend_wr_clear_i); //in case a pending write is cleared this cycle
+            metadata_d.masked = pipe_in_ctrl_i.masked;
         end
     end
 
@@ -540,7 +562,7 @@ module vproc_vregunpack
     assign mask_reg_gnt = ~metadata_q.pend_wr_map[0]; //mask reg can be read as long as there is not a pending write
 
     logic mask_done;
-
+    logic test = pipe_in_ctrl_i.masked;
     mask_reg_shift_register #(
         .VREG_PORT_W        (MAX_VPORT_W),
         .CFG_VL_W           (CFG_VL_W),
@@ -558,7 +580,7 @@ module vproc_vregunpack
 
         .vl_i(pipe_in_ctrl_i.vl),
         .vl_0_i(pipe_in_ctrl_i.vl_0),
-        .masked_i(pipe_in_ctrl_i.masked),
+        .masked_i(metadata_q.masked),
 
         .finished_o(mask_done),   //Currently last cycle signalling ignored for shift reg.
 
