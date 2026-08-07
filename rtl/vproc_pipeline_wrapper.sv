@@ -352,8 +352,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
 
     // set the initial pipeline state for the incoming instruction
     state_t state_init;
-    logic test;
-    assign test = pipe_in_data_i.masked;
     always_comb begin
         state_init = state_t'('0);
         state_init.masked         = 1'b0;

@@ -562,7 +562,6 @@ module vproc_vregunpack
     assign mask_reg_gnt = ~metadata_q.pend_wr_map[0]; //mask reg can be read as long as there is not a pending write
 
     logic mask_done;
-    logic test = pipe_in_ctrl_i.masked;
     mask_reg_shift_register #(
         .VREG_PORT_W        (MAX_VPORT_W),
         .CFG_VL_W           (CFG_VL_W),
