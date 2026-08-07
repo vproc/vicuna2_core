@@ -11,6 +11,8 @@ module vproc_mem_port #(
         input  logic                    sync_rst_ni,
 
         input  logic                    valid_i,
+        input  logic                    store_i,
+        input  logic[PORT_WIDTH-1:0]    data_i,
         output logic                    ready_o,
 
         input  logic                    first_cycle,
@@ -26,38 +28,49 @@ module vproc_mem_port #(
         output logic[PORT_WIDTH/8-1:0]  mask_o
 );
     //////////
-    //Calculation of the request addr
+    // Input Buffer and Calculation of the request addr
     //TODO: Generation of multiple requests to enforce word aligment for reads/writes
     //////////
     logic[31:0] req_addr_d, req_addr_q;
     logic       valid_d, valid_q;
     logic[PORT_WIDTH/8-1:0] mask_d, mask_q;
+    logic       store_d, store_q;
+    logic[PORT_WIDTH-1:0] data_d, data_q;
 
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
             req_addr_q <= '0;
             valid_q <= '0;
             mask_q <= '0;
+            store_q <= '0;
+            data_q <= '0;
         end else begin
             req_addr_q <= req_addr_d;
             valid_q <= valid_d;
             mask_q <= mask_d;
+            store_q <= store_d;
+            data_q <= data_d;
         end
     end
 
     always_comb begin 
         req_addr_d = req_addr_q;
         mask_d = mask_q;
-        if (valid_i & first_cycle) begin
-            req_addr_d = base_addr_i;
+        store_d = store_q;
+        data_d = data_q;
+
+        if (valid_i & ready_o) begin
             mask_d = mask_i;
-        end else if (valid_i & ready_o) begin
-            req_addr_d = req_addr_q + PORT_WIDTH/8; //TODO: additional stride options
-            mask_d = mask_i;
+            data_d = data_i;
+            if (first_cycle) begin
+                req_addr_d = base_addr_i;
+                store_d = store_i;
+            end else begin
+                req_addr_d = req_addr_q + PORT_WIDTH/8; //TODO: additional stride options
+            end
         end
 
         valid_d = valid_i & ready_o;
-
     end
 
     ///////////
@@ -101,9 +114,9 @@ module vproc_mem_port #(
 
     assign obi_bus.req = !req_queue_full & valid_q; //TODO: Suppress requests if past end of vl or completely masked off
     assign obi_bus.addr = req_addr_q;
-    assign obi_bus.we   = 1'b0; //TODO: Support writes
-    assign obi_bus.be   = mask_i;
-    assign obi_bus.wdata = '0; //TODO: Support writes
+    assign obi_bus.we   = store_q;
+    assign obi_bus.be   = mask_q;
+    assign obi_bus.wdata = data_q;
     assign obi_bus.aid = '0; //TODO: Support multiple outstanding requests
 
     //////////
@@ -188,6 +201,8 @@ module vproc_lsu #(
                 .clk_i(clk_i),
                 .sync_rst_ni(sync_rst_ni),
                 .valid_i(pipe_in_valid_i),
+                .store_i(pipe_in_ctrl_i.mode.lsu.store),
+                .data_i(pipe_in_op2_i),
                 .ready_o(ports_ready_i[i]),
                 .first_cycle(pipe_in_ctrl_i.first_cycle),
                 .base_addr_i(pipe_in_ctrl_i.op_xval[1]),

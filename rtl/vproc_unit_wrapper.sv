@@ -144,7 +144,6 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_flags_o = '{default: pack_flags'('0)};
                 pipe_out_res_mask_o  = '0;
                 pipe_out_valid_o = |unit_out_valid;
-                
                 for(int i = 0; i < 1; i++) begin
                     pipe_out_res_store_o = 0;
                     pipe_out_res_data_o = '0;
@@ -165,6 +164,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                             pipe_out_res_flags_o.elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
                             pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
                             pipe_out_res_flags_o.lsu_instr       = 1;
+                            pipe_out_res_flags_o.store           = unit_out_ctrl.mode.lsu.store;
                             pipe_out_res_flags_o.field_instr     = unit_out_ctrl.field_init_count > 0;
                             pipe_out_res_flags_o.first_cycle     = unit_out_ctrl.first_cycle;
                             pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;

@@ -462,6 +462,7 @@ typedef struct packed {
     logic       first_cycle;
     logic       last_cycle;
     logic       lsu_instr;
+    logic       store;
     logic       field_instr;
 } pack_flags;
 

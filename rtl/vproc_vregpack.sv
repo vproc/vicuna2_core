@@ -82,6 +82,7 @@ module vproc_vregpack #(
     logic [INSTR_ID_W            -1:0]          instr_id;
     logic                                       valid;
     logic                                       last_cycle;
+    logic                                       store;
     } repack_reg_ctrl;
 
     repack_reg_ctrl ctrl_d, ctrl_q;
@@ -97,8 +98,9 @@ module vproc_vregpack #(
 
     always_comb begin
         ctrl_d = ctrl_q;
-        ctrl_d.valid = pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !vreg_wr_gnt_i); //Hold valid signal if write port is blocked on last write
-        ctrl_d.last_cycle = (pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !vreg_wr_gnt_i);
+        ctrl_d.valid = pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store)); //Hold valid signal if write port is blocked on last write
+        ctrl_d.last_cycle = (pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store));
+        ctrl_d.store = pipe_in_res_flags_i[0].store;
         if (pipe_in_valid_i & pipe_in_res_flags_i[0].first_cycle ) begin
             //Load configuration from the pipeline  //TODO: Only one set of result flags should be passed through the pipeline
                 ctrl_d.current_vreg = pipe_in_vaddr_i;
@@ -108,7 +110,7 @@ module vproc_vregpack #(
         end else if (ctrl_q.valid) begin
             if (ctrl_q.shifts_remaining == '0) begin //Full register data ready to write
                 ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
-                if (vreg_wr_gnt_i) begin
+                if (vreg_wr_gnt_i | ctrl_q.store) begin
                     ctrl_d.shifts_remaining = '1; // only reset counter here if write can be performed this cycle
                 end
             end else begin
@@ -143,7 +145,7 @@ module vproc_vregpack #(
 
     always_comb begin
         if (pipe_in_valid_i) begin
-            if (!(ctrl_q.shifts_remaining == '0) || vreg_wr_gnt_i) begin
+            if (!(ctrl_q.shifts_remaining == '0) || ( vreg_wr_gnt_i | ctrl_q.store )) begin
                 shift_reg_d = {pipe_in_res_data_i, shift_reg_q[VPORT_W-1 : MAX_RES_W]}; //TODO:Will need special case shifts
                 shift_reg_mask_d = {pipe_in_res_mask_i[0][VPORT_W/8-1:0], shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/8]}; //TODO; Strange result signalling
             end
@@ -154,7 +156,7 @@ module vproc_vregpack #(
     // register write port logic
     //////
     always_comb begin
-        vreg_wr_req_o = (ctrl_q.shifts_remaining == '0) & ctrl_q.valid;  //Only write on last cycle and when the instruction is valid
+        vreg_wr_req_o = (ctrl_q.shifts_remaining == '0) & ctrl_q.valid & !ctrl_q.store;  //Only write on last cycle and when the instruction is valid
         vreg_wr_addr_o  = ctrl_q.current_vreg;
         vreg_wr_be_o    = shift_reg_mask_q;
         vreg_wr_data_o  = shift_reg_q;
@@ -163,7 +165,7 @@ module vproc_vregpack #(
 
     // signalling completion logic
     always_comb begin
-        instr_done_valid_o = vreg_wr_gnt_i & ctrl_q.valid & ctrl_q.last_cycle; //Done on last valid write
+        instr_done_valid_o = (vreg_wr_gnt_i | ctrl_q.store) & ctrl_q.valid & ctrl_q.last_cycle; //Done on last valid write
         instr_done_id_o = ctrl_q.instr_id;
     end
 

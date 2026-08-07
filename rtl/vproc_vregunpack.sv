@@ -256,7 +256,7 @@ module mask_reg_shift_register
     end
 
     //VREG Shift register
-    logic [VREG_PORT_W/8-1:0] shift_reg_d, shift_reg_q;
+    logic [VREG_PORT_W-1:0] shift_reg_d, shift_reg_q; //Entire mask register loaded
 
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
@@ -569,11 +569,9 @@ module vproc_vregunpack
 
     //get list of active shift regs.  Scalar input arguments are immediately marked valid as well
     logic [VPORT_CNT-1:0] active_and_valid;
-    logic [VPORT_CNT-1:0] test_xreg;
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
             assign active_and_valid[i] = shift_regs_valid[i] & metadata_q.op_flags[i].vreg | metadata_q.op_flags[i].xreg; //TODO: loads mark the "scalar" register as valid, although value is passed through metadata buffers.  Will be necessary to fix this for segmented improvements
-            assign test_xreg[i] = metadata_q.op_flags[i].xreg;
         end
     endgenerate
 

@@ -2413,7 +2413,7 @@ module vproc_decoder #(
         endcase
 
          if (unit_o == UNIT_LSU) begin
-
+             //Why is vl scaling?  Not necessary
             unique case ({mode_o.lsu.eew, vsew_i})
                 {VSEW_8 , VSEW_32}: begin   // EEW / SEW = 1 / 4
                     // use EMUL == 1 for fractional EMUL (LMUL < 4), VL is updated anyways
@@ -2427,7 +2427,7 @@ module vproc_decoder #(
                         LMUL_8:  emul_o = EMUL_2;
                         default: ;
                     endcase
-                    vl_o   = {2'b00, vl_i[CFG_VL_W-1:2]};
+                    //vl_o   = {2'b00, vl_i[CFG_VL_W-1:2]};
                 end
                 {VSEW_8 , VSEW_16},
                 {VSEW_16, VSEW_32}: begin   // EEW / SEW = 1 / 2
@@ -2441,7 +2441,7 @@ module vproc_decoder #(
                         LMUL_8:  emul_o = EMUL_4;
                         default: ;
                     endcase
-                    vl_o   = {1'b0, vl_i[CFG_VL_W-1:1]};
+                    //vl_o   = {1'b0, vl_i[CFG_VL_W-1:1]};
                 end
                 {VSEW_8 , VSEW_8 },
                 {VSEW_16, VSEW_16},
@@ -2456,7 +2456,7 @@ module vproc_decoder #(
                         LMUL_8:  emul_o = EMUL_8;
                         default: ;
                     endcase
-                    vl_o   = vl_i;
+                    //vl_o   = vl_i;
                 end
                 {VSEW_16, VSEW_8 },
                 {VSEW_32, VSEW_16}: begin   // EEW / SEW = 2
@@ -2469,7 +2469,7 @@ module vproc_decoder #(
                         LMUL_4:  emul_o = EMUL_8;
                         default: ;
                     endcase
-                    vl_o   = {vl_i[CFG_VL_W-2:0], 1'b1};
+                    //vl_o   = {vl_i[CFG_VL_W-2:0], 1'b1};
                 end
                 {VSEW_32, VSEW_8 }: begin   // EEW / SEW = 4
                     unique case (lmul_i)
@@ -2480,16 +2480,16 @@ module vproc_decoder #(
                         LMUL_2:  emul_o = EMUL_8;
                         default: ;
                     endcase
-                    vl_o   = {vl_i[CFG_VL_W-3:0], 2'b11};
+                    //vl_o   = {vl_i[CFG_VL_W-3:0], 2'b11};
                 end
                 default: ;
             endcase
-            
-            if(mode_o.lsu.stride == LSU_INDEXED) begin
-                // vl does not need to be scaled since for indexed stride
-                // we use default sew and lmul
-            	vl_o = vl_i;
-            end
+            vl_o = vl_i;
+            // if(mode_o.lsu.stride == LSU_INDEXED) begin
+            //     // vl does not need to be scaled since for indexed stride
+            //     // we use default sew and lmul
+            // 	vl_o = vl_i;
+            // end
             
         `ifdef RISCV_ZVE32F
 
