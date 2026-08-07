@@ -879,8 +879,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .VREG_W       ( VREG_W             ),
         .MAX_PORT_W   ( MAX_VPORT_W        ),
         .MAX_ADDR_W   ( MAX_VADDR_W        ),
-        .PORT_RD_CNT  ( VPORT_RD_CNT       ), //extra dedicated v0 port
-        .PORT_RD_W    ( VPORT_RD_W         ),
+        .PORT_RD_CNT  ( VPORT_RD_CNT  + 1  ), //extra dedicated v0 port
         .PORT_WR_CNT  ( VPORT_WR_CNT       ),
         .PORT_WR_W    ( VPORT_WR_W         ),
         .VREG_TYPE    ( VREG_TYPE          )
@@ -897,8 +896,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     );
 
     logic [VREG_W-1:0] vreg_mask;
-    // assign vreg_mask           = vregfile_rd_data[VPORT_RD_CNT];
-    // assign vregfile_rd_addr[VPORT_RD_CNT] = 5'b0;
+    assign vreg_mask           = vregfile_rd_data[VPORT_RD_CNT];
+    assign vregfile_rd_addr[VPORT_RD_CNT] = 5'b0;
 
     //Regfile arbiter has ensured only one pipeline can access each port in a single cycle (only one grant signal is given)
     //generate  //TODO: Currently hardcoded to only one write port - Possible optimization for segmented loads to have more
