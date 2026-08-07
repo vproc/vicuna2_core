@@ -462,6 +462,7 @@ module vproc_vregunpack
         METADATA_T                               ctrl;
         op_unit                                  unit; //Most of these should already be present inside of metadata_t
         cfg_vsew                                 eew;
+        cfg_emul                                 emul;
         cfg_vsew                                 alt_eew;
         logic   [MEM_PORTS-1:0]                  mem_req_valid;
         logic   [MEM_PORTS-1:0][2:0]             field_counter;
@@ -493,6 +494,7 @@ module vproc_vregunpack
             metadata_d.unit     = pipe_in_unit_i;
             metadata_d.alt_eew  = pipe_in_alt_eew_i;
             metadata_d.eew      = pipe_in_eew_i;
+            metadata_d.emul     = pipe_in_ctrl_i.emul;
             metadata_d.op_load  = pipe_in_op_load_i;
             metadata_d.op_vaddr = pipe_in_op_vaddr_i;
             metadata_d.op_flags = pipe_in_op_flags_i;
@@ -533,7 +535,7 @@ module vproc_vregunpack
                 .pipe_in_valid_i(shift_reg_in_valid_q & (metadata_q.op_flags[i].vreg | metadata_q.op_flags[i].xreg)),
                 .shift_reg_ready_o(shift_regs_ready[i]),
                 .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
-                .operand_emul_i(pipe_in_ctrl_i.emul), 
+                .operand_emul_i(metadata_q.emul), 
                 .operand_vaddr_base_i(metadata_q.op_vaddr[i]), 
 
                 .use_xval_i(metadata_q.op_flags[i].xreg),
@@ -575,7 +577,7 @@ module vproc_vregunpack
         .pipe_in_valid_i(shift_reg_in_valid_q), //Mask shift reg triggered for every instruction
         .shift_reg_ready_o(mask_reg_ready),
         .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
-        .operand_emul_i(pipe_in_ctrl_i.emul),
+        .operand_emul_i(metadata_q.emul),
 
         .vl_i(pipe_in_ctrl_i.vl),
         .vl_0_i(pipe_in_ctrl_i.vl_0),

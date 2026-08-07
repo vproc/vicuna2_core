@@ -250,6 +250,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
 
     // identify the type of data that vs2 supplies for ELEM instructions
     logic elem_flush, elem_vs2_data, elem_vs2_mask, elem_vs2_dyn_addr;
+
     always_comb begin
         elem_flush        = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         elem_vs2_data     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
@@ -472,7 +473,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 default: ;
             endcase
         end
-
         if (unit_lsu) begin 
             state_init.count_inc = DONT_CARE_ZERO ? count_inc_e'('0) : count_inc_e'('x);
             state_init.mode.lsu.alt_eew  = pipe_in_data_i.mode.lsu.eew;
@@ -515,7 +515,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 endcase
 
                 state_init.mode.lsu.alt_emul = pipe_in_data_i.emul;
-                state_init.emul = pipe_in_data_i.mode.lsu.alt_emul;
+                //state_init.emul = pipe_in_data_i.mode.lsu.alt_emul;
             end
         end
 

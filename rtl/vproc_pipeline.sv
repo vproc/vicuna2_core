@@ -166,7 +166,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         logic                          vreg_idx;
         logic                          count_mul;
         logic                          field_done;
-    } metadata_t;  //TODO: Rename this struct to metadata_t
+    } metadata_t;
 
     metadata_t metadata_i;
 
