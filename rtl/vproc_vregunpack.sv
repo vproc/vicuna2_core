@@ -131,7 +131,15 @@ module vreg_shift_register
     always_comb begin
         shift_reg_d = shift_reg_q;
         if(state_q == VREG_SHIFT && ctrl_q.shifts_remaining == '0) begin
-            shift_reg_d = use_xval_i ? {(VREG_PORT_W/32){xval_i}} : vreg_rd_data_i;
+            if (use_xval_i) begin
+                unique case (ctrl_q.eew)
+                           VSEW_32: shift_reg_d = {(VREG_PORT_W/32){xval_i[31:0]}};
+                           VSEW_16: shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
+                           VSEW_8:  shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
+                endcase
+            end else begin
+                shift_reg_d = vreg_rd_data_i;
+            end
         end else if (state_q == VREG_SHIFT) begin
             if (vfu_ready_i) begin
                 //TODO: Different shift patterns/rates should be handled here
