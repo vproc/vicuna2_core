@@ -79,11 +79,17 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
 
     // Ready signal
     logic [UNIT_CNT-1:0][OP_CNT -1:0] unit_in_ready;
+    logic [UNIT_CNT-1:0]              unit_mask_in_ready;
+
     always_comb begin
         pipe_in_ready_o = '0;
+        pipe_in_mask_ready_o = '0;
         for (int i = 0; i < UNIT_CNT; i++) begin
             if (UNITS[i] & |pipe_in_valid_i & (op_unit'(i) == pipe_in_ctrl_i.unit)) begin
                 pipe_in_ready_o = unit_in_ready[i];
+            end
+            if (UNITS[i] & |pipe_in_mask_valid_i & (op_unit'(i) == pipe_in_ctrl_i.unit)) begin
+                pipe_in_mask_ready_o = unit_mask_in_ready[i];
             end
         end
     end
@@ -109,9 +115,12 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
             if (UNITS[i]) begin
                 // Input logic
                 logic [OP_CNT -1:0] unit_valid;
+                logic               unit_mask_valid;
                 for (genvar j = 0; j < OP_CNT; j++) begin
                     assign unit_valid[j] = pipe_in_valid_i[j] & (pipe_in_ctrl_i.unit == op_unit'(i));
+                    
                 end
+                assign unit_mask_valid = pipe_in_mask_valid_i & (pipe_in_ctrl_i.unit == op_unit'(i));
                 // LSU-related signals
                 OBI_BUS #(
                     .OBI_CFG     ( OBI_CFG   )
@@ -158,8 +167,8 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                     .pipe_in_ready_o           ( unit_in_ready          [i] ),
                     .pipe_in_ctrl_i            ( pipe_in_ctrl_i             ),
                     .pipe_in_op_data_i         ( pipe_in_op_data_i          ),
-                    .pipe_in_mask_valid_i      ( pipe_in_mask_valid_i       ),
-                    .pipe_in_mask_ready_o      ( pipe_in_mask_ready_o       ),
+                    .pipe_in_mask_valid_i      ( unit_mask_valid            ),
+                    .pipe_in_mask_ready_o      ( unit_mask_in_ready[i]      ),
                     .pipe_in_mask_data_i       ( pipe_in_mask_data_i        ),
                     .pipe_out_valid_o          ( unit_out_valid         [i] ),
                     .pipe_out_ready_i          ( pipe_out_ready_i           ),

@@ -128,13 +128,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
     // - ELEM unit additionally requires indices -3 and -2, hence a minimum of 5 operands
     // - if MUL and ELEM units are both present in same pipeline, then all 6 operands are required
     // - in case a pipeline contains only the SLD unit the operand count is 2 (indices 0 and -1)
-    localparam int unsigned OP_CNT        = (UNITS[UNIT_MUL] | UNITS[UNIT_FPU] | UNITS[UNIT_CUSTOM]) ? (
-                                                UNITS[UNIT_ELEM] ? 6 : 4
-                                            ) : (
-                                                UNITS[UNIT_ELEM] ? 5 : (
-                                                    (UNITS == (UNIT_CNT'(1) << UNIT_SLD)) ? 2 : 3
-                                                )
-                                            );
+    localparam int unsigned OP_CNT        = 3; //OP_COUNT NOW FIXED TO # REG FILE PORTS.  TODO: CAN Potentially reduce number based on actual units
 
     // Operand source ports and unpack stages
     // TODO: figure out a proper way to deal with operands using the alternative counter (which are

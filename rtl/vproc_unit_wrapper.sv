@@ -258,6 +258,23 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             CTRL_T                 unit_out_ctrl;
             logic [MAX_OP_W  -1:0] unit_out_res;
             logic [MAX_OP_W/8-1:0] unit_out_mask;
+
+            //For MUL, only signal ready when all necessary operands are valid
+            logic [OP_CNT-1:0]  necessary_ops;
+            for (genvar i = 0; i < OP_CNT; i++) begin
+                assign necessary_ops[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
+            end
+
+            logic  unit_in_valid_i;
+            assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & (|pipe_in_valid_i | pipe_in_mask_valid_i); //Input valid only if all necessary ops are valid (including mask)
+
+            logic  unit_ready_in_o;
+            for (genvar i = 0; i < OP_CNT; i++) begin
+                assign pipe_in_ready_o[i] = unit_ready_in_o & unit_in_valid_i; //Unit ready only if all necessary ops are valid
+            end
+            assign pipe_in_mask_ready_o = unit_ready_in_o & unit_in_valid_i; //Mask ready synchronized with other arguments
+
+
             vproc_mul #(
                 .MUL_OP_W         ( MAX_OP_W                                    ),
                 .MUL_TYPE         ( MUL_TYPE                                    ),
@@ -267,13 +284,13 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 .clk_i            ( clk_i                                       ),
                 .async_rst_ni     ( async_rst_ni                                ),
                 .sync_rst_ni      ( sync_rst_ni                                 ),
-                .pipe_in_valid_i  ( pipe_in_valid_i                             ),
-                .pipe_in_ready_o  ( pipe_in_ready_o                             ),
+                .pipe_in_valid_i  ( unit_in_valid_i                             ),
+                .pipe_in_ready_o  ( unit_ready_in_o                             ),
                 .pipe_in_ctrl_i   ( pipe_in_ctrl_i                              ),
                 .pipe_in_op1_i    ( pipe_in_op_data_i[1]                        ),
                 .pipe_in_op2_i    ( pipe_in_op_data_i[0]                        ),
                 .pipe_in_op3_i    ( pipe_in_op_data_i[2]                        ),
-                .pipe_in_mask_i   ( pipe_in_op_data_i[OP_CNT-1][MAX_OP_W/8-1:0] ),
+                .pipe_in_mask_i   ( pipe_in_mask_data_i                         ),
                 .pipe_out_valid_o ( pipe_out_valid_o                            ),
                 .pipe_out_ready_i ( pipe_out_ready_i                            ),
                 .pipe_out_ctrl_o  ( unit_out_ctrl                               ),
@@ -289,12 +306,14 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_flags_o = '{default: pack_flags'('0)};
                 pipe_out_res_data_o  = '0;
                 pipe_out_res_mask_o  = '0;
-                pipe_out_res_flags_o[0].shift           = 1'b1;
-                pipe_out_res_store_o[0]                 = unit_out_ctrl.res_store;
-                pipe_out_res_valid_o[0]                 = pipe_out_valid_o;
-                pipe_out_res_data_o [0]                 = unit_out_res;
-                pipe_out_res_mask_o [0][MAX_OP_W/8-1:0] = unit_out_mask;
-                pipe_out_res_flags_o[0].vreg_idx        = unit_out_ctrl.vreg_idx;
+                pipe_out_res_flags_o.shift           = 1'b1;
+                pipe_out_res_store_o                 = unit_out_ctrl.res_store;
+                pipe_out_res_valid_o                 = pipe_out_valid_o;
+                pipe_out_res_data_o                  = unit_out_res;
+                pipe_out_res_mask_o [MAX_OP_W/8-1:0] = unit_out_mask;
+                pipe_out_res_flags_o.first_cycle        = unit_out_ctrl.first_cycle;
+                pipe_out_res_flags_o.last_cycle         = unit_out_ctrl.last_cycle;
+                pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
             end
             assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
             assign pipe_out_pend_clear_cnt_o = '0;

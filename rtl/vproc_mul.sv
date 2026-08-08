@@ -190,9 +190,7 @@ module vproc_mul #(
     assign operand_mask_d    = pipe_in_mask_i;
 
     // result byte mask
-    logic [MUL_OP_W/8-1:0] vl_mask;
-    assign vl_mask        = ~state_ex1_q.vl_part_0 ? ({(MUL_OP_W/8){1'b1}} >> (~state_ex1_q.vl_part)) : '0;
-    assign result_mask1_d = (state_ex1_q.mode.mul.masked ? operand_mask_q : {(MUL_OP_W/8){1'b1}}) & vl_mask;
+    assign result_mask1_d = operand_mask_q;
 
     assign result_mask2_d = result_mask1_q;
     assign result_mask3_d = result_mask2_q;
