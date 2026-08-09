@@ -425,8 +425,9 @@ typedef enum logic [1:0] {
 typedef struct packed {
     logic vreg;
     logic xreg;
-    op_shift_rate shift_rate;
-    logic sign;
+    op_shift_rate   shift_rate;
+    logic           sign;
+    cfg_vsew        sew;
 `ifdef VPROC_OP_REGS_UNION
     union {
 `else
@@ -458,6 +459,7 @@ typedef struct packed {
     logic first_cycle;
     op_shift_rate shift_rate;
     logic sign;
+    cfg_vsew        sew;
 } unpack_flags;
 
 // result store info structure

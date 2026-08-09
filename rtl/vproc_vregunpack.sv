@@ -653,7 +653,7 @@ module vproc_vregunpack
         .shift_reg_ready_o(mask_reg_ready),
         .operand_eew_i(metadata_q.eew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
         .operand_emul_i(metadata_q.emul),
-        .operand_shift_rate_i(metadata_q.ctrl.op_flags[0].shift_rate), //TODO: Currently based off of OP0 shift rate
+        .operand_shift_rate_i(metadata_q.ctrl.op_flags[1].shift_rate), //TODO: Currently based off of OP1 shift rate
         
         .vl_i(metadata_q.ctrl.vl),
         .vl_0_i(metadata_q.ctrl.vl_0),

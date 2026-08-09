@@ -117,6 +117,7 @@ module vproc_decoder #(
         rs1_o.r.vaddr = DONT_CARE_ZERO ? '0 : 'x;
         rs1_o.shift_rate    = SHIFT_FULL_WIDTH;
         rs1_o.sign    = 1'b0;
+        rs1_o.sew     = vsew_o;
 
         rs2_o.vreg    = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rs2_o.xreg    = 1'b0;
@@ -124,6 +125,7 @@ module vproc_decoder #(
         rs2_o.r.vaddr = DONT_CARE_ZERO ? '0 : 'x;
         rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
         rs2_o.sign    = 1'b0;
+        rs1_o.sew     = vsew_o;
 
 
         rd_o.vreg     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
@@ -746,7 +748,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
                             rs1_o.sign          = 1'b0;
                             rs2_o.sign          = 1'b0;
                         end
@@ -764,7 +766,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
                             rs1_o.sign        = 1'b1;
                             rs2_o.sign        = 1'b1;
                         end
@@ -782,7 +784,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
                             rs1_o.sign        = 1'b0;
                             rs2_o.sign        = 1'b0;
                         end
@@ -800,7 +802,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
                             rs1_o.sign        = 1'b1;
                             rs2_o.sign        = 1'b1;
                         end
