@@ -22,6 +22,7 @@ module vreg_shift_register
     input  vproc_pkg::cfg_emul                    operand_emul_i,
     input  logic [VADDR_W-1:0]              operand_vaddr_base_i,
     input  vproc_pkg::op_shift_rate         operand_shift_rate_i,
+    input  logic                                  operand_sign_i,
 
     input  logic                                      use_xval_i,
     input  logic [31:0]                                   xval_i,
@@ -49,6 +50,7 @@ module vreg_shift_register
     logic [$clog2((VREG_PORT_W * 4) / PIPE_OP_W)-1:0] shifts_remaining; //TODO: EXTEND FOR ELEMWISE
     logic                   valid_data;
     vproc_pkg::op_shift_rate shift_rate;
+    logic                    sign;
     } shift_reg_ctrl;
 
     shift_reg_ctrl ctrl_d, ctrl_q;
@@ -87,6 +89,7 @@ module vreg_shift_register
                     ctrl_d.eew = operand_eew_i;
                     ctrl_d.valid_data = 1'b0;
                     ctrl_d.shift_rate = operand_shift_rate_i;
+                    ctrl_d.sign = operand_sign_i;
                     unique case ({operand_emul_i, operand_shift_rate_i}) //Destination EMUL is given to unpack.  Select number of source registers to read based on destination emul and shift rate
                         {EMUL_1, SHIFT_QUARTER_WIDTH},  // Read one register minimum for fractional emuls
                         {EMUL_1, SHIFT_HALF_WIDTH}, 
@@ -189,12 +192,12 @@ module vreg_shift_register
                                     unique case (ctrl_q.eew)  //Destination SEW is passed here, so SEW8 is not possible
                                         VSEW_32: begin
                                             for (integer i = 0; i < PIPE_OP_W/32; i++) begin
-                                                vfu_data_o[32*i +: 32] = {{(16){1'b0}}, shift_reg_q[16 * i +: 16]};
+                                                vfu_data_o[32*i +: 32] = {{(16){ctrl_d.sign & shift_reg_q[16*i + 15]}}, shift_reg_q[16 * i +: 16]};
                                             end
                                         end
                                         VSEW_16:  begin
                                             for (integer i = 0; i < PIPE_OP_W/16; i++) begin
-                                                vfu_data_o[16*i +: 16] = {{(8){1'b0}}, shift_reg_q[8 * i +: 8]};
+                                                vfu_data_o[16*i +: 16] = {{(8){ctrl_d.sign & shift_reg_q[8*i + 7]}}, shift_reg_q[8 * i +: 8]};
                                             end
                                         end
                                     endcase
@@ -203,7 +206,7 @@ module vreg_shift_register
                                     unique case (ctrl_q.eew)  //Destination SEW is passed here, so SEW8 and SEW16 is not possible
                                         VSEW_32: begin
                                             for (integer i = 0; i < PIPE_OP_W/32; i++) begin
-                                                vfu_data_o[32*i +: 32] = {{(24){1'b0}}, shift_reg_q[8 * i +: 8]};
+                                                vfu_data_o[32*i +: 32] = {{(24){ctrl_d.sign & shift_reg_q[8*i + 7]}}, shift_reg_q[8 * i +: 8]};
                                             end
                                         end
                                     endcase
@@ -607,7 +610,8 @@ module vproc_vregunpack
                 .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
                 .operand_emul_i(metadata_q.emul), 
                 .operand_vaddr_base_i(metadata_q.op_vaddr[i]),
-                .operand_shift_rate_i(metadata_q.ctrl.op_flags[i].shift_rate), 
+                .operand_shift_rate_i(metadata_q.ctrl.op_flags[i].shift_rate),
+                .operand_sign_i(metadata_q.ctrl.op_flags[i].sign), 
 
                 .use_xval_i(metadata_q.op_flags[i].xreg),
                 .xval_i(metadata_q.op_xval[i]),

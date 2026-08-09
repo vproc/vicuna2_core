@@ -116,12 +116,14 @@ module vproc_decoder #(
         rs1_o.r.xval  = DONT_CARE_ZERO ? '0 : 'x;
         rs1_o.r.vaddr = DONT_CARE_ZERO ? '0 : 'x;
         rs1_o.shift_rate    = SHIFT_FULL_WIDTH;
+        rs1_o.sign    = 1'b0;
 
         rs2_o.vreg    = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rs2_o.xreg    = 1'b0;
         rs2_o.r.xval  = DONT_CARE_ZERO ? '0 : 'x;
         rs2_o.r.vaddr = DONT_CARE_ZERO ? '0 : 'x;
         rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
+        rs2_o.sign    = 1'b0;
 
 
         rd_o.vreg     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
@@ -673,6 +675,8 @@ module vproc_decoder #(
                             widenarrow_o        = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b110001, 3'b010},        // vwadd VV
                         {6'b110001, 3'b110}: begin  // vwadd VX
@@ -689,6 +693,8 @@ module vproc_decoder #(
                             widenarrow_o        = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b1;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b110010, 3'b010},        // vwsubu VV
                         {6'b110010, 3'b110}: begin  // vwsubu VX
@@ -705,6 +711,8 @@ module vproc_decoder #(
                             widenarrow_o        = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b110011, 3'b010},        // vwsub VV
                         {6'b110011, 3'b110}: begin  // vwsub VX
@@ -721,6 +729,8 @@ module vproc_decoder #(
                             widenarrow_o        = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b1;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b110100, 3'b010},        // vwaddu.w VV
                         {6'b110100, 3'b110}: begin  // vwaddu.w VX
@@ -737,6 +747,8 @@ module vproc_decoder #(
                             widenarrow_o        = OP_WIDENING_VS2;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign          = 1'b0;
+                            rs2_o.sign          = 1'b0;
                         end
                         {6'b110101, 3'b010},        // vwadd.w VV
                         {6'b110101, 3'b110}: begin  // vwadd.w VX
@@ -753,6 +765,8 @@ module vproc_decoder #(
                             widenarrow_o        = OP_WIDENING_VS2;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b1;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b110110, 3'b010},        // vwsubu.w VV
                         {6'b110110, 3'b110}: begin  // vwsubu.w VX
@@ -769,6 +783,8 @@ module vproc_decoder #(
                             widenarrow_o        = OP_WIDENING_VS2;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b110111, 3'b010},        // vwsub.w VV
                         {6'b110111, 3'b110}: begin  // vwsub.w VX
@@ -785,6 +801,8 @@ module vproc_decoder #(
                             widenarrow_o        = OP_WIDENING_VS2;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b1;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b010000, 3'b000},        // vadc VV
                         {6'b010000, 3'b011},        // vadc VI
@@ -1435,6 +1453,8 @@ module vproc_decoder #(
                             widenarrow_o          = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b111010, 3'b010},        // vwmulsu VV
                         {6'b111010, 3'b110}: begin  // vwmulsu VX
@@ -1449,6 +1469,8 @@ module vproc_decoder #(
                             widenarrow_o          = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b111011, 3'b010},        // vwmul VV
                         {6'b111011, 3'b110}: begin  // vwmul VX
@@ -1463,6 +1485,8 @@ module vproc_decoder #(
                             widenarrow_o          = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b1;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b111100, 3'b010},        // vwmaccu VV
                         {6'b111100, 3'b110}: begin  // vwmaccu VX
@@ -1477,6 +1501,8 @@ module vproc_decoder #(
                             widenarrow_o          = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b111101, 3'b010},        // vwmacc VV
                         {6'b111101, 3'b110}: begin  // vwmacc VX
@@ -1503,6 +1529,8 @@ module vproc_decoder #(
                             widenarrow_o          = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b111111, 3'b010},        // vwmaccsu VV
                         {6'b111111, 3'b110}: begin  // vwmaccsu VX
@@ -1517,6 +1545,8 @@ module vproc_decoder #(
                             widenarrow_o          = OP_WIDENING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b1;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b100111, 3'b000},        // vsmul VV
                         {6'b100111, 3'b100}: begin  // vsmul VX

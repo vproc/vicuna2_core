@@ -426,6 +426,7 @@ typedef struct packed {
     logic vreg;
     logic xreg;
     op_shift_rate shift_rate;
+    logic sign;
 `ifdef VPROC_OP_REGS_UNION
     union {
 `else
@@ -456,6 +457,7 @@ typedef struct packed {
     logic field_instr;
     logic first_cycle;
     op_shift_rate shift_rate;
+    logic sign;
 } unpack_flags;
 
 // result store info structure
