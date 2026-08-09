@@ -115,14 +115,19 @@ module vproc_decoder #(
         rs1_o.xreg    = 1'b0;
         rs1_o.r.xval  = DONT_CARE_ZERO ? '0 : 'x;
         rs1_o.r.vaddr = DONT_CARE_ZERO ? '0 : 'x;
+        rs1_o.shift_rate    = SHIFT_FULL_WIDTH;
 
         rs2_o.vreg    = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rs2_o.xreg    = 1'b0;
         rs2_o.r.xval  = DONT_CARE_ZERO ? '0 : 'x;
         rs2_o.r.vaddr = DONT_CARE_ZERO ? '0 : 'x;
+        rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
+
 
         rd_o.vreg     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rd_o.addr     = instr_vd;
+        //rd_o.shift_rate    = SHIFT_FULL_WIDTH;  TODO: Will need to resolve this for widening MAC
+
         `endif
 
         widenarrow_o  = OP_SINGLEWIDTH;
@@ -666,6 +671,8 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b110001, 3'b010},        // vwadd VV
                         {6'b110001, 3'b110}: begin  // vwadd VX
@@ -680,6 +687,8 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b110010, 3'b010},        // vwsubu VV
                         {6'b110010, 3'b110}: begin  // vwsubu VX
@@ -694,6 +703,8 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b110011, 3'b010},        // vwsub VV
                         {6'b110011, 3'b110}: begin  // vwsub VX
@@ -708,6 +719,8 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b110100, 3'b010},        // vwaddu.w VV
                         {6'b110100, 3'b110}: begin  // vwaddu.w VX
@@ -722,6 +735,8 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b110101, 3'b010},        // vwadd.w VV
                         {6'b110101, 3'b110}: begin  // vwadd.w VX
@@ -736,6 +751,8 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b110110, 3'b010},        // vwsubu.w VV
                         {6'b110110, 3'b110}: begin  // vwsubu.w VX
@@ -750,6 +767,8 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b110111, 3'b010},        // vwsub.w VV
                         {6'b110111, 3'b110}: begin  // vwsub.w VX
@@ -764,6 +783,8 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b010000, 3'b000},        // vadc VV
                         {6'b010000, 3'b011},        // vadc VI
@@ -1412,6 +1433,8 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b111010, 3'b010},        // vwmulsu VV
                         {6'b111010, 3'b110}: begin  // vwmulsu VX
@@ -1424,6 +1447,8 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b111011, 3'b010},        // vwmul VV
                         {6'b111011, 3'b110}: begin  // vwmul VX
@@ -1436,6 +1461,8 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b111100, 3'b010},        // vwmaccu VV
                         {6'b111100, 3'b110}: begin  // vwmaccu VX
@@ -1448,6 +1475,8 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b111101, 3'b010},        // vwmacc VV
                         {6'b111101, 3'b110}: begin  // vwmacc VX
@@ -1472,6 +1501,8 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b111111, 3'b010},        // vwmaccsu VV
                         {6'b111111, 3'b110}: begin  // vwmaccsu VX
@@ -1484,6 +1515,8 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
                         end
                         {6'b100111, 3'b000},        // vsmul VV
                         {6'b100111, 3'b100}: begin  // vsmul VX
@@ -2427,7 +2460,7 @@ module vproc_decoder #(
                         LMUL_8:  emul_o = EMUL_2;
                         default: ;
                     endcase
-                    //vl_o   = {2'b00, vl_i[CFG_VL_W-1:2]};
+                    vl_o   = {2'b00, vl_i[CFG_VL_W-1:2]};
                 end
                 {VSEW_8 , VSEW_16},
                 {VSEW_16, VSEW_32}: begin   // EEW / SEW = 1 / 2
@@ -2441,7 +2474,7 @@ module vproc_decoder #(
                         LMUL_8:  emul_o = EMUL_4;
                         default: ;
                     endcase
-                    //vl_o   = {1'b0, vl_i[CFG_VL_W-1:1]};
+                    vl_o   = {1'b0, vl_i[CFG_VL_W-1:1]};
                 end
                 {VSEW_8 , VSEW_8 },
                 {VSEW_16, VSEW_16},
@@ -2456,7 +2489,7 @@ module vproc_decoder #(
                         LMUL_8:  emul_o = EMUL_8;
                         default: ;
                     endcase
-                    //vl_o   = vl_i;
+                    vl_o   = vl_i;
                 end
                 {VSEW_16, VSEW_8 },
                 {VSEW_32, VSEW_16}: begin   // EEW / SEW = 2
@@ -2469,7 +2502,7 @@ module vproc_decoder #(
                         LMUL_4:  emul_o = EMUL_8;
                         default: ;
                     endcase
-                    //vl_o   = {vl_i[CFG_VL_W-2:0], 1'b1};
+                    vl_o   = {vl_i[CFG_VL_W-2:0], 1'b1};
                 end
                 {VSEW_32, VSEW_8 }: begin   // EEW / SEW = 4
                     unique case (lmul_i)
@@ -2480,11 +2513,11 @@ module vproc_decoder #(
                         LMUL_2:  emul_o = EMUL_8;
                         default: ;
                     endcase
-                    //vl_o   = {vl_i[CFG_VL_W-3:0], 2'b11};
+                    vl_o   = {vl_i[CFG_VL_W-3:0], 2'b11};
                 end
                 default: ;
             endcase
-            vl_o = vl_i;
+            //vl_o = vl_i;
             // if(mode_o.lsu.stride == LSU_INDEXED) begin
             //     // vl does not need to be scaled since for indexed stride
             //     // we use default sew and lmul

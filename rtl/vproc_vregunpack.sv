@@ -21,6 +21,7 @@ module vreg_shift_register
     input  vproc_pkg::cfg_vsew                     operand_eew_i,
     input  vproc_pkg::cfg_emul                    operand_emul_i,
     input  logic [VADDR_W-1:0]              operand_vaddr_base_i,
+    input  vproc_pkg::op_shift_rate         operand_shift_rate_i,
 
     input  logic                                      use_xval_i,
     input  logic [31:0]                                   xval_i,
@@ -45,8 +46,9 @@ module vreg_shift_register
     logic [VADDR_W-1:0] current_vreg;
     logic [3:0]             vreg_reads_remaining;//up to 8 vregs need to be read (LMUL8)
     cfg_vsew                eew;
-    logic [$clog2(VREG_PORT_W / PIPE_OP_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise + widening ops
+    logic [$clog2((VREG_PORT_W * 4) / PIPE_OP_W)-1:0] shifts_remaining; //TODO: EXTEND FOR ELEMWISE
     logic                   valid_data;
+    vproc_pkg::op_shift_rate shift_rate;
     } shift_reg_ctrl;
 
     shift_reg_ctrl ctrl_d, ctrl_q;
@@ -70,6 +72,7 @@ module vreg_shift_register
     end
 
     //state transitions and control signal assignments
+
     always_comb begin
         state_d = state_q;
         ctrl_d = ctrl_q;
@@ -83,20 +86,27 @@ module vreg_shift_register
                     ctrl_d.current_vreg = operand_vaddr_base_i;
                     ctrl_d.eew = operand_eew_i;
                     ctrl_d.valid_data = 1'b0;
-                    unique case (operand_emul_i)
-                        EMUL_1: ctrl_d.vreg_reads_remaining = 1;
-                        EMUL_2: ctrl_d.vreg_reads_remaining = 2;
-                        EMUL_4: ctrl_d.vreg_reads_remaining = 4;
-                        EMUL_8: ctrl_d.vreg_reads_remaining = 8;
+                    ctrl_d.shift_rate = operand_shift_rate_i;
+                    unique case ({operand_emul_i, operand_shift_rate_i}) //Destination EMUL is given to unpack.  Select number of source registers to read based on destination emul and shift rate
+                        {EMUL_1, SHIFT_QUARTER_WIDTH},  // Read one register minimum for fractional emuls
+                        {EMUL_1, SHIFT_HALF_WIDTH}, 
+                        {EMUL_1, SHIFT_FULL_WIDTH},
+                        {EMUL_2, SHIFT_HALF_WIDTH},
+                        {EMUL_4, SHIFT_QUARTER_WIDTH}: ctrl_d.vreg_reads_remaining = 1;
+                        {EMUL_2, SHIFT_FULL_WIDTH},
+                        {EMUL_4, SHIFT_HALF_WIDTH},
+                        {EMUL_8, SHIFT_QUARTER_WIDTH}: ctrl_d.vreg_reads_remaining = 2;
+                        {EMUL_4, SHIFT_FULL_WIDTH},
+                        {EMUL_8, SHIFT_HALF_WIDTH}: ctrl_d.vreg_reads_remaining = 4;
+                        {EMUL_8, SHIFT_FULL_WIDTH}: ctrl_d.vreg_reads_remaining = 8;
                     endcase
                 end
             end
 
             VREG_SHIFT: begin
-                if (vfu_ready_i & ctrl_q.valid_data) begin
+                if (vfu_ready_i & ctrl_q.valid_data & !(ctrl_q.shifts_remaining == 0)) begin
                     ctrl_d.shifts_remaining = ctrl_q.shifts_remaining - 1; //Only shift if vector functional unit is ready
-                end
-                if (ctrl_q.shifts_remaining == 0) begin
+                end else if (ctrl_q.shifts_remaining == 0) begin
                     if (ctrl_q.vreg_reads_remaining == 0) begin //if all reads complete, return to idle
                         state_d = IDLE;
                         finished_o = 1'b1;
@@ -106,6 +116,12 @@ module vreg_shift_register
                         if (vreg_rd_gnt_i | use_xval_i) begin //On successful load, set shift counter
                             ctrl_d.vreg_reads_remaining = ctrl_q.vreg_reads_remaining - 1;
                             ctrl_d.shifts_remaining = '1;
+                            unique case (ctrl_q.shift_rate)
+                                SHIFT_FULL_WIDTH:       ctrl_d.shifts_remaining = VREG_PORT_W/PIPE_OP_W-1; //standard shift case
+                                SHIFT_HALF_WIDTH:       ctrl_d.shifts_remaining = VREG_PORT_W*2/PIPE_OP_W-1;
+                                SHIFT_QUARTER_WIDTH:    ctrl_d.shifts_remaining = VREG_PORT_W*4/PIPE_OP_W-1;
+                                SHIFT_ELEMWISE:         ctrl_d.shifts_remaining = '1;
+                            endcase
                             ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
                             ctrl_d.valid_data = 1'b1;
                         end else begin
@@ -133,17 +149,32 @@ module vreg_shift_register
         if(state_q == VREG_SHIFT && ctrl_q.shifts_remaining == '0) begin
             if (use_xval_i) begin
                 unique case (ctrl_q.eew)
-                           VSEW_32: shift_reg_d = {(VREG_PORT_W/32){xval_i[31:0]}};
-                           VSEW_16: shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
-                           VSEW_8:  shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
+                        VSEW_32: begin
+                            unique case (ctrl_q.shift_rate) 
+                                SHIFT_FULL_WIDTH:       shift_reg_d = {(VREG_PORT_W/32){xval_i[31:0]}};
+                                SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
+                                SHIFT_QUARTER_WIDTH:    shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
+                            endcase
+                        end 
+                        VSEW_16: begin
+                            unique case (ctrl_q.shift_rate) 
+                                SHIFT_FULL_WIDTH:       shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
+                                SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
+                            endcase
+                        end 
+                        VSEW_8:  shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
                 endcase
             end else begin
                 shift_reg_d = vreg_rd_data_i;
             end
         end else if (state_q == VREG_SHIFT) begin
             if (vfu_ready_i) begin
-                //TODO: Different shift patterns/rates should be handled here
-                shift_reg_d = {{(PIPE_OP_W){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W]}; //standard shift case
+                unique case (ctrl_q.shift_rate)
+                        SHIFT_FULL_WIDTH:       shift_reg_d = {{(PIPE_OP_W){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W]}; //standard shift case
+                        SHIFT_HALF_WIDTH:       shift_reg_d = {{(PIPE_OP_W/2){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/2]};
+                        SHIFT_QUARTER_WIDTH:    shift_reg_d = '0; //TODO
+                        SHIFT_ELEMWISE:         shift_reg_d = '0; //TODO
+                endcase
             end
         end
     end
@@ -152,7 +183,33 @@ module vreg_shift_register
 
     //Output assignments
     always_comb begin
-        vfu_data_o = shift_reg_q[PIPE_OP_W-1:0];
+        unique case (ctrl_q.shift_rate) //Select output bits based on shift rate TODO: SIGN EXTENSION
+            SHIFT_FULL_WIDTH:   vfu_data_o = shift_reg_q[PIPE_OP_W-1:0];
+            SHIFT_HALF_WIDTH:   begin
+                                    unique case (ctrl_q.eew)  //Destination SEW is passed here, so SEW8 is not possible
+                                        VSEW_32: begin
+                                            for (integer i = 0; i < PIPE_OP_W/32; i++) begin
+                                                vfu_data_o[32*i +: 32] = {{(16){1'b0}}, shift_reg_q[16 * i +: 16]};
+                                            end
+                                        end
+                                        VSEW_16:  begin
+                                            for (integer i = 0; i < PIPE_OP_W/16; i++) begin
+                                                vfu_data_o[16*i +: 16] = {{(8){1'b0}}, shift_reg_q[8 * i +: 8]};
+                                            end
+                                        end
+                                    endcase
+                                end
+            SHIFT_QUARTER_WIDTH:begin
+                                    unique case (ctrl_q.eew)  //Destination SEW is passed here, so SEW8 and SEW16 is not possible
+                                        VSEW_32: begin
+                                            for (integer i = 0; i < PIPE_OP_W/32; i++) begin
+                                                vfu_data_o[32*i +: 32] = {{(24){1'b0}}, shift_reg_q[8 * i +: 8]};
+                                            end
+                                        end
+                                    endcase
+                                end
+            SHIFT_ELEMWISE:         vfu_data_o = '0; //TODO
+        endcase
         vfu_data_valid_o = ctrl_q.valid_data; //ouput valid when valid data in the shift register
         shift_reg_ready_o = (state_q == IDLE);
     end
@@ -177,6 +234,7 @@ module mask_reg_shift_register
     output logic                               shift_reg_ready_o,
     input  vproc_pkg::cfg_vsew                     operand_eew_i,
     input  vproc_pkg::cfg_emul                    operand_emul_i,
+    input  vproc_pkg::op_shift_rate         operand_shift_rate_i,
     input  logic [CFG_VL_W-1:0]                             vl_i,
     input  logic                                          vl_0_i,
     input  logic                                        masked_i,
@@ -197,10 +255,11 @@ module mask_reg_shift_register
 
     //Control signals for operand shift register
     typedef struct packed {
-    cfg_vsew                eew;
-    logic [$clog2(VREG_PORT_W * 8 / PIPE_OP_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise + widening ops
-    logic                   valid_data;
-    logic                   masked;
+    cfg_vsew                    eew;
+    logic [$clog2(VREG_PORT_W * 8 * 8 / PIPE_OP_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise
+    logic                       valid_data;
+    logic                       masked;
+    vproc_pkg::op_shift_rate    shift_rate;
     } shift_reg_ctrl;
 
     shift_reg_ctrl ctrl_d, ctrl_q;
@@ -235,11 +294,22 @@ module mask_reg_shift_register
                     ctrl_d.eew = operand_eew_i;
                     ctrl_d.valid_data = 1'b0;
                     ctrl_d.masked     = masked_i;
-                    unique case (operand_emul_i) //Set # of remaining shifts based on emul
-                        EMUL_1: ctrl_d.shifts_remaining = VREG_PORT_W/PIPE_OP_W - 1;
-                        EMUL_2: ctrl_d.shifts_remaining = 2 * VREG_PORT_W/PIPE_OP_W - 1;
-                        EMUL_4: ctrl_d.shifts_remaining = 4 * VREG_PORT_W/PIPE_OP_W - 1;
-                        EMUL_8: ctrl_d.shifts_remaining = 8 * VREG_PORT_W/PIPE_OP_W - 1;
+                    ctrl_d.shift_rate = operand_shift_rate_i;
+                    unique case ({operand_emul_i , operand_shift_rate_i}) //Set # of remaining shifts based on emul and shift rate
+                        {EMUL_1, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
+                        {EMUL_1, SHIFT_HALF_WIDTH}, //TODO: INVESTIGATE  This condition is only true for fractional lmul operations, why does the number of shifts required increase here?  Number of shifts needed should ONLY depend on destination EMUL.  Can then get rid of other conditions
+                        {EMUL_2, SHIFT_HALF_WIDTH},
+                        {EMUL_2, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
+                        {EMUL_1, SHIFT_QUARTER_WIDTH},
+                        {EMUL_4, SHIFT_HALF_WIDTH},
+                        {EMUL_4, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
+                        
+                        {EMUL_2, SHIFT_QUARTER_WIDTH},
+                        {EMUL_8, SHIFT_HALF_WIDTH},
+                        {EMUL_8, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
+                        
+                        {EMUL_4, SHIFT_QUARTER_WIDTH}:  ctrl_d.shifts_remaining     = (16 * VREG_PORT_W)/PIPE_OP_W - 1;
+                        {EMUL_8, SHIFT_QUARTER_WIDTH}:  ctrl_d.shifts_remaining     = (32 * VREG_PORT_W)/PIPE_OP_W - 1;
                     endcase
                 end
             end
@@ -282,19 +352,19 @@ module mask_reg_shift_register
             shift_reg_d = '0;
             if (!vl_0_i) begin
                 for (int i = 0; i <= vl_i; i++) begin //vl is passed as # bytes -1, so <= here + guard for vl=0.
-                    shift_reg_d[i] = 1'b1;
+                    shift_reg_d[i] = 1'b1; //TODO: Might need to adjust based on shift rate
                 end
             end
         end else if(state_q == VREG_SHIFT && !ctrl_q.valid_data) begin
             shift_reg_d = ctrl_q.masked ? mask_reg_bytes & shift_reg_q : shift_reg_q; //If mask register needed, & with VL mask
         end else if (state_q == VREG_SHIFT) begin
             if (vfu_ready_i) begin
-                //TODO: Different shift patterns/rates should be handled here
-                shift_reg_d = {{(PIPE_OP_W/8){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/8]}; //standard shift case
+                shift_reg_d = {{(PIPE_OP_W/8){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/8]}; //mask is scaled based on destination EMUL/SEW.  No need for different shift rates (TODO: except for elemwise)
             end
         end
     end
 
+    //Mask is always given based on the EEW of the destination (set in decode) 
     always_comb begin
         unique case (ctrl_q.eew)
                 VSEW_32: begin
@@ -303,7 +373,7 @@ module mask_reg_shift_register
                     end
                 end
                 VSEW_16: begin
-                     for (integer i = 0; i < VREG_PORT_W; i++) begin
+                    for (integer i = 0; i < VREG_PORT_W; i++) begin
                         mask_reg_bytes[i] = vreg_rd_data_i[i>>1]; //every bit in mask register is 4 bits bytewise
                     end
                 end
@@ -433,7 +503,7 @@ module vproc_vregunpack
         end
     end
 
-    logic [VPORT_CNT-1:0] shift_regs_ready;                 //input ready signals for all shift registers
+    logic [VPORT_CNT-1:0] shift_regs_ready;              //input ready signals for all shift registers
     logic shift_reg_in_valid_d, shift_reg_in_valid_q;    //signal 1 cycle input valid for shift registers on transition from READY to SHIFTING
     always_comb begin
         state_d = state_q;
@@ -536,7 +606,8 @@ module vproc_vregunpack
                 .shift_reg_ready_o(shift_regs_ready[i]),
                 .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
                 .operand_emul_i(metadata_q.emul), 
-                .operand_vaddr_base_i(metadata_q.op_vaddr[i]), 
+                .operand_vaddr_base_i(metadata_q.op_vaddr[i]),
+                .operand_shift_rate_i(metadata_q.ctrl.op_flags[i].shift_rate), 
 
                 .use_xval_i(metadata_q.op_flags[i].xreg),
                 .xval_i(metadata_q.op_xval[i]),
@@ -576,11 +647,12 @@ module vproc_vregunpack
 
         .pipe_in_valid_i(shift_reg_in_valid_q), //Mask shift reg triggered for every instruction
         .shift_reg_ready_o(mask_reg_ready),
-        .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
+        .operand_eew_i(metadata_q.eew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
         .operand_emul_i(metadata_q.emul),
-
-        .vl_i(pipe_in_ctrl_i.vl),
-        .vl_0_i(pipe_in_ctrl_i.vl_0),
+        .operand_shift_rate_i(metadata_q.ctrl.op_flags[0].shift_rate), //TODO: Currently based off of OP0 shift rate
+        
+        .vl_i(metadata_q.ctrl.vl),
+        .vl_0_i(metadata_q.ctrl.vl_0),
         .masked_i(metadata_q.masked),
 
         .finished_o(mask_done),   //Currently last cycle signalling ignored for shift reg.
@@ -648,8 +720,7 @@ module vproc_vregunpack
         pipe_out_ctrl_o.last_cycle = (!active_mask_d) & (state_q == SHIFTING) & (|pipe_out_ready_i | pipe_out_mask_ready_i);  //signal last cycle when last valid mask register output is accepted (for most functional units all are in sync anyways)
     end
 
-    //Vector Argument outputs either come from the shift registers OR from the scalar register input values
-    //TODO: SIGN/ZERO extending for scalar inputs
+    //Vector Argument outputs come from the operand shift registers.
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
             always_comb begin

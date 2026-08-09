@@ -557,13 +557,16 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         state_init.op_vaddr[0]        = pipe_in_data_i.rs2.r.vaddr;
         state_init.op_xval [0]        = pipe_in_data_i.rs2.r.xval;
         state_init.op_flags[0].xreg   = pipe_in_data_i.rs2.xreg;
+        state_init.op_flags[0].shift_rate   = pipe_in_data_i.rs2.shift_rate;
 
         state_init.op_flags[1].vreg   = pipe_in_data_i.rs1.vreg;
         state_init.op_flags[1].narrow = pipe_in_data_i.widenarrow != OP_SINGLEWIDTH;
         state_init.op_vaddr[1]        = pipe_in_data_i.rs1.r.vaddr;
         state_init.op_xval [1]        = pipe_in_data_i.rs1.r.xval;
         state_init.op_flags[1].xreg   = unit_lsu ? 1'b0 : pipe_in_data_i.rs1.xreg; //dont set this bit for lsu
+        state_init.op_flags[1].shift_rate   = pipe_in_data_i.rs1.shift_rate;
 
+        state_init.op_flags[2].shift_rate   = SHIFT_FULL_WIDTH; //OP3 is always FULL Width TODO: dynamically set this is in decode
 
         state_init.op_flags[OP_CNT-1].vreg = DONT_CARE_ZERO ? 1'b0 : 1'bx;
 

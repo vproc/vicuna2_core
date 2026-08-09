@@ -414,10 +414,18 @@ typedef struct packed {
     op_mode_custom custom;
 } op_mode;
 
+typedef enum logic [1:0] {
+    SHIFT_FULL_WIDTH,     // Operand Shifts Maximum Width Every Cycle out of VREGUNPACK
+    SHIFT_HALF_WIDTH,      // Operand Shifts Half Width Every Cycle out of VREGUNPACK ( SEWx2 Widening Operations)
+    SHIFT_QUARTER_WIDTH,   // Operand Shifts Quarter Width Every Cycle out of VREGUNPACK (SEWx4 Widening Operations)
+    SHIFT_ELEMWISE        // Operand Shifts a Single Element out Every Cycle
+} op_shift_rate;
+
 // source register type:
 typedef struct packed {
     logic vreg;
     logic xreg;
+    op_shift_rate shift_rate;
 `ifdef VPROC_OP_REGS_UNION
     union {
 `else
@@ -447,6 +455,7 @@ typedef struct packed {
     logic lsu_instr;
     logic field_instr;
     logic first_cycle;
+    op_shift_rate shift_rate;
 } unpack_flags;
 
 // result store info structure
