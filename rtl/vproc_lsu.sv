@@ -4,7 +4,8 @@
 import vproc_pkg::*;
 module vproc_mem_port #(
     parameter int unsigned        PORT_WIDTH          = 32,
-    parameter int unsigned        OUTSTANDING_REQ     = 1
+    parameter int unsigned        OUTSTANDING_REQ     = 1,
+    parameter int unsigned        NUM_PORTS           = 1
 )(
         input  logic                    clk_i,
         input  logic                    async_rst_ni,
@@ -19,6 +20,8 @@ module vproc_mem_port #(
 
         input  logic[31:0]              base_addr_i,
         input  logic[PORT_WIDTH/8-1:0]  mask_i,
+        input  lsu_stride               stride_i,
+        input  logic[31:0]              stride_val_i,
 
         OBI_BUS.Manager                 obi_bus,
 
@@ -31,11 +34,14 @@ module vproc_mem_port #(
     // Input Buffer and Calculation of the request addr
     //TODO: Generation of multiple requests to enforce word aligment for reads/writes
     //////////
+    //TODO: Combine these into a metadata struct
     logic[31:0] req_addr_d, req_addr_q;
     logic       valid_d, valid_q;
     logic[PORT_WIDTH/8-1:0] mask_d, mask_q;
     logic       store_d, store_q;
     logic[PORT_WIDTH-1:0] data_d, data_q;
+    lsu_stride            stride_d, stride_q;
+    logic[31:0] stride_val_d, stride_val_q;
 
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
@@ -44,12 +50,16 @@ module vproc_mem_port #(
             mask_q <= '0;
             store_q <= '0;
             data_q <= '0;
+            stride_q <= LSU_UNITSTRIDE;
+            stride_val_q <= '0;
         end else begin
             req_addr_q <= req_addr_d;
             valid_q <= valid_d;
             mask_q <= mask_d;
             store_q <= store_d;
             data_q <= data_d;
+            stride_q <= stride_d;
+            stride_val_q <= stride_val_q;
         end
     end
 
@@ -58,6 +68,8 @@ module vproc_mem_port #(
         mask_d = mask_q;
         store_d = store_q;
         data_d = data_q;
+        stride_d = stride_q;
+        stride_val_d = stride_val_q;
 
         if (valid_i & ready_o) begin
             mask_d = mask_i;
@@ -65,8 +77,13 @@ module vproc_mem_port #(
             if (first_cycle) begin
                 req_addr_d = base_addr_i;
                 store_d = store_i;
+                stride_d = stride_q;
+                stride_val_d = stride_val_q;
             end else begin
-                req_addr_d = req_addr_q + PORT_WIDTH/8; //TODO: additional stride options
+                unique case (stride_q)
+                    LSU_UNITSTRIDE: req_addr_d = req_addr_q + PORT_WIDTH/8 * NUM_PORTS; //Stride between requests split between number of ports
+                    LSU_STRIDED:    req_addr_d = req_addr_q + stride_val_q * NUM_PORTS;
+                endcase
             end
         end
 
@@ -196,7 +213,8 @@ module vproc_lsu #(
         for (genvar i = 0; i < MEM_PORTS; i++) begin //TODO: Definitely issues with signalling with multiple ports, untested
             vproc_mem_port #(
                 .PORT_WIDTH(VMEM_W),
-                .OUTSTANDING_REQ(OUTSTANDING_REQ)
+                .OUTSTANDING_REQ(OUTSTANDING_REQ),
+                .NUM_PORTS(MEM_PORTS)
             ) mem_port (
                 .clk_i(clk_i),
                 .sync_rst_ni(sync_rst_ni),
@@ -207,6 +225,8 @@ module vproc_lsu #(
                 .first_cycle(pipe_in_ctrl_i.first_cycle),
                 .base_addr_i(pipe_in_ctrl_i.op_xval[1]),
                 .mask_i(pipe_in_mask_i[(VMEM_W/8)*i +: VMEM_W/8]),
+                .stride_i(pipe_in_ctrl_i.mode.lsu.stride),
+                .stride_val_i(pipe_in_ctrl_i.op_xval[0]),
                 .obi_bus(obi_bus[i]),
                 .valid_o(ports_valid_o[i]),
                 .ready_i(pipe_out_ready_i),

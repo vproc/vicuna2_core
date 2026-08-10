@@ -307,27 +307,19 @@ module vproc_decoder #(
                                 unique case (instr_i[31:29])
                                     3'b000: begin
                                                 emul = EMUL_1;
-                                                `ifndef OLD_VICUNA
                                                 vl = (VREG_W/8)-1;
-                                                `endif
                                             end
                                     3'b001: begin
                                                 emul = EMUL_2;
-                                                `ifndef OLD_VICUNA
                                                 vl = (2*VREG_W/8)-1;
-                                                `endif
                                             end
                                     3'b011: begin
                                                 emul = EMUL_4;
-                                                `ifndef OLD_VICUNA
                                                 vl = (4*VREG_W/8)-1;
-                                                `endif
                                             end
                                     3'b111: begin
                                                 emul = EMUL_8;
-                                                `ifndef OLD_VICUNA
                                                 vl = (8*VREG_W/8)-1;
-                                                `endif
                                             end
                                     default: instr_illegal = 1'b1;
                                 endcase
