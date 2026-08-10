@@ -454,7 +454,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 end
             end
 
-            assign xreg_valid_o     = unit_out_valid & unit_out_xreg_valid & instr_committed & ~flushing_q;
+            assign xreg_valid_o     = unit_out_valid & unit_out_xreg_valid & instr_committed & ~flushing_q & unit_out_ready;
             assign xreg_id_o        = unit_out_ctrl.id;
             assign pipe_out_valid_o = (unit_out_valid & ~unit_out_stall) | flushing_q;
             assign unit_out_ready   = pipe_out_ready_i & ~flushing_q & ~unit_out_stall;
