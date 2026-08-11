@@ -841,7 +841,11 @@ module vproc_decoder #(
                                     unique case (instr_vs1[2:1])
                                         2'b11 : begin
                                             instr_illegal       = 1'b0;
-                                            widenarrow_o        = OP_WIDENING_EXT2;
+                                            widenarrow_o        = OP_WIDENING_EXT2; //TODO: Clean up, these signals shoudnt be necessary
+                                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                                            rs1_o.sign        = instr_vs1[0];
+                                            rs2_o.sign        = instr_vs1[0];
                                         end
                                         2'b10 : begin
                                             instr_illegal       = 1'b0;
