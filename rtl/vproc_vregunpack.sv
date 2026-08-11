@@ -47,10 +47,11 @@ module vreg_shift_register
     logic [VADDR_W-1:0] current_vreg;
     logic [3:0]             vreg_reads_remaining;//up to 8 vregs need to be read (LMUL8)
     cfg_vsew                eew;
-    logic [$clog2((VREG_PORT_W * 4) / PIPE_OP_W)-1:0] shifts_remaining; //TODO: EXTEND FOR ELEMWISE
+    logic [$clog2((VREG_PORT_W * 8) / PIPE_OP_W)-1:0] shifts_remaining; //TODO: EXTEND FOR ELEMWISE
     logic                   valid_data;
     vproc_pkg::op_shift_rate shift_rate;
     logic                    sign;
+    vproc_pkg::cfg_emul    dest_emul;                  
     } shift_reg_ctrl;
 
     shift_reg_ctrl ctrl_d, ctrl_q;
@@ -90,6 +91,7 @@ module vreg_shift_register
                     ctrl_d.valid_data = 1'b0;
                     ctrl_d.shift_rate = operand_shift_rate_i;
                     ctrl_d.sign = operand_sign_i;
+                    ctrl_d.dest_emul = operand_emul_i;
                     unique case ({operand_emul_i, operand_shift_rate_i}) //Destination EMUL is given to unpack.  Select number of source registers to read based on destination emul and shift rate
                         {EMUL_1, SHIFT_QUARTER_WIDTH},  // Read one register minimum for fractional emuls
                         {EMUL_1, SHIFT_HALF_WIDTH}, 
@@ -97,12 +99,16 @@ module vreg_shift_register
                         {EMUL_2, SHIFT_HALF_WIDTH},
                         {EMUL_2, SHIFT_QUARTER_WIDTH},
                         {EMUL_4, SHIFT_QUARTER_WIDTH}: ctrl_d.vreg_reads_remaining = 1;
+
                         {EMUL_2, SHIFT_FULL_WIDTH},
                         {EMUL_4, SHIFT_HALF_WIDTH},
                         {EMUL_8, SHIFT_QUARTER_WIDTH}: ctrl_d.vreg_reads_remaining = 2;
+
                         {EMUL_4, SHIFT_FULL_WIDTH},
                         {EMUL_8, SHIFT_HALF_WIDTH}: ctrl_d.vreg_reads_remaining = 4;
+
                         {EMUL_8, SHIFT_FULL_WIDTH}: ctrl_d.vreg_reads_remaining = 8;
+                        default; //TODO: This default case should not be necessary once elemwise is implemented
                     endcase
                 end
             end
@@ -119,12 +125,25 @@ module vreg_shift_register
                         vreg_rd_req_o = !use_xval_i; //only issue read if using vector arg
                         if (vreg_rd_gnt_i | use_xval_i) begin //On successful load, set shift counter
                             ctrl_d.vreg_reads_remaining = ctrl_q.vreg_reads_remaining - 1;
-                            ctrl_d.shifts_remaining = '1;
-                            unique case (ctrl_q.shift_rate)
-                                SHIFT_FULL_WIDTH:       ctrl_d.shifts_remaining = VREG_PORT_W/PIPE_OP_W-1; //standard shift case
-                                SHIFT_HALF_WIDTH:       ctrl_d.shifts_remaining = VREG_PORT_W*2/PIPE_OP_W-1;
-                                SHIFT_QUARTER_WIDTH:    ctrl_d.shifts_remaining = VREG_PORT_W*4/PIPE_OP_W-1;
-                                SHIFT_ELEMWISE:         ctrl_d.shifts_remaining = '1;
+                            unique case ({ctrl_q.dest_emul, ctrl_q.shift_rate})
+                                {EMUL_1, SHIFT_FULL_WIDTH},
+                                {EMUL_2, SHIFT_FULL_WIDTH},
+                                {EMUL_4, SHIFT_FULL_WIDTH},
+                                {EMUL_8, SHIFT_FULL_WIDTH}: ctrl_d.shifts_remaining = VREG_PORT_W/PIPE_OP_W-1;// standard shift case
+
+                                {EMUL_2, SHIFT_HALF_WIDTH},
+                                {EMUL_4, SHIFT_HALF_WIDTH},
+                                {EMUL_8, SHIFT_HALF_WIDTH}: ctrl_d.shifts_remaining = VREG_PORT_W*2/PIPE_OP_W-1;
+
+                                {EMUL_4, SHIFT_QUARTER_WIDTH},
+                                {EMUL_8, SHIFT_QUARTER_WIDTH}: ctrl_d.shifts_remaining = VREG_PORT_W*4/PIPE_OP_W-1;
+                                 //These cases take fractional lmul as source.  Don't need entire register, so don't scale shifts remaining
+
+                                {EMUL_2, SHIFT_QUARTER_WIDTH}: ctrl_d.shifts_remaining = (VREG_PORT_W*2/PIPE_OP_W)-1;
+
+                                {EMUL_1, SHIFT_HALF_WIDTH},
+                                {EMUL_1, SHIFT_QUARTER_WIDTH}: ctrl_d.shifts_remaining = (VREG_PORT_W/PIPE_OP_W)-1;
+                                default;//TODO: This default case should not be necessary once elemwise is implemented
                             endcase
                             ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
                             ctrl_d.valid_data = 1'b1;
@@ -299,19 +318,25 @@ module mask_reg_shift_register
                     ctrl_d.valid_data = 1'b0;
                     ctrl_d.masked     = masked_i;
                     ctrl_d.shift_rate = operand_shift_rate_i;
-                    unique case ({operand_emul_i , operand_shift_rate_i}) //Set # of remaining shifts based on destination emul and shift rate
-                        {EMUL_1, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
-                        {EMUL_1, SHIFT_HALF_WIDTH}, //TODO: INVESTIGATE CONDITIONS FOR PARTIAL SHIFTS WHEN SOURCE LMUL IS FRACTIONAL, ODD BEHAVIOR
-                        {EMUL_2, SHIFT_HALF_WIDTH},
-                        {EMUL_2, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
-                        {EMUL_1, SHIFT_QUARTER_WIDTH},
-                        {EMUL_4, SHIFT_HALF_WIDTH},
-                        {EMUL_2, SHIFT_QUARTER_WIDTH},
-                        {EMUL_4, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
-                        {EMUL_8, SHIFT_HALF_WIDTH},
-                        {EMUL_8, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
-                        {EMUL_4, SHIFT_QUARTER_WIDTH}:  ctrl_d.shifts_remaining     = (16 * VREG_PORT_W)/PIPE_OP_W - 1;
-                        {EMUL_8, SHIFT_QUARTER_WIDTH}:  ctrl_d.shifts_remaining     = (32 * VREG_PORT_W)/PIPE_OP_W - 1;
+                    // unique case ({operand_emul_i , operand_shift_rate_i}) //Set # of remaining shifts based on destination emul and shift rate : TODO: This should only depend on DESTINATION EMUL
+                    //     {EMUL_1, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
+                    //     {EMUL_1, SHIFT_HALF_WIDTH}, //TODO: INVESTIGATE CONDITIONS FOR PARTIAL SHIFTS WHEN SOURCE LMUL IS FRACTIONAL, ODD BEHAVIOR
+                    //     {EMUL_2, SHIFT_HALF_WIDTH},
+                    //     {EMUL_2, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
+                    //     {EMUL_1, SHIFT_QUARTER_WIDTH},
+                    //     {EMUL_4, SHIFT_HALF_WIDTH},
+                    //     {EMUL_2, SHIFT_QUARTER_WIDTH},
+                    //     {EMUL_4, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
+                    //     {EMUL_8, SHIFT_HALF_WIDTH},
+                    //     {EMUL_8, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
+                    //     {EMUL_4, SHIFT_QUARTER_WIDTH}:  ctrl_d.shifts_remaining     = (16 * VREG_PORT_W)/PIPE_OP_W - 1;
+                    //     {EMUL_8, SHIFT_QUARTER_WIDTH}:  ctrl_d.shifts_remaining     = (32 * VREG_PORT_W)/PIPE_OP_W - 1;
+                    // endcase
+                    unique case (operand_emul_i) //Set # of remaining shifts based on destination emul and shift rate : TODO: This should only depend on DESTINATION EMUL
+                        EMUL_1: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
+                        EMUL_2: ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
+                        EMUL_4: ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
+                        EMUL_8: ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
                     endcase
                 end
             end
