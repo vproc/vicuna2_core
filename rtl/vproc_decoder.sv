@@ -850,6 +850,10 @@ module vproc_decoder #(
                                         2'b10 : begin
                                             instr_illegal       = 1'b0;
                                             widenarrow_o        = OP_WIDENING_EXT4;
+                                            rs1_o.shift_rate    = SHIFT_QUARTER_WIDTH;
+                                            rs2_o.shift_rate    = SHIFT_QUARTER_WIDTH;
+                                            rs1_o.sign        = instr_vs1[0];
+                                            rs2_o.sign        = instr_vs1[0];
                                         end
                                         default : begin
                                             instr_illegal       = 1'b1;
