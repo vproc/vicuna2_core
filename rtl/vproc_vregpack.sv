@@ -109,8 +109,8 @@ module vproc_vregpack #(
                 ctrl_d.shifts_remaining = '1; //will need to be adjusted for elemwise ops
         end else if (ctrl_q.valid) begin
             if (ctrl_q.shifts_remaining == '0) begin //Full register data ready to write
-                ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
                 if (vreg_wr_gnt_i | ctrl_q.store) begin
+                    ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
                     ctrl_d.shifts_remaining = '1; // only reset counter here if write can be performed this cycle
                 end
             end else begin
@@ -118,7 +118,6 @@ module vproc_vregpack #(
             end
         end
     end
-
     //////
     // Handshake logic with unit mux
     //////
