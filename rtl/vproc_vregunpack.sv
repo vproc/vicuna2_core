@@ -47,7 +47,7 @@ module vreg_shift_register
     logic [VADDR_W-1:0] current_vreg;
     logic [3:0]             vreg_reads_remaining;//up to 8 vregs need to be read (LMUL8)
     cfg_vsew                eew;
-    logic [$clog2((VREG_PORT_W * 8) / PIPE_OP_W)-1:0] shifts_remaining; //TODO: EXTEND FOR ELEMWISE
+    logic [$clog2(VREG_PORT_W / 8 )-1:0] shifts_remaining; //Maximum counter value is elewise SEW 8
     logic                   valid_data;
     vproc_pkg::op_shift_rate shift_rate;
     logic                    sign;
@@ -98,17 +98,20 @@ module vreg_shift_register
                         {EMUL_1, SHIFT_FULL_WIDTH},
                         {EMUL_2, SHIFT_HALF_WIDTH},
                         {EMUL_2, SHIFT_QUARTER_WIDTH},
+                        {EMUL_1, SHIFT_ELEMWISE},
                         {EMUL_4, SHIFT_QUARTER_WIDTH}: ctrl_d.vreg_reads_remaining = 1;
 
                         {EMUL_2, SHIFT_FULL_WIDTH},
                         {EMUL_4, SHIFT_HALF_WIDTH},
+                        {EMUL_2, SHIFT_ELEMWISE},
                         {EMUL_8, SHIFT_QUARTER_WIDTH}: ctrl_d.vreg_reads_remaining = 2;
 
                         {EMUL_4, SHIFT_FULL_WIDTH},
+                        {EMUL_4, SHIFT_ELEMWISE},
                         {EMUL_8, SHIFT_HALF_WIDTH}: ctrl_d.vreg_reads_remaining = 4;
 
+                        {EMUL_8, SHIFT_ELEMWISE},
                         {EMUL_8, SHIFT_FULL_WIDTH}: ctrl_d.vreg_reads_remaining = 8;
-                        default; //TODO: This default case should not be necessary once elemwise is implemented
                     endcase
                 end
             end
@@ -143,7 +146,17 @@ module vreg_shift_register
 
                                 {EMUL_1, SHIFT_HALF_WIDTH},
                                 {EMUL_1, SHIFT_QUARTER_WIDTH}: ctrl_d.shifts_remaining = (VREG_PORT_W/PIPE_OP_W)-1;
-                                default;//TODO: This default case should not be necessary once elemwise is implemented
+                                //Elemwise case shift number depends on SEW
+                                {EMUL_1, SHIFT_ELEMWISE},
+                                {EMUL_2, SHIFT_ELEMWISE},
+                                {EMUL_4, SHIFT_ELEMWISE},
+                                {EMUL_8, SHIFT_ELEMWISE}: begin
+                                                                unique case(ctrl_q.eew)
+                                                                    VSEW_32: ctrl_d.shifts_remaining = (VREG_PORT_W/32)-1;
+                                                                    VSEW_16: ctrl_d.shifts_remaining = (VREG_PORT_W/16)-1;
+                                                                    VSEW_8:  ctrl_d.shifts_remaining = (VREG_PORT_W/8)-1;
+                                                                endcase
+                                end
                             endcase
                             ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
                             ctrl_d.valid_data = 1'b1;
@@ -176,13 +189,13 @@ module vreg_shift_register
                             unique case (ctrl_q.shift_rate) 
                                 SHIFT_FULL_WIDTH:       shift_reg_d = {(VREG_PORT_W/32){xval_i[31:0]}};
                                 SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
-                                SHIFT_QUARTER_WIDTH:    shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
+                                SHIFT_QUARTER_WIDTH:    shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}}; //TODO: Is elemwise case necessary here?
                             endcase
                         end 
                         VSEW_16: begin
                             unique case (ctrl_q.shift_rate) 
                                 SHIFT_FULL_WIDTH:       shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
-                                SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
+                                SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}}; //TODO: is elemwise case necessary here?
                             endcase
                         end 
                         VSEW_8:  shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
@@ -196,7 +209,13 @@ module vreg_shift_register
                         SHIFT_FULL_WIDTH:       shift_reg_d = {{(PIPE_OP_W){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W]}; //standard shift case
                         SHIFT_HALF_WIDTH:       shift_reg_d = {{(PIPE_OP_W/2){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/2]};
                         SHIFT_QUARTER_WIDTH:    shift_reg_d = {{(PIPE_OP_W/4){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/4]};
-                        SHIFT_ELEMWISE:         shift_reg_d = '0; //TODO
+                        SHIFT_ELEMWISE:         begin
+                                                    unique case (ctrl_q.eew) //In this case shift out a single element each cycle
+                                                        VSEW_32: shift_reg_d = {{(32){1'b0}}, shift_reg_q[VREG_PORT_W-1 : 32]};
+                                                        VSEW_16: shift_reg_d = {{(16){1'b0}}, shift_reg_q[VREG_PORT_W-1 : 16]};
+                                                        VSEW_8:  shift_reg_d = {{(8){1'b0}}, shift_reg_q[VREG_PORT_W-1 : 8]};
+                                                    endcase
+                        end
                 endcase
             end
         end
@@ -207,6 +226,7 @@ module vreg_shift_register
     //Output assignments
     always_comb begin
         unique case (ctrl_q.shift_rate) //Select output bits based on shift rate
+            SHIFT_ELEMWISE,             //Technically, for this case more data is present in a wider pipeline than only the next element to be shifted out.  Upper bits could be masked out, but functional units should know what bits are valid based on metadata/mask
             SHIFT_FULL_WIDTH:   vfu_data_o = shift_reg_q[PIPE_OP_W-1:0];
             SHIFT_HALF_WIDTH:   begin
                                     unique case (ctrl_q.eew)  //Destination SEW is passed here, so SEW8 is not possible
@@ -221,7 +241,7 @@ module vreg_shift_register
                                             end
                                         end
                                     endcase
-                                end
+            end
             SHIFT_QUARTER_WIDTH:begin
                                     unique case (ctrl_q.eew)  //Destination SEW is passed here, so SEW8 and SEW16 is not possible
                                         VSEW_32: begin
@@ -230,8 +250,8 @@ module vreg_shift_register
                                             end
                                         end
                                     endcase
-                                end
-            SHIFT_ELEMWISE:         vfu_data_o = '0; //TODO
+            end
+            
         endcase
         vfu_data_valid_o = ctrl_q.valid_data; //ouput valid when valid data in the shift register
         shift_reg_ready_o = (state_q == IDLE);
@@ -279,7 +299,7 @@ module mask_reg_shift_register
     //Control signals for operand shift register
     typedef struct packed {
     cfg_vsew                    eew;
-    logic [$clog2(VREG_PORT_W * 8 * 8 / PIPE_OP_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise
+    logic [$clog2(VREG_PORT_W/8 * 8)-1:0] shifts_remaining; //maximum shift count for elemwise LMUL=8
     logic                       valid_data;
     logic                       masked;
     vproc_pkg::op_shift_rate    shift_rate;
@@ -318,25 +338,31 @@ module mask_reg_shift_register
                     ctrl_d.valid_data = 1'b0;
                     ctrl_d.masked     = masked_i;
                     ctrl_d.shift_rate = operand_shift_rate_i;
-                    // unique case ({operand_emul_i , operand_shift_rate_i}) //Set # of remaining shifts based on destination emul and shift rate : TODO: This should only depend on DESTINATION EMUL
-                    //     {EMUL_1, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
-                    //     {EMUL_1, SHIFT_HALF_WIDTH}, //TODO: INVESTIGATE CONDITIONS FOR PARTIAL SHIFTS WHEN SOURCE LMUL IS FRACTIONAL, ODD BEHAVIOR
-                    //     {EMUL_2, SHIFT_HALF_WIDTH},
-                    //     {EMUL_2, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
-                    //     {EMUL_1, SHIFT_QUARTER_WIDTH},
-                    //     {EMUL_4, SHIFT_HALF_WIDTH},
-                    //     {EMUL_2, SHIFT_QUARTER_WIDTH},
-                    //     {EMUL_4, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
-                    //     {EMUL_8, SHIFT_HALF_WIDTH},
-                    //     {EMUL_8, SHIFT_FULL_WIDTH}:     ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
-                    //     {EMUL_4, SHIFT_QUARTER_WIDTH}:  ctrl_d.shifts_remaining     = (16 * VREG_PORT_W)/PIPE_OP_W - 1;
-                    //     {EMUL_8, SHIFT_QUARTER_WIDTH}:  ctrl_d.shifts_remaining     = (32 * VREG_PORT_W)/PIPE_OP_W - 1;
-                    // endcase
-                    unique case (operand_emul_i) //Set # of remaining shifts based on destination emul and shift rate : TODO: This should only depend on DESTINATION EMUL
-                        EMUL_1: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
-                        EMUL_2: ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
-                        EMUL_4: ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
-                        EMUL_8: ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
+                    unique case (operand_shift_rate_i)
+                        SHIFT_ELEMWISE: begin
+                            unique case ({operand_emul_i, operand_eew_i}) //Set # of remaining shifts based on destination emul
+                                        {EMUL_1, VSEW_8}: ctrl_d.shifts_remaining      = (    VREG_PORT_W)/8 - 1;
+                                        {EMUL_1, VSEW_16}: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/16 - 1;
+                                        {EMUL_1, VSEW_32}: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/32 - 1;
+                                        {EMUL_2, VSEW_8}: ctrl_d.shifts_remaining      = ( 2 * VREG_PORT_W)/8 - 1;
+                                        {EMUL_2, VSEW_16}: ctrl_d.shifts_remaining     = ( 2 * VREG_PORT_W)/16 - 1;
+                                        {EMUL_2, VSEW_32}: ctrl_d.shifts_remaining     = ( 2 * VREG_PORT_W)/32 - 1;
+                                        {EMUL_4, VSEW_8}: ctrl_d.shifts_remaining      = ( 4 * VREG_PORT_W)/8 - 1;
+                                        {EMUL_4, VSEW_16}: ctrl_d.shifts_remaining     = ( 4 * VREG_PORT_W)/16 - 1;
+                                        {EMUL_4, VSEW_32}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/32 - 1;
+                                        {EMUL_8, VSEW_8}: ctrl_d.shifts_remaining      = ( 8 * VREG_PORT_W)/8 - 1;
+                                        {EMUL_8, VSEW_16}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/16 - 1;
+                                        {EMUL_8, VSEW_32}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/32 - 1;
+                            endcase
+                        end
+                        default: begin //All other cases only depend on LMUL
+                                    unique case (operand_emul_i) //Set # of remaining shifts based on destination emul
+                                        EMUL_1: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
+                                        EMUL_2: ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
+                                        EMUL_4: ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
+                                        EMUL_8: ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
+                                    endcase
+                        end
                     endcase
                 end
             end
@@ -386,7 +412,16 @@ module mask_reg_shift_register
             shift_reg_d = ctrl_q.masked ? mask_reg_bytes & shift_reg_q : shift_reg_q; //If mask register needed, & with VL mask
         end else if (state_q == VREG_SHIFT) begin
             if (vfu_ready_i) begin
-                shift_reg_d = {{(PIPE_OP_W/8){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/8]}; //mask is scaled based on destination EMUL/SEW/VL.  No need for different shift rates (TODO: except for elemwise)
+                unique case (ctrl_q.shift_rate)
+                        SHIFT_ELEMWISE: begin
+                            unique case(ctrl_q.eew)
+                                VSEW_32: shift_reg_d = {{(4){1'b0}}, shift_reg_q[VREG_PORT_W-1 : 4]};
+                                VSEW_16: shift_reg_d = {{(2){1'b0}}, shift_reg_q[VREG_PORT_W-1 : 2]};
+                                VSEW_8:  shift_reg_d = {{(1){1'b0}}, shift_reg_q[VREG_PORT_W-1 : 1]};
+                            endcase
+                        end
+                        default: shift_reg_d = {{(PIPE_OP_W/8){1'b0}}, shift_reg_q[VREG_PORT_W-1 : PIPE_OP_W/8]}; //mask is scaled based on destination EMUL/SEW/VL.  No need for different shift rates
+                endcase
             end
         end
     end
@@ -412,7 +447,12 @@ module mask_reg_shift_register
 
     //Output assignments
     always_comb begin
-        vfu_mask_o = shift_reg_q[PIPE_OP_W/8-1:0];
+        unique case ({ctrl_q.shift_rate, ctrl_q.eew})
+            {SHIFT_ELEMWISE, VSEW_32}:  vfu_mask_o = {{(PIPE_OP_W/8-4){1'b0}}, shift_reg_q[3:0]};
+            {SHIFT_ELEMWISE, VSEW_16}:  vfu_mask_o = {{(PIPE_OP_W/8-2){1'b0}}, shift_reg_q[1:0]};
+            {SHIFT_ELEMWISE, VSEW_8}:   vfu_mask_o = {{(PIPE_OP_W/8-1){1'b0}}, shift_reg_q[0]};
+            default:                    vfu_mask_o = shift_reg_q[PIPE_OP_W/8-1:0];
+        endcase
         vfu_data_valid_o = ctrl_q.valid_data; //ouput valid when valid data in the shift register
         shift_reg_ready_o = (state_q == IDLE);
     end

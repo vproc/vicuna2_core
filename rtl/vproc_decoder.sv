@@ -130,7 +130,7 @@ module vproc_decoder #(
 
         rd_o.vreg     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rd_o.addr     = instr_vd;
-        //rd_o.shift_rate    = SHIFT_FULL_WIDTH;  TODO: Will need to resolve this for widening MAC
+        rd_o.shift_rate    = SHIFT_FULL_WIDTH;
 
         `endif
 
@@ -231,6 +231,7 @@ module vproc_decoder #(
                 rd_o.vreg = 1'b1; // vd/vs3 is a vreg
                 rd_o.addr = instr_vd;
 
+
                 // width field (including mew)
                 unique case ({instr_i[28], instr_i[14:12]})
                     4'b0000: mode_o.lsu.eew = VSEW_8;
@@ -243,12 +244,12 @@ module vproc_decoder #(
                 unique case (instr_i[27:26])
                     2'b00: begin // unit-strided load/store
                         mode_o.lsu.stride = LSU_UNITSTRIDE;
-                        rs2_o.vreg        = 1'b0;
+                        rs2_o.vreg        = 1'b0;   //TODO: Dont need to pass this here now
                         rs2_o.r.xval      = DONT_CARE_ZERO ? '0 : 'x;
 
                         // convert to strided load/store if the VLSU requires that the base address
                         // of unit-strided loads/stores is aligned to the width of the memory
-                        // interface, but the base address in rs1 is not
+                        // interface, but the base address in rs1 is not //TODO: Eliminate this
                         if (ALIGNED_UNITSTRIDE & (x_rs1_i[$clog2(XIF_MEM_W/8)-1:0] != '0)) begin
                             misaligned_ls = 1'b1;
                             mode_o.lsu.stride = LSU_STRIDED;
@@ -263,6 +264,7 @@ module vproc_decoder #(
                         // lumop/sumop field
                         unique case (instr_i[24:20])
                             5'b00000: begin // unit-strided load/store (simple or segment)
+
                                 if (instr_i[31:29] != '0) begin
                                     // Unit-strided segment stores result in strided stores
                                     mode_o.lsu.stride = LSU_STRIDED;
@@ -336,8 +338,9 @@ module vproc_decoder #(
                     2'b10: begin // strided load/store
                         mode_o.lsu.stride = LSU_STRIDED;
                         rs2_o.vreg        = 1'b0;
-                        rs2_o.xreg        = 1'b1;
+                        rs2_o.xreg        = 1'b0;
                         rs2_o.r.xval      = x_rs2_i;
+                        rd_o.shift_rate   = SHIFT_ELEMWISE;
                     end
                     2'b01,
                     2'b11: begin // indexed load/store

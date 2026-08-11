@@ -568,7 +568,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         state_init.op_flags[1].shift_rate   = pipe_in_data_i.rs1.shift_rate;
         state_init.op_flags[1].sign         = pipe_in_data_i.rs1.sign;
 
-        state_init.op_flags[2].shift_rate   = SHIFT_FULL_WIDTH; //OP3 is always FULL Width TODO: dynamically set this is in decode
+        state_init.op_flags[2].shift_rate   = pipe_in_data_i.rd.shift_rate; //OP3 is always FULL Width TODO: dynamically set this is in decode
         state_init.op_flags[2].sign         = 1'b1;  //OP3 is always signed TODO: dynamically set this
 
         state_init.op_flags[OP_CNT-1].vreg = DONT_CARE_ZERO ? 1'b0 : 1'bx;

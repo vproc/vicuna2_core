@@ -442,6 +442,9 @@ typedef struct packed {
 typedef struct packed {
     logic       vreg;
     logic [4:0] addr;
+    op_shift_rate   shift_rate;
+    logic           sign;
+    cfg_vsew        sew;
 } op_regd;
 
 // operand fetch info structure
