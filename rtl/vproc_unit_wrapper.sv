@@ -242,6 +242,12 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_mask_o [MAX_OP_W/8-1:0] = unit_out_mask;
                 pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
 
+                if (unit_out_ctrl.res_narrow[0]) begin
+                    pipe_out_res_flags_o.shift_rate = RES_NARROW_WIDTH;
+                end else begin
+                    pipe_out_res_flags_o.shift_rate = RES_FULL_WIDTH;
+                end
+
                 // pipe_out_res_flags_o[1].mul_idx         = unit_out_ctrl.count_mul;
                 // pipe_out_res_flags_o[1].vreg_idx        = unit_out_ctrl.vreg_idx;
                 // pipe_out_res_flags_o[1].first_cycle     = unit_out_ctrl.first_cycle;

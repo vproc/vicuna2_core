@@ -462,9 +462,17 @@ typedef struct packed {
     cfg_vsew        sew;
 } unpack_flags;
 
+typedef enum logic [1:0] {
+    RES_FULL_WIDTH,     // Result produces full datapath width of data every cycle
+    RES_NARROW_WIDTH,      // Result produces half datapath width of data every cycle
+    RES_ELEMWISE,   // Result is a single element (reduction operations)
+    RES_BITWISE    // Result is a single bit (mask creation operations)
+} result_shift_rate;
+
 // result store info structure
 typedef struct packed {
     logic       shift;
+    logic       shift_rate;
     logic       elemwise;
     logic       narrow;
     logic       narrow_frac;

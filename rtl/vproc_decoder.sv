@@ -638,6 +638,10 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b101101, 3'b000},        // vnsra VV
                         {6'b101101, 3'b011},        // vnsra VI
@@ -653,6 +657,10 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b110000, 3'b010},        // vwaddu VV
                         {6'b110000, 3'b110}: begin  // vwaddu VX
@@ -1521,6 +1529,10 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs1_o.sign        = 1'b1;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b111110, 3'b010},        // vwmaccus VV
                         {6'b111110, 3'b110}: begin  // vwmaccus VX

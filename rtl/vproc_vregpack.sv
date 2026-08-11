@@ -78,11 +78,12 @@ module vproc_vregpack #(
     typedef struct packed {
     logic [VADDR_W-1:0]                     current_vreg;
     cfg_vsew                                    eew;
-    logic [$clog2(VPORT_W / MAX_RES_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise + widening ops
+    logic [$clog2(VPORT_W * 2 / MAX_RES_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise ops
     logic [INSTR_ID_W            -1:0]          instr_id;
     logic                                       valid;
     logic                                       last_cycle;
     logic                                       store;
+    result_shift_rate                           shift_rate;
     } repack_reg_ctrl;
 
     repack_reg_ctrl ctrl_d, ctrl_q;
@@ -96,32 +97,41 @@ module vproc_vregpack #(
         end
     end
 
+    // In case of narrowing ops, check if last cycle has been signalled, but total number of shifts is not complete. 
+    //In this case, keep shifting until completion and fill rf be bits with 0
+    logic narrowing;
+    assign narrowing = ctrl_q.last_cycle & !(ctrl_q.shifts_remaining == '0);
+
     always_comb begin
         ctrl_d = ctrl_q;
-        ctrl_d.valid = pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store)); //Hold valid signal if write port is blocked on last write
-        ctrl_d.last_cycle = (pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store));
+        ctrl_d.valid = pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store) | (ctrl_q.last_cycle & narrowing & !vreg_wr_gnt_i)); //Hold valid signal if write port is blocked on last write
+        ctrl_d.last_cycle = (pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store) | (ctrl_q.last_cycle & narrowing));
         ctrl_d.store = pipe_in_res_flags_i[0].store;
         if (pipe_in_valid_i & pipe_in_res_flags_i[0].first_cycle ) begin
             //Load configuration from the pipeline  //TODO: Only one set of result flags should be passed through the pipeline
                 ctrl_d.current_vreg = pipe_in_vaddr_i;
                 ctrl_d.eew = pipe_in_eew_i;
                 ctrl_d.instr_id = pipe_in_instr_id_i;
-                ctrl_d.shifts_remaining = '1; //will need to be adjusted for elemwise ops
-        end else if (ctrl_q.valid) begin
+                unique case(pipe_in_res_flags_i[0].shift_rate)
+                    RES_FULL_WIDTH: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1; //Standard case when functional units produce full datapath per cycle
+                    RES_NARROW_WIDTH: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
+                endcase
+                ctrl_d.shift_rate = pipe_in_res_flags_i[0].shift_rate;
+        end else if (ctrl_q.valid | narrowing) begin
             if (ctrl_q.shifts_remaining == '0) begin //Full register data ready to write
                 if (vreg_wr_gnt_i | ctrl_q.store) begin
                     ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
-                    ctrl_d.shifts_remaining = '1; // only reset counter here if write can be performed this cycle
+                    // only reset counter here if write can be performed this cycle
+                    unique case(ctrl_q.shift_rate)
+                        RES_FULL_WIDTH: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1; //Standard case when functional units produce full datapath per cycle
+                        RES_NARROW_WIDTH: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
+                    endcase
                 end
             end else begin
                 ctrl_d.shifts_remaining = ctrl_q.shifts_remaining-1;
             end
         end
     end
-    //////
-    // Handshake logic with unit mux
-    //////
-    assign pipe_in_ready_o = 1'b1; //pack is ready whenever the shift register is not full, or when a sucessful register write will occur
 
     //////
     // Result Assembly Shift Registers.  One for register write data and mask
@@ -135,18 +145,48 @@ module vproc_vregpack #(
             shift_reg_q <= '0;
             shift_reg_mask_q <= '0;
         end else begin
-            if (pipe_in_valid_i) begin
+            if (pipe_in_valid_i | narrowing) begin
                 shift_reg_q <= shift_reg_d;
                 shift_reg_mask_q <= shift_reg_mask_d;
             end
         end
     end
 
+    //On first cycle, take control bits from the pipeline
+    result_shift_rate cur_shift_mode;
+    assign cur_shift_mode = pipe_in_res_flags_i[0].first_cycle ? pipe_in_res_flags_i[0].shift_rate : ctrl_q.shift_rate;
+    cfg_vsew          cur_sew;
+    assign cur_sew = pipe_in_res_flags_i[0].first_cycle ? pipe_in_eew_i : ctrl_q.eew;
+
     always_comb begin
-        if (pipe_in_valid_i) begin
+        if (pipe_in_valid_i | narrowing) begin //Continue shifting if narrowing op
             if (!(ctrl_q.shifts_remaining == '0) || ( vreg_wr_gnt_i | ctrl_q.store )) begin
-                shift_reg_d = {pipe_in_res_data_i, shift_reg_q[VPORT_W-1 : MAX_RES_W]}; //TODO:Will need special case shifts
-                shift_reg_mask_d = {pipe_in_res_mask_i[0][VPORT_W/8-1:0], shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/8]}; //TODO; Strange result signalling
+                unique case ({cur_shift_mode, cur_sew})
+                {RES_FULL_WIDTH,VSEW_32},
+                {RES_FULL_WIDTH,VSEW_16},
+                {RES_FULL_WIDTH,VSEW_8}:  begin //Standard Case
+                                                shift_reg_d = {pipe_in_res_data_i[0], shift_reg_q[VPORT_W-1 : MAX_RES_W]};
+                                                shift_reg_mask_d = {pipe_in_res_mask_i[0][VPORT_W/8-1:0], shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/8]};
+                                            end
+                {RES_NARROW_WIDTH,VSEW_32}: //Decode increases EEW of narrowing ops
+                                            begin //Input is 16 bit elements with padding
+                                                    for (integer i = 0; i < MAX_RES_W/32; i++) begin
+                                                        shift_reg_d[VPORT_W-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];                          //Each result is 16 bits, 32 bits apart
+                                                        shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16+i*2 +: 2] = !narrowing ? pipe_in_res_mask_i[0][i*4 +: 2] : 2'b00; //Each result takes 2 bytes from the mask
+                                                    end
+                                                    shift_reg_d[VPORT_W-MAX_RES_W/2-1:0] = shift_reg_q[VPORT_W-1 : MAX_RES_W/2];
+                                                    shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16-1:0] = shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/16];
+                                            end
+                {RES_NARROW_WIDTH,VSEW_16}: //Decode increases EEW of narrowing ops
+                                            begin //Input is 8 bit elements with padding
+                                                    for (integer i = 0; i < MAX_RES_W/16; i++) begin
+                                                        shift_reg_d[VPORT_W-MAX_RES_W/2+i*8 +: 8] = pipe_in_res_data_i[0][i*16 +: 8];                        //Each result is 8 bits, 32 bits apart
+                                                        shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16+i] = !narrowing ? pipe_in_res_mask_i[0][i*2] : 1'b0;    //Each result takes 1 bytes from the mask
+                                                    end
+                                                    shift_reg_d[VPORT_W-MAX_RES_W/2-1:0] = shift_reg_q[VPORT_W-1 : MAX_RES_W/2];
+                                                    shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16-1:0] = shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/16];
+                                            end
+                endcase
             end
         end
     end
@@ -155,7 +195,7 @@ module vproc_vregpack #(
     // register write port logic
     //////
     always_comb begin
-        vreg_wr_req_o = (ctrl_q.shifts_remaining == '0) & ctrl_q.valid & !ctrl_q.store;  //Only write on last cycle and when the instruction is valid
+        vreg_wr_req_o = (ctrl_q.shifts_remaining == '0) & ((ctrl_q.valid & !ctrl_q.store) | narrowing);  //Only write on last cycle and when the instruction is valid
         vreg_wr_addr_o  = ctrl_q.current_vreg;
         vreg_wr_be_o    = shift_reg_mask_q;
         vreg_wr_data_o  = shift_reg_q;
@@ -168,6 +208,10 @@ module vproc_vregpack #(
         instr_done_id_o = ctrl_q.instr_id;
     end
 
+    //////
+    // Handshake logic with unit mux
+    //////
+    assign pipe_in_ready_o = !narrowing; //TODO: Need to stall if write fails?
 
 
     // // width of the pending write vreg clear counter (choosen such that it can span up to 1/4 of the
