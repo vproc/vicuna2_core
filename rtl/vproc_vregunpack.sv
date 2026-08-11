@@ -678,7 +678,7 @@ module vproc_vregunpack
     logic [VPORT_CNT-1:0] active_and_valid;
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
-            assign active_and_valid[i] = shift_regs_valid[i] & metadata_q.op_flags[i].vreg | metadata_q.op_flags[i].xreg; //TODO: loads mark the "scalar" register as valid, although value is passed through metadata buffers.  Will be necessary to fix this for segmented improvements
+            assign active_and_valid[i] = shift_regs_valid[i] & (metadata_q.op_flags[i].vreg | metadata_q.op_flags[i].xreg); //TODO: loads mark the "scalar" register as valid, although value is passed through metadata buffers.  Will be necessary to fix this for segmented improvements
         end
     endgenerate
 

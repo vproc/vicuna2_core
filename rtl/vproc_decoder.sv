@@ -385,7 +385,7 @@ module vproc_decoder #(
                     end
                     3'b011: begin   // OPIVI
                         rs1_o.vreg    = 1'b0; // rs1 field contains immediate (sign extend for all except slide instructions)
-                        rs1_o.xreg    = 1'b0;
+                        rs1_o.xreg    = 1'b1; // rs1 immediate treated as "xreg" value by unpack
                         unique case(instr_i[31:26])
                             
                             6'b001110, // Slide instructions
@@ -997,6 +997,10 @@ module vproc_decoder #(
                             if (~instr_masked) begin
                                 rs2_o.vreg      = 1'b0;
                             end
+                            //TODO: Currently setup for vmv VX/VI.  handle vmerge and vmv vv
+                             rs2_o.r.xval = '0;
+                             rs2_o.xreg = 1; //Contains immediate
+                             rs2_o.vreg = 0;
                         end
                         {6'b011000, 3'b000},        // vmseq VV
                         {6'b011000, 3'b011},        // vmseq VI
