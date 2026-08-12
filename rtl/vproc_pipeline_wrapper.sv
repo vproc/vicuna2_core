@@ -473,7 +473,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             state_init.mode.lsu.eew = pipe_in_data_i.mode.lsu.eew;
             state_init.mode.lsu.alt_count_lsu_use = 0;
 
-            state_init.op_flags[1].vreg   = 1'b0; //rs1 is always the base address for LSU (scalar value)
+            state_init.op_flags[1].vreg   = 1'b0; //rs1 is always the base address for LSU (scalar value) //TODO: These are no longer valid
             state_init.op_flags[1].xreg   = 1'b0; //This scalar value is passed separately
             unique case (pipe_in_data_i.mode.lsu.eew)
                 VSEW_8:  state_init.count_inc = COUNT_INC_1;
@@ -568,7 +568,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         state_init.op_flags[1].shift_rate   = pipe_in_data_i.rs1.shift_rate;
         state_init.op_flags[1].sign         = pipe_in_data_i.rs1.sign;
 
-        state_init.op_flags[2].shift_rate   = pipe_in_data_i.rd.shift_rate; //OP3 is always FULL Width TODO: dynamically set this is in decode
+        state_init.op_flags[2].shift_rate   = pipe_in_data_i.rd.shift_rate; //OP3 is always FULL Width
         state_init.op_flags[2].sign         = 1'b1;  //OP3 is always signed TODO: dynamically set this
 
         state_init.op_flags[OP_CNT-1].vreg = DONT_CARE_ZERO ? 1'b0 : 1'bx;
@@ -586,11 +586,12 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             state_init.masked         = pipe_in_data_i.mode.lsu.masked;
             //state_init.op_flags[OP_CNT-1].vreg = pipe_in_data_i.mode.lsu.masked;
             state_init.op_flags[0       ].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
-            state_init.op_flags[1       ].vreg     =  pipe_in_data_i.mode.lsu.store;
+            state_init.op_flags[1       ].vreg     =  pipe_in_data_i.mode.lsu.store; //TODO:SET THESE BITS IN DECODE
             state_init.op_flags[1       ].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
             state_init.op_vaddr[1       ]          =  pipe_in_data_i.rd.addr;
+            state_init.op_flags[1       ].shift_rate =  pipe_in_data_i.rd.shift_rate;
             state_init.op_flags[OP_CNT-1].elemwise =  pipe_in_data_i.mode.lsu.stride != LSU_UNITSTRIDE;
-            state_init.res_vreg[0       ]          = ~pipe_in_data_i.mode.lsu.store;
+            state_init.res_vreg[0       ]          = ~pipe_in_data_i.mode.lsu.store; //TODO:SET THESE BITS IN DECODE
             for(int i = 0; i < OP_CNT; i++) begin
                 state_init.op_flags[i].lsu_instr   = 1;
                 state_init.op_flags[i].field_instr = state_init.field_init_count > 0 ? 1 : 0;

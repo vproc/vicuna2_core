@@ -349,7 +349,7 @@ module mask_reg_shift_register
                                         {EMUL_2, VSEW_32}: ctrl_d.shifts_remaining     = ( 2 * VREG_PORT_W)/32 - 1;
                                         {EMUL_4, VSEW_8}: ctrl_d.shifts_remaining      = ( 4 * VREG_PORT_W)/8 - 1;
                                         {EMUL_4, VSEW_16}: ctrl_d.shifts_remaining     = ( 4 * VREG_PORT_W)/16 - 1;
-                                        {EMUL_4, VSEW_32}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/32 - 1;
+                                        {EMUL_4, VSEW_32}: ctrl_d.shifts_remaining     = ( 4 * VREG_PORT_W)/32 - 1;
                                         {EMUL_8, VSEW_8}: ctrl_d.shifts_remaining      = ( 8 * VREG_PORT_W)/8 - 1;
                                         {EMUL_8, VSEW_16}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/16 - 1;
                                         {EMUL_8, VSEW_32}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/32 - 1;

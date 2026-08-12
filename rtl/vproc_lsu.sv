@@ -59,7 +59,7 @@ module vproc_mem_port #(
             store_q <= store_d;
             data_q <= data_d;
             stride_q <= stride_d;
-            stride_val_q <= stride_val_q;
+            stride_val_q <= stride_val_d;
         end
     end
 
@@ -77,8 +77,8 @@ module vproc_mem_port #(
             if (first_cycle) begin
                 req_addr_d = base_addr_i;
                 store_d = store_i;
-                stride_d = stride_q;
-                stride_val_d = stride_val_q;
+                stride_d = stride_i;
+                stride_val_d = stride_val_i;
             end else begin
                 unique case (stride_q)
                     LSU_UNITSTRIDE: req_addr_d = req_addr_q + PORT_WIDTH/8 * NUM_PORTS; //Stride between requests split between number of ports
