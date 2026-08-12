@@ -1304,6 +1304,10 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = vxrm_i;
                             widenarrow_o          = OP_NARROWING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
+                            rs1_o.sign        = 1'b0;
+                            rs2_o.sign        = 1'b0;
                         end
                         {6'b101111, 3'b000},        // vnclip VV
                         {6'b101111, 3'b011},        // vnclip VI
@@ -1320,6 +1324,11 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = vxrm_i;
                             widenarrow_o          = OP_NARROWING;
+                            widenarrow_o          = OP_NARROWING;
+                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
+                            rs1_o.sign        = 1'b1;
+                            rs2_o.sign        = 1'b1;
                         end
                         {6'b100111, 3'b011}: begin  // vmv<nr>r VI
                             unit_o              = UNIT_ALU;
