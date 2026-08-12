@@ -78,7 +78,7 @@ module vproc_vregpack #(
     typedef struct packed {
     logic [VADDR_W-1:0]                     current_vreg;
     cfg_vsew                                    eew;
-    logic [$clog2(VPORT_W * 2 / MAX_RES_W)-1:0] shifts_remaining; //TODO: Will need to be extended for elemwise ops
+    logic [$clog2(VPORT_W/8)-1:0] shifts_remaining; //Max counter value is for SEW8 Elemwise ops
     logic [INSTR_ID_W            -1:0]          instr_id;
     logic                                       valid;
     logic                                       last_cycle;
@@ -112,11 +112,20 @@ module vproc_vregpack #(
                 ctrl_d.current_vreg = pipe_in_vaddr_i;
                 ctrl_d.eew = pipe_in_eew_i;
                 ctrl_d.instr_id = pipe_in_instr_id_i;
-                unique case(pipe_in_res_flags_i[0].shift_rate)
-                    RES_FULL_WIDTH: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1; //Standard case when functional units produce full datapath per cycle
-                    RES_NARROW_WIDTH: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
-                endcase
                 ctrl_d.shift_rate = pipe_in_res_flags_i[0].shift_rate;
+                unique case(pipe_in_res_flags_i[0].shift_rate)
+                    RES_FULL_WIDTH: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1;      //Standard case when functional units produce full datapath per cycle
+                    RES_NARROW_WIDTH: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
+                    RES_ELEMWISE_WIDTH: begin                                                     //Elemwise result shifts depends on SEW of result
+                                        unique case(ctrl_q.eew)
+                                            VSEW_32: ctrl_d.shifts_remaining = (VPORT_W/32)-1;
+                                            VSEW_16: ctrl_d.shifts_remaining = (VPORT_W/16)-1;
+                                            VSEW_8:  ctrl_d.shifts_remaining = (VPORT_W/8)-1;
+                                        endcase
+
+                    end
+
+                endcase
         end else if (ctrl_q.valid | narrowing) begin
             if (ctrl_q.shifts_remaining == '0) begin //Full register data ready to write
                 if (vreg_wr_gnt_i | ctrl_q.store) begin
@@ -125,6 +134,13 @@ module vproc_vregpack #(
                     unique case(ctrl_q.shift_rate)
                         RES_FULL_WIDTH: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1; //Standard case when functional units produce full datapath per cycle
                         RES_NARROW_WIDTH: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
+                        RES_ELEMWISE_WIDTH: begin                                                     //Elemwise result shifts depends on SEW of result
+                                        unique case(ctrl_q.eew)
+                                            VSEW_32: ctrl_d.shifts_remaining = (VPORT_W/32)-1;
+                                            VSEW_16: ctrl_d.shifts_remaining = (VPORT_W/16)-1;
+                                            VSEW_8:  ctrl_d.shifts_remaining = (VPORT_W/8)-1;
+                                        endcase
+                        end
                     endcase
                 end
             end else begin
@@ -164,7 +180,7 @@ module vproc_vregpack #(
                 unique case ({cur_shift_mode, cur_sew})
                 {RES_FULL_WIDTH,VSEW_32},
                 {RES_FULL_WIDTH,VSEW_16},
-                {RES_FULL_WIDTH,VSEW_8}:  begin //Standard Case
+                {RES_FULL_WIDTH,VSEW_8}:    begin //Standard Case
                                                 shift_reg_d = {pipe_in_res_data_i[0], shift_reg_q[VPORT_W-1 : MAX_RES_W]};
                                                 shift_reg_mask_d = {pipe_in_res_mask_i[0][VPORT_W/8-1:0], shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/8]};
                                             end
@@ -185,6 +201,21 @@ module vproc_vregpack #(
                                                     end
                                                     shift_reg_d[VPORT_W-MAX_RES_W/2-1:0] = shift_reg_q[VPORT_W-1 : MAX_RES_W/2];
                                                     shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16-1:0] = shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/16];
+                                            end
+                {RES_ELEMWISE_WIDTH,VSEW_32}:
+                                            begin
+                                                shift_reg_d = {pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W-1 : 32]};
+                                                shift_reg_mask_d = {pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[VPORT_W/8-1 : 4]};
+                                            end
+                {RES_ELEMWISE_WIDTH,VSEW_16}:
+                                            begin
+                                                shift_reg_d = {pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W-1 : 16]};
+                                                shift_reg_mask_d = {pipe_in_res_mask_i[0][2:0], shift_reg_mask_q[VPORT_W/8-1 : 2]};
+                                            end
+                {RES_ELEMWISE_WIDTH,VSEW_8}:
+                                            begin
+                                                shift_reg_d = {pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W-1 : 8]};
+                                                shift_reg_mask_d = {pipe_in_res_mask_i[0][0], shift_reg_mask_q[VPORT_W/8-1 : 1]};
                                             end
                 endcase
             end

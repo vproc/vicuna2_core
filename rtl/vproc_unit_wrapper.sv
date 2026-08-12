@@ -144,38 +144,32 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 pipe_out_res_flags_o = '{default: pack_flags'('0)};
                 pipe_out_res_mask_o  = '0;
                 pipe_out_valid_o = |unit_out_valid;
-                for(int i = 0; i < 1; i++) begin
-                    pipe_out_res_store_o = 0;
-                    pipe_out_res_data_o = '0;
-                    pipe_out_res_valid_o = 0;
-                    pipe_out_res_mask_o [MAX_OP_W/8-1:0] = '0;
-                    pipe_out_res_flags_o.shift           = 0;
-                    pipe_out_res_flags_o.elemwise        = 0;
-                    pipe_out_res_flags_o.vreg_idx       = '0;
-                    pipe_out_res_flags_o.lsu_instr      = 0;
-                    pipe_out_res_flags_o.field_instr    = 0;
-                    for(int j = 0; j < MEM_PORTS; j++) begin
-                        if(i == unit_out_ctrl.field_counter[j] & unit_out_valid[j]) begin
-                            pipe_out_res_store_o = unit_out_ctrl.res_store;
-                            pipe_out_res_data_o = unit_out_res;
-                            pipe_out_res_valid_o = unit_out_valid[j];
-                            pipe_out_res_mask_o [MAX_OP_W/8-1:0] = unit_out_mask;
-                            pipe_out_res_flags_o.shift           = unit_out_ctrl.res_shift;
-                            pipe_out_res_flags_o.elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
-                            pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
-                            pipe_out_res_flags_o.lsu_instr       = 1;
-                            pipe_out_res_flags_o.store           = unit_out_ctrl.mode.lsu.store;
-                            pipe_out_res_flags_o.field_instr     = unit_out_ctrl.field_init_count > 0;
-                            pipe_out_res_flags_o.first_cycle     = unit_out_ctrl.first_cycle;
-                            pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
-                            pipe_out_instr_id_o = unit_out_ctrl.id;
-                        end
-                    end
+                if (unit_out_ctrl.mode.lsu.stride == LSU_STRIDED) begin
+                    pipe_out_res_flags_o.shift_rate = RES_ELEMWISE_WIDTH;
+                end else begin
+                    pipe_out_res_flags_o.shift_rate = RES_FULL_WIDTH;
                 end
+                // for(int j = 0; j < MEM_PORTS; j++) begin //TODO: This loop is no longer valid
+                //     if(unit_out_valid[j]) begin
+                        pipe_out_res_store_o = unit_out_ctrl.res_store;
+                        pipe_out_res_data_o = unit_out_res;
+                        pipe_out_res_valid_o = unit_out_valid[0];
+                        pipe_out_res_mask_o [MAX_OP_W/8-1:0] = unit_out_mask;
+                        pipe_out_res_flags_o.shift           = unit_out_ctrl.res_shift;
+                        pipe_out_res_flags_o.elemwise        = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
+                        pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
+                        pipe_out_res_flags_o.lsu_instr       = 1;
+                        pipe_out_res_flags_o.store           = unit_out_ctrl.mode.lsu.store;
+                        pipe_out_res_flags_o.field_instr     = unit_out_ctrl.field_init_count > 0;
+                        pipe_out_res_flags_o.first_cycle     = unit_out_ctrl.first_cycle;
+                        pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
+                        pipe_out_instr_id_o = unit_out_ctrl.id;
+                //     end
+                // end
             end
             assign pipe_out_pend_clear_cnt_o = '0;
             assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
-            
+
         end
         else if (UNIT == UNIT_ALU) begin
             CTRL_T                 unit_out_ctrl;
