@@ -279,36 +279,31 @@ module vproc_decoder #(
                         unique case (instr_i[24:20])
                             5'b00000: begin // unit-strided load/store (simple or segment)
 
-                                // rs1_o.vreg = 1'b1;
-                                // rs1_o.xreg = 1'b0;
-                                // rs1_o.r.vaddr = instr_vd;//set to base address
 
                                 if (instr_i[31:29] != '0) begin
                                     // Unit-strided segment stores result in strided stores
                                     mode_o.lsu.stride = LSU_STRIDED;
 
-                                    // unique case (instr_i[31:29]) //nfields
-                                    //     3'b001: begin   //2 segments, operand
-                                    //         rs2_o.shift_rate = SHIFT_ELEMWISE;
-                                    //         rs2_o.vreg = 1'b1;
-                                    //         rs2_o.xreg = 1'b0;
-                                    //         rs2_o.r.vaddr = instr_vd;//set to base address
-                                    //         rs1_o.shift_rate = SHIFT_ELEMWISE;
-                                    //         rs1_o.vreg = 1'b1;
-                                    //         rs1_o.xreg = 1'b0;
-                                    //         unique case (emul_o) //NFIELDS * EMUL always <= 8
-                                    //             EMUL_1: rs1_o.r.vaddr = instr_vd + 1;
-                                    //             EMUL_2: rs1_o.r.vaddr = instr_vd + 2;
-                                    //             EMUL_4: rs1_o.r.vaddr = instr_vd + 4;
-                                    //         endcase
-                                    //         //set to base address + LMUL
+                                    //Segmented stores can be accelerated by dividing register groups between operand registers.
+                                    if ((instr_i[6:0] == 7'h27)) begin
+                                        decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                                        unique case (instr_i[31:29]) //nfields  
+                                            3'b001: begin   //2 segments, 1 group per operand
+                                                decode_metadata_o.operands[0].vreg = 1'b1;
+                                                decode_metadata_o.operands[0].xreg = 1'b0;
+                                                decode_metadata_o.operands[0].shift_rate   = SHIFT_ELEMWISE;
+                                                unique case (emul_o) //NFIELDS * EMUL always <= 8
+                                                    EMUL_1: decode_metadata_o.operands[0].r.vaddr = instr_vd + 1;
+                                                    EMUL_2: decode_metadata_o.operands[0].r.vaddr = instr_vd + 2;
+                                                    EMUL_4: decode_metadata_o.operands[0].r.vaddr = instr_vd + 4;
+                                                endcase
 
-                                    //     end
-                                    //     3'b010:;
-                                    //     3'b011:;
-                                    //     default:; //TODO: Handle all cases
-                                    // endcase
-
+                                            end
+                                            3'b010:;
+                                            3'b011:;
+                                            default:; //TODO: Handle all cases
+                                        endcase
+                                    end
                                     // set the byte stride (which is usually held in rs2) depending
                                     // on the element width and the number of fields as follows:
                                     //     stride = (EEW/8) * nf = (EEW/8) * (instr_i[31:29] + 1)
@@ -329,27 +324,6 @@ module vproc_decoder #(
                                     // Unit-strided segment stores result in strided stores
                                     mode_o.lsu.stride = LSU_STRIDED;
 
-                                    // unique case (instr_i[31:29]) //nfields
-                                    //     3'b001: begin   //2 segments, operand
-                                    //         rs2_o.shift_rate = SHIFT_ELEMWISE;
-                                    //         rs2_o.vreg = 1'b1;
-                                    //         rs2_o.xreg = 1'b0;
-                                    //         rs2_o.r.vaddr = instr_vd;//set to base address
-                                    //         rs1_o.shift_rate = SHIFT_ELEMWISE;
-                                    //         rs1_o.vreg = 1'b1;
-                                    //         rs1_o.xreg = 1'b0;
-                                    //         unique case (emul_o) //NFIELDS * EMUL always <= 8
-                                    //             EMUL_1: rs1_o.r.vaddr = instr_vd + 1;
-                                    //             EMUL_2: rs1_o.r.vaddr = instr_vd + 2;
-                                    //             EMUL_4: rs1_o.r.vaddr = instr_vd + 4;
-                                    //         endcase
-                                    //         //set to base address + LMUL
-
-                                    //     end
-                                    //     3'b010:;
-                                    //     3'b011:;
-                                    //     default:; //TODO: Handle all cases
-                                    //endcase
 
                                     // set the byte stride (which is usually held in rs2) depending
                                     // on the element width and the number of fields as follows:
@@ -2936,46 +2910,46 @@ module vproc_decoder #(
         vd_invalid  = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         narrow_frac_o = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         // regular operation:
-        // unique case (widenarrow_o)  //TODO: Rewrite this handling with decoder
-        //     OP_SINGLEWIDTH: begin
-        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
-        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
-        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+        unique case (widenarrow_o)  //TODO: Rewrite this handling with decoder
+            OP_SINGLEWIDTH: begin
+                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
+                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
+                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
 
-        //         if(mode_o.lsu.stride == LSU_INDEXED) begin
-        //             // since for indexed stride we use the default lmul
-        //             // we use the adapted mask 
-        //             vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_index_vd       }) != 5'b0;
-        //         end
-        //     end
-        //     OP_WIDENING: begin
-        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
-        //     end
-        //     OP_WIDENING_EXT2: begin
-        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
-        //     end
-        //     OP_WIDENING_EXT4: begin
-        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow_x4}) != 5'b0;
-        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow_x4}) != 5'b0;
-        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
-        //     end
-        //     OP_WIDENING_VS2: begin
-        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
-        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
-        //     end
-        //     OP_NARROWING: begin
-        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
-        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
-        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_narrow}) != 5'b0;
-        //         narrow_frac_o = (lmul_i == LMUL_F8) | (lmul_i == LMUL_F4) | (lmul_i == LMUL_F2);
-        //     end
-        //     default: ;
-        // endcase
+                if(mode_o.lsu.stride == LSU_INDEXED) begin
+                    // since for indexed stride we use the default lmul
+                    // we use the adapted mask 
+                    vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_index_vd       }) != 5'b0;
+                end
+            end
+            OP_WIDENING: begin
+                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+            end
+            OP_WIDENING_EXT2: begin
+                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+            end
+            OP_WIDENING_EXT4: begin
+                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow_x4}) != 5'b0;
+                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow_x4}) != 5'b0;
+                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+            end
+            OP_WIDENING_VS2: begin
+                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
+                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+            end
+            OP_NARROWING: begin
+                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
+                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
+                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_narrow}) != 5'b0;
+                narrow_frac_o = (lmul_i == LMUL_F8) | (lmul_i == LMUL_F4) | (lmul_i == LMUL_F2);
+            end
+            default: ;
+        endcase
 
         // compare instruction produce a mask (i.e., vd address always valid)
         if ((unit_o == UNIT_ALU) & mode_o.alu.cmp) begin

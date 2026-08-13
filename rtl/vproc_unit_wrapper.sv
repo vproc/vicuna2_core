@@ -85,7 +85,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             //For LSU, only signal ready when all necessary operands are valid
             logic [OP_CNT-1:0]  necessary_ops;
             for (genvar i = 0; i < OP_CNT; i++) begin
-                assign necessary_ops[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
+                assign necessary_ops[i] = pipe_in_ctrl_i.decode_metadata.operands[i].xreg || pipe_in_ctrl_i.decode_metadata.operands[i].vreg;
             end
 
             logic  unit_in_valid_i;
@@ -180,7 +180,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             //For ALU, only signal ready when all necessary operands are valid
             logic [OP_CNT-1:0]  necessary_ops;
             for (genvar i = 0; i < OP_CNT; i++) begin
-                assign necessary_ops[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
+                assign necessary_ops[i] = pipe_in_ctrl_i.decode_metadata.operands[i].xreg || pipe_in_ctrl_i.decode_metadata.operands[i].vreg;
             end
 
             logic  unit_in_valid_i;
@@ -262,7 +262,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             //For MUL, only signal ready when all necessary operands are valid
             logic [OP_CNT-1:0]  necessary_ops;
             for (genvar i = 0; i < OP_CNT; i++) begin
-                assign necessary_ops[i] = pipe_in_ctrl_i.op_flags[i].xreg || pipe_in_ctrl_i.op_flags[i].vreg;
+                assign necessary_ops[i] = pipe_in_ctrl_i.decode_metadata.operands[i].xreg || pipe_in_ctrl_i.decode_metadata.operands[i].vreg;
             end
 
             logic  unit_in_valid_i;

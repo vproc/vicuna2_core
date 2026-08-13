@@ -209,6 +209,50 @@ module vproc_lsu #(
     assign pipe_in_ready_o = &ports_ready_i;
     assign pipe_out_valid_o = &ports_valid_o;
 
+
+    /////////
+    //  Input routing for standard vs segmented operations
+    /////////
+
+    logic [MEM_PORTS-1:0][VMEM_W-1:0] port_data_in;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] port_mask_in;
+
+    generate
+        for (genvar i = 0; i < MEM_PORTS; i++) begin
+            always_comb begin
+                unique case (pipe_in_ctrl_i.mode.lsu.nfields)
+                    3'b000: begin
+                            //Non-Segmented Case
+                            port_data_in[i][VMEM_W-1:0] = pipe_in_op2_i[(i * VMEM_W) +: VMEM_W];
+                            port_mask_in[i][VMEM_W/8-1:0] = pipe_in_mask_i[(i * VMEM_W/8) +: VMEM_W/8];
+
+                    end
+                    3'b001: begin //For segmented case, 1 element from each input op per register group (TODO: Can potentially scale to multiple ports this way by loading/shifting more data per cycle)
+                            unique case (pipe_in_ctrl_i.eew)
+                                VSEW_8: begin
+                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-2*8){1'b0}}, pipe_in_op1_i[i * 8 +: 8], pipe_in_op2_i[i * 8 +: 8]};
+                                    port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2){1'b0}}, {(2){pipe_in_mask_i[i]}}}; //Mask applies to both elements being loaded/stored
+                                end
+                                VSEW_16: begin
+                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-2*16){1'b0}}, pipe_in_op1_i[i * 16 +: 16], pipe_in_op2_i[i * 16 +: 16]};
+                                    port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2*2){1'b0}}, {(4){pipe_in_mask_i[i*2 +: 2]}}}; //Mask applies to both elements being loaded/stored
+                                end
+                            endcase
+                    end
+                    //TODO: Cases for additional fields here
+                    default: begin //TODO: Should be possible to remove this case
+                                port_data_in[i] = '0;
+                                port_data_in[i] = '0;
+                    end
+                endcase
+            end
+        end
+    endgenerate
+
+    ////////
+    // Instantiation of memory ports
+    ////////
+
     generate
         for (genvar i = 0; i < MEM_PORTS; i++) begin //TODO: Definitely issues with signalling with multiple ports, untested
             vproc_mem_port #(
@@ -220,11 +264,11 @@ module vproc_lsu #(
                 .sync_rst_ni(sync_rst_ni),
                 .valid_i(pipe_in_valid_i),
                 .store_i(pipe_in_ctrl_i.mode.lsu.store),
-                .data_i(pipe_in_op2_i),
+                .data_i(port_data_in[i]),
                 .ready_o(ports_ready_i[i]),
                 .first_cycle(pipe_in_ctrl_i.first_cycle),
                 .base_addr_i(pipe_in_ctrl_i.op_xval[1]),
-                .mask_i(pipe_in_mask_i[(VMEM_W/8)*i +: VMEM_W/8]),
+                .mask_i(port_mask_in[i]),
                 .stride_i(pipe_in_ctrl_i.mode.lsu.stride),
                 .stride_val_i(pipe_in_ctrl_i.op_xval[0]),
                 .obi_bus(obi_bus[i]),
