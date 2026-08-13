@@ -512,7 +512,7 @@ module vproc_vregunpack
         // pipeline in
         input  logic                                     pipe_in_valid_i,
         output logic                                     pipe_in_ready_o,
-        input  METADATA_T                                pipe_in_ctrl_i,       // pipeline control sigs
+        input  METADATA_T                                pipe_in_ctrl_i,       // pipeline control sigs TODO: Most signals below this one should be absorbed into this struct
         input  vproc_pkg::op_unit                        pipe_in_unit_i,
         input  vproc_pkg::cfg_vsew                       pipe_in_alt_eew_i,
         input  vproc_pkg::cfg_vsew                       pipe_in_eew_i,        // current element width
@@ -669,16 +669,16 @@ module vproc_vregunpack
                 //.async_rst_ni,
                 .sync_rst_ni(sync_rst_ni),
 
-                .pipe_in_valid_i(shift_reg_in_valid_q & (metadata_q.op_flags[i].vreg | metadata_q.op_flags[i].xreg)),
+                .pipe_in_valid_i(shift_reg_in_valid_q & (metadata_q.ctrl.decode_metadata.operands[i].vreg | metadata_q.ctrl.decode_metadata.operands[i].xreg)),
                 .shift_reg_ready_o(shift_regs_ready[i]),
                 .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
                 .operand_emul_i(metadata_q.emul), 
-                .operand_vaddr_base_i(metadata_q.op_vaddr[i]),
-                .operand_shift_rate_i(metadata_q.ctrl.op_flags[i].shift_rate),
-                .operand_sign_i(metadata_q.ctrl.op_flags[i].sign), 
+                .operand_vaddr_base_i(metadata_q.ctrl.decode_metadata.operands[i].r.vaddr),
+                .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[i].shift_rate),
+                .operand_sign_i(metadata_q.ctrl.decode_metadata.operands[i].sign), 
 
-                .use_xval_i(metadata_q.op_flags[i].xreg),
-                .xval_i(metadata_q.op_xval[i]),
+                .use_xval_i(metadata_q.ctrl.decode_metadata.operands[i].xreg),
+                .xval_i(metadata_q.ctrl.decode_metadata.operands[i].r.xval),
 
                 .finished_o(shift_reg_done[i]),
 
@@ -717,7 +717,7 @@ module vproc_vregunpack
         .shift_reg_ready_o(mask_reg_ready),
         .operand_eew_i(metadata_q.eew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
         .operand_emul_i(metadata_q.emul),
-        .operand_shift_rate_i(metadata_q.ctrl.op_flags[1].shift_rate), //TODO: Currently based off of OP1 shift rate
+        .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[1].shift_rate), //TODO: Currently based off of OP1 shift rate
         
         .vl_i(metadata_q.ctrl.vl),
         .vl_0_i(metadata_q.ctrl.vl_0),
@@ -742,7 +742,7 @@ module vproc_vregunpack
     logic [VPORT_CNT-1:0] active_and_valid;
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
-            assign active_and_valid[i] = shift_regs_valid[i] & (metadata_q.op_flags[i].vreg | metadata_q.op_flags[i].xreg); //TODO: loads mark the "scalar" register as valid, although value is passed through metadata buffers.  Will be necessary to fix this for segmented improvements
+            assign active_and_valid[i] = shift_regs_valid[i] & (metadata_q.ctrl.decode_metadata.operands[i].vreg | metadata_q.ctrl.decode_metadata.operands[i].xreg); //TODO: loads mark the "scalar" register as valid, although value is passed through metadata buffers.  Will be necessary to fix this for segmented improvements
         end
     endgenerate
 
@@ -771,7 +771,7 @@ module vproc_vregunpack
     always_comb begin
         if (state_q == READY && pipe_in_valid_i) begin
             for (int i = 0; i < VPORT_CNT; i++) begin
-                active_ops_d[i] = pipe_in_ctrl_i.op_flags[i].vreg | pipe_in_ctrl_i.op_flags[i].xreg; //Set active ops for all vreg ops
+                active_ops_d[i] = pipe_in_ctrl_i.decode_metadata.operands[i].vreg | pipe_in_ctrl_i.decode_metadata.operands[i].xreg; //Set active ops for all vreg ops
             end
             active_mask_d = 1'b1; //mask always active
         end else begin

@@ -227,6 +227,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         logic                            res_narrow_frac;
         logic                     [4 :0] res_vaddr;
         logic                            masked;
+        decode_metadata                  decode_metadata; //TODO: All necessary signals from above should be absorbed into this struct (and set in decode)
     } state_t;
 
     // identify the unit of the supplied instruction
@@ -353,6 +354,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         state_init.mode           = pipe_in_data_i.mode;
         state_init.emul           = pipe_in_data_i.emul;
         state_init.eew            = unit_lsu ? pipe_in_data_i.mode.lsu.eew : pipe_in_data_i.vsew;
+        state_init.decode_metadata = pipe_in_data_i.decode_metadata; //TODO: This should be the only assignment necessary in this entire module
 
         state_init.count_extra_phase = unit_sld & (pipe_in_data_i.mode.sld.dir == SLD_DOWN);
         state_init.alt_count_init    = '0;

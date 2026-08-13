@@ -507,5 +507,10 @@ localparam fpu_features_t RV32ZVFH = '{
     FpFmtMask:     5'b10100,
     IntFmtMask:    4'b0010  //TODO:FIX
 };
+//New struct for decode flags to be passed to unpack:  TODO: Migrate all necessary signal outputs from vproc_decode to this struct and remove duplicates
+typedef struct packed {
+    op_regs [2:0] operands; //TODO: Dynamically select # operands based on # read ports, currently fixed to 3
+    op_regs       mask_operand; //Todo: many signals in the op_regs datatype are unncessesary for the mask operand.  Should probably have its own, smaller version of the struct
+} decode_metadata;
 
 endpackage

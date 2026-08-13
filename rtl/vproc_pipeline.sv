@@ -166,6 +166,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         logic                          vreg_idx;
         logic                          count_mul;
         logic                          field_done;
+
+        decode_metadata                decode_metadata; //All above relevant signals should be absorbed into this one and passed from decode
+
     } metadata_t;
 
     metadata_t metadata_i;
@@ -202,6 +205,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         metadata_i.field_counter           = '0; //set to 0 for not segment instructions
         metadata_i.field_init_count        = '0; //set to 0 for non segment instructions
         metadata_i.mem_req_valid           = pipe_in_state_i.unit == UNIT_LSU; //This signal should not be necessary
+        metadata_i.decode_metadata         = pipe_in_state_i.decode_metadata; //TODO: This should be the only struct passed
     end
 
     //////////

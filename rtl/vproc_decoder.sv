@@ -42,7 +42,9 @@ module vproc_decoder #(
         output vproc_pkg::op_regs       rs2_o,        // source register rs2/vs2
         output vproc_pkg::op_regd       rd_o,          // destination register rd/vd
 
-        output logic                    vl_override_o     //signal if instruction has overridden VL
+        output logic                    vl_override_o,     //signal if instruction has overridden VL
+
+        output decode_metadata          decode_metadata_o //TODO: All necessary signals from above should be migrated to this struct
     );
 
     import vproc_pkg::*;
@@ -130,6 +132,7 @@ module vproc_decoder #(
 
         rd_o.vreg     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rd_o.addr     = instr_vd;
+        rd_o.sew     = vsew_o;
         rd_o.shift_rate    = SHIFT_FULL_WIDTH;
 
         `endif
@@ -146,6 +149,8 @@ module vproc_decoder #(
         misaligned_ls = 1'b0;
 
         `endif
+
+        decode_metadata_o = '0; //TODO: This struct should be used to contain all decoded instr data.  Should be directly set instead of indirectly through rs1_o, rs2_o, rd_o
 
         unique case (instr_i[6:0])
 
@@ -224,12 +229,21 @@ module vproc_decoder #(
                 mode_o.lsu.masked  = instr_masked;
                 mode_o.lsu.nfields = instr_i[31:29];
 
-                rs1_o.vreg   = 1'b0; // rs1 is an x register
+                rs1_o.vreg   = 1'b0; // rs1 is an x register //TODO: These assignments should be unnecessary, all load operand signalling should be done using the new decode_metadata.operands structs
                 rs1_o.xreg   = 1'b1;
                 rs1_o.r.xval = x_rs1_i;
 
                 rd_o.vreg = 1'b1; // vd/vs3 is a vreg
                 rd_o.addr = instr_vd;
+
+                //Redefine operands in order expected by current VLSU pipeline
+                decode_metadata_o.operands[1].vreg = (instr_i[6:0] == 7'h27); //Vreg active only for stores
+                decode_metadata_o.operands[1].xreg = 1'b0;
+                decode_metadata_o.operands[1].r.vaddr = instr_vd; //There is an inversion of arguments 1-2 between decode + pipeline wrapper
+
+                decode_metadata_o.operands[0].vreg = 1'b0;
+                decode_metadata_o.operands[0].xreg = 1'b0;
+                decode_metadata_o.operands[0].r.vaddr = '0;
 
 
                 // width field (including mew)
@@ -265,9 +279,35 @@ module vproc_decoder #(
                         unique case (instr_i[24:20])
                             5'b00000: begin // unit-strided load/store (simple or segment)
 
+                                // rs1_o.vreg = 1'b1;
+                                // rs1_o.xreg = 1'b0;
+                                // rs1_o.r.vaddr = instr_vd;//set to base address
+
                                 if (instr_i[31:29] != '0) begin
                                     // Unit-strided segment stores result in strided stores
                                     mode_o.lsu.stride = LSU_STRIDED;
+
+                                    // unique case (instr_i[31:29]) //nfields
+                                    //     3'b001: begin   //2 segments, operand
+                                    //         rs2_o.shift_rate = SHIFT_ELEMWISE;
+                                    //         rs2_o.vreg = 1'b1;
+                                    //         rs2_o.xreg = 1'b0;
+                                    //         rs2_o.r.vaddr = instr_vd;//set to base address
+                                    //         rs1_o.shift_rate = SHIFT_ELEMWISE;
+                                    //         rs1_o.vreg = 1'b1;
+                                    //         rs1_o.xreg = 1'b0;
+                                    //         unique case (emul_o) //NFIELDS * EMUL always <= 8
+                                    //             EMUL_1: rs1_o.r.vaddr = instr_vd + 1;
+                                    //             EMUL_2: rs1_o.r.vaddr = instr_vd + 2;
+                                    //             EMUL_4: rs1_o.r.vaddr = instr_vd + 4;
+                                    //         endcase
+                                    //         //set to base address + LMUL
+
+                                    //     end
+                                    //     3'b010:;
+                                    //     3'b011:;
+                                    //     default:; //TODO: Handle all cases
+                                    // endcase
 
                                     // set the byte stride (which is usually held in rs2) depending
                                     // on the element width and the number of fields as follows:
@@ -289,9 +329,31 @@ module vproc_decoder #(
                                     // Unit-strided segment stores result in strided stores
                                     mode_o.lsu.stride = LSU_STRIDED;
 
+                                    // unique case (instr_i[31:29]) //nfields
+                                    //     3'b001: begin   //2 segments, operand
+                                    //         rs2_o.shift_rate = SHIFT_ELEMWISE;
+                                    //         rs2_o.vreg = 1'b1;
+                                    //         rs2_o.xreg = 1'b0;
+                                    //         rs2_o.r.vaddr = instr_vd;//set to base address
+                                    //         rs1_o.shift_rate = SHIFT_ELEMWISE;
+                                    //         rs1_o.vreg = 1'b1;
+                                    //         rs1_o.xreg = 1'b0;
+                                    //         unique case (emul_o) //NFIELDS * EMUL always <= 8
+                                    //             EMUL_1: rs1_o.r.vaddr = instr_vd + 1;
+                                    //             EMUL_2: rs1_o.r.vaddr = instr_vd + 2;
+                                    //             EMUL_4: rs1_o.r.vaddr = instr_vd + 4;
+                                    //         endcase
+                                    //         //set to base address + LMUL
+
+                                    //     end
+                                    //     3'b010:;
+                                    //     3'b011:;
+                                    //     default:; //TODO: Handle all cases
+                                    //endcase
+
                                     // set the byte stride (which is usually held in rs2) depending
                                     // on the element width and the number of fields as follows:
-                                    //     stride = (EEW/8) * nf = (EEW/8) * (instr_i[31:29] + 1)
+                                    //     stride = (EEW/8) * nf = (EEW/8) * (instr_i[31:29] + 1)  //TODO: This works for cases where # segments = number operands
                                     unique case (instr_i[14:12]) // width field
                                         3'b000: rs2_o.r.xval = {28'b0, {1'b0, instr_i[31:29]} + 4'h1       }; // EEW 8
                                         3'b101: rs2_o.r.xval = {27'b0, {1'b0, instr_i[31:29]} + 4'h1, 1'b0 }; // EEW 16
@@ -326,9 +388,15 @@ module vproc_decoder #(
                                     default: instr_illegal = 1'b1;
                                 endcase
                                 mode_o.lsu.nfields = '0;
+                                // rs1_o.vreg = 1'b1;
+                                // rs1_o.xreg = 1'b0;
+                                // rs1_o.r.vaddr = instr_vd;//set to base address
                             end
                             5'b01011: begin // mask load/store
                                 evl_pol = EVL_MASK;
+                                // rs1_o.vreg = 1'b1;
+                                // rs1_o.xreg = 1'b0;
+                                // rs1_o.r.vaddr = instr_vd;//set to base address
                             end
                             default: begin
                                 instr_illegal = 1'b1;
@@ -341,6 +409,11 @@ module vproc_decoder #(
                         rs2_o.xreg        = 1'b0;
                         rs2_o.r.xval      = x_rs2_i;
                         rd_o.shift_rate   = SHIFT_ELEMWISE;
+                        decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                        // rs1_o.vreg = 1'b1;
+                        // rs1_o.xreg = 1'b0;
+                        // rs1_o.r.vaddr = instr_vd;//set to base address
+                        // rd_o.vreg = 1'b0;
                     end
                     2'b01,
                     2'b11: begin // indexed load/store
@@ -385,30 +458,52 @@ module vproc_decoder #(
                         rs1_o.r.vaddr = instr_vs1;
                         rs2_o.vreg    = 1'b1; // rs2 is a vector register
                         rs2_o.r.vaddr = instr_vs2;
+
+                        decode_metadata_o.operands[0].vreg = 1'b1;
+                        decode_metadata_o.operands[0].xreg = 1'b0;
+                        decode_metadata_o.operands[0].r.vaddr = instr_vs2; //There is an inversion of arguments 1-2 between decode + pipeline wrapper
+
+                        decode_metadata_o.operands[1].vreg = 1'b1;
+                        decode_metadata_o.operands[1].xreg = 1'b0;
+                        decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+
                     end
                     3'b011: begin   // OPIVI
                         rs1_o.vreg    = 1'b0; // rs1 field contains immediate (sign extend for all except slide instructions)
                         rs1_o.xreg    = 1'b1; // rs1 immediate treated as "xreg" value by unpack
+
+                        decode_metadata_o.operands[0].vreg = 1'b1;
+                        decode_metadata_o.operands[0].xreg = 1'b0;
+                        decode_metadata_o.operands[0].r.vaddr = instr_vs2; //There is an inversion of arguments 1 and 2 between decode and regunpack
+
+                        decode_metadata_o.operands[1].vreg = 1'b0;
+                        decode_metadata_o.operands[1].xreg = 1'b1;
+
                         unique case(instr_i[31:26])
-                            
+
                             6'b001110, // Slide instructions
                             6'b001111, // Slide instructions
                             6'b110101 : begin // VWSLL
                                 rs1_o.r.xval = {{27{1'b0}}, instr_vs1};
+                                decode_metadata_o.operands[1].r.xval = {{27{1'b0}}, instr_vs1};
                             end
                             // VROR immeadiate has an immediate of size 6
                             6'b010100,
                             6'b010101: begin
                                 rs1_o.r.xval = {{26{1'b0}}, instr_i[26], instr_vs1};
+                                decode_metadata_o.operands[1].r.xval = {{26{1'b0}}, instr_i[26], instr_vs1};
                             end
                             // All other instruction are sign extended
                             default: begin
                                 rs1_o.r.xval = {{27{instr_vs1[4]}}, instr_vs1};
+                                decode_metadata_o.operands[1].r.xval = {{27{instr_vs1[4]}}, instr_vs1};
                             end
                         endcase
                         //rs1_o.r.xval  = ((instr_i[31:26] == 6'b001110) | (instr_i[31:26] == 6'b001111)) ? {{27{1'b0}}, instr_vs1} : {{27{instr_vs1[4]}}, instr_vs1};
                         rs2_o.vreg    = 1'b1; // rs2 is a vector register
                         rs2_o.r.vaddr = instr_vs2;
+
+                        
                     end
                     3'b100,          // OPIVX
                     3'b101,          // OPFVF
@@ -418,8 +513,16 @@ module vproc_decoder #(
                         rs1_o.r.xval  = x_rs1_i;
                         rs2_o.vreg    = 1'b1; // rs2 is a vector register
                         rs2_o.r.vaddr = instr_vs2;
+
+                        decode_metadata_o.operands[0].vreg = 1'b1;
+                        decode_metadata_o.operands[0].xreg = 1'b0;
+                        decode_metadata_o.operands[0].r.vaddr = instr_vs2; //There is an inversion of arguments 1-2 between decode + pipeline wrapper
+
+                        decode_metadata_o.operands[1].vreg = 1'b0;
+                        decode_metadata_o.operands[1].xreg = 1'b1;
+                        decode_metadata_o.operands[1].r.xval = x_rs1_i;
                     end
-                    3'b111: begin   // OPCFG
+                    3'b111: begin   // OPCFG  //TODO:Config instructions don't go to unpack, so currently not using new operand signalling
                         rs1_o.vreg    = 1'b0; // rs1 is either x reg or immediate
                         rs1_o.xreg    = instr_i[31:30] != 2'b11;
                         rs1_o.r.xval  = rs1_o.xreg ? x_rs1_i : {{27{1'b0}}, instr_vs1};
@@ -641,10 +744,10 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b101101, 3'b000},        // vnsra VV
                         {6'b101101, 3'b011},        // vnsra VI
@@ -661,9 +764,11 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
                             rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
                             rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110000, 3'b010},        // vwaddu VV
                         {6'b110000, 3'b110}: begin  // vwaddu VX
@@ -678,10 +783,10 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110001, 3'b010},        // vwadd VV
                         {6'b110001, 3'b110}: begin  // vwadd VX
@@ -696,10 +801,10 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b1;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b110010, 3'b010},        // vwsubu VV
                         {6'b110010, 3'b110}: begin  // vwsubu VX
@@ -714,10 +819,10 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110011, 3'b010},        // vwsub VV
                         {6'b110011, 3'b110}: begin  // vwsub VX
@@ -732,10 +837,10 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b1;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b110100, 3'b010},        // vwaddu.w VV
                         {6'b110100, 3'b110}: begin  // vwaddu.w VX
@@ -750,10 +855,10 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
-                            rs1_o.sign          = 1'b0;
-                            rs2_o.sign          = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110101, 3'b010},        // vwadd.w VV
                         {6'b110101, 3'b110}: begin  // vwadd.w VX
@@ -768,10 +873,10 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
-                            rs1_o.sign        = 1'b1;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b110110, 3'b010},        // vwsubu.w VV
                         {6'b110110, 3'b110}: begin  // vwsubu.w VX
@@ -786,10 +891,10 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110111, 3'b010},        // vwsub.w VV
                         {6'b110111, 3'b110}: begin  // vwsub.w VX
@@ -804,10 +909,10 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
-                            rs1_o.sign        = 1'b1;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b010000, 3'b000},        // vadc VV
                         {6'b010000, 3'b011},        // vadc VI
@@ -837,6 +942,7 @@ module vproc_decoder #(
                         end
                         {6'b010010, 3'b010}: begin  // VXUNARY0
                             rs1_o.vreg          = 1'b0; // No vector register
+                            decode_metadata_o.operands[1].vreg = 1'b0;
                             unique case (instr_vs1[4:3])
                                 2'b00 : begin // v[z|s]ext.[vf2/vf4] VV
                                     unit_o              = UNIT_ALU;
@@ -853,18 +959,14 @@ module vproc_decoder #(
                                         2'b11 : begin
                                             instr_illegal       = 1'b0;
                                             widenarrow_o        = OP_WIDENING_EXT2; //TODO: Clean up, these signals shoudnt be necessary
-                                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                                            rs1_o.sign        = instr_vs1[0];
-                                            rs2_o.sign        = instr_vs1[0];
+                                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                                            decode_metadata_o.operands[0].sign = instr_vs1[0];
                                         end
                                         2'b10 : begin
                                             instr_illegal       = 1'b0;
                                             widenarrow_o        = OP_WIDENING_EXT4;
-                                            rs1_o.shift_rate    = SHIFT_QUARTER_WIDTH;
-                                            rs2_o.shift_rate    = SHIFT_QUARTER_WIDTH;
-                                            rs1_o.sign        = instr_vs1[0];
-                                            rs2_o.sign        = instr_vs1[0];
+                                            decode_metadata_o.operands[0].shift_rate = SHIFT_QUARTER_WIDTH;
+                                            decode_metadata_o.operands[0].sign = instr_vs1[0];
                                         end
                                         default : begin
                                             instr_illegal       = 1'b1;
@@ -1304,10 +1406,10 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = vxrm_i;
                             widenarrow_o          = OP_NARROWING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b101111, 3'b000},        // vnclip VV
                         {6'b101111, 3'b011},        // vnclip VI
@@ -1324,11 +1426,10 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = vxrm_i;
                             widenarrow_o          = OP_NARROWING;
-                            widenarrow_o          = OP_NARROWING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
-                            rs1_o.sign        = 1'b1;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b100111, 3'b011}: begin  // vmv<nr>r VI
                             unit_o              = UNIT_ALU;
@@ -1429,9 +1530,15 @@ module vproc_decoder #(
                             mode_o.mul.accsub     = 1'b0;
                             mode_o.mul.op1_signed = 1'b0; // irrelevant
                             mode_o.mul.op2_signed = 1'b0; // irrelevant
-                            mode_o.mul.op2_is_vd  = 1'b1;
+                            mode_o.mul.op2_is_vd  = 1'b1; // irrelevant
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vs2;
                         end
                         {6'b101011, 3'b010},        // vnmsub VV
                         {6'b101011, 3'b110}: begin  // vnmsub VX
@@ -1443,6 +1550,12 @@ module vproc_decoder #(
                             mode_o.mul.op2_is_vd  = 1'b1;
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vs2;
                         end
                         {6'b101101, 3'b010},        // vmacc VV
                         {6'b101101, 3'b110}: begin  // vmacc VX
@@ -1454,6 +1567,9 @@ module vproc_decoder #(
                             mode_o.mul.op2_is_vd  = 1'b0;
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
                         end
                         {6'b101111, 3'b010},        // vnmsac VV
                         {6'b101111, 3'b110}: begin  // vnmsac VX
@@ -1465,6 +1581,9 @@ module vproc_decoder #(
                             mode_o.mul.op2_is_vd  = 1'b0;
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
                         end
                         {6'b111000, 3'b010},        // vwmulu VV
                         {6'b111000, 3'b110}: begin  // vwmulu VX
@@ -1477,10 +1596,10 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b111010, 3'b010},        // vwmulsu VV
                         {6'b111010, 3'b110}: begin  // vwmulsu VX
@@ -1493,10 +1612,10 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b111011, 3'b010},        // vwmul VV
                         {6'b111011, 3'b110}: begin  // vwmul VX
@@ -1509,10 +1628,10 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b1;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b111100, 3'b010},        // vwmaccu VV
                         {6'b111100, 3'b110}: begin  // vwmaccu VX
@@ -1525,10 +1644,15 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b111101, 3'b010},        // vwmacc VV
                         {6'b111101, 3'b110}: begin  // vwmacc VX
@@ -1541,10 +1665,15 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b1;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b111110, 3'b010},        // vwmaccus VV
                         {6'b111110, 3'b110}: begin  // vwmaccus VX
@@ -1557,10 +1686,15 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b0;
-                            rs2_o.sign        = 1'b1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b1;
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b111111, 3'b010},        // vwmaccsu VV
                         {6'b111111, 3'b110}: begin  // vwmaccsu VX
@@ -1573,10 +1707,15 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_HALF_WIDTH;
-                            rs1_o.sign        = 1'b1;
-                            rs2_o.sign        = 1'b0;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b0;
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b100111, 3'b000},        // vsmul VV
                         {6'b100111, 3'b100}: begin  // vsmul VX
@@ -2797,46 +2936,46 @@ module vproc_decoder #(
         vd_invalid  = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         narrow_frac_o = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         // regular operation:
-        unique case (widenarrow_o)
-            OP_SINGLEWIDTH: begin
-                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
-                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
-                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+        // unique case (widenarrow_o)  //TODO: Rewrite this handling with decoder
+        //     OP_SINGLEWIDTH: begin
+        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
+        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
+        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
 
-                if(mode_o.lsu.stride == LSU_INDEXED) begin
-                    // since for indexed stride we use the default lmul
-                    // we use the adapted mask 
-                    vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_index_vd       }) != 5'b0;
-                end
-            end
-            OP_WIDENING: begin
-                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
-            end
-            OP_WIDENING_EXT2: begin
-                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
-            end
-            OP_WIDENING_EXT4: begin
-                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow_x4}) != 5'b0;
-                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow_x4}) != 5'b0;
-                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
-            end
-            OP_WIDENING_VS2: begin
-                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
-                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
-                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
-            end
-            OP_NARROWING: begin
-                vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
-                vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
-                vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_narrow}) != 5'b0;
-                narrow_frac_o = (lmul_i == LMUL_F8) | (lmul_i == LMUL_F4) | (lmul_i == LMUL_F2);
-            end
-            default: ;
-        endcase
+        //         if(mode_o.lsu.stride == LSU_INDEXED) begin
+        //             // since for indexed stride we use the default lmul
+        //             // we use the adapted mask 
+        //             vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_index_vd       }) != 5'b0;
+        //         end
+        //     end
+        //     OP_WIDENING: begin
+        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+        //     end
+        //     OP_WIDENING_EXT2: begin
+        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+        //     end
+        //     OP_WIDENING_EXT4: begin
+        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow_x4}) != 5'b0;
+        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask_narrow_x4}) != 5'b0;
+        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+        //     end
+        //     OP_WIDENING_VS2: begin
+        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask_narrow}) != 5'b0;
+        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
+        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask       }) != 5'b0;
+        //     end
+        //     OP_NARROWING: begin
+        //         vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
+        //         vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
+        //         vd_invalid  = (instr_vd  & {2'b00, regaddr_mask_narrow}) != 5'b0;
+        //         narrow_frac_o = (lmul_i == LMUL_F8) | (lmul_i == LMUL_F4) | (lmul_i == LMUL_F2);
+        //     end
+        //     default: ;
+        // endcase
 
         // compare instruction produce a mask (i.e., vd address always valid)
         if ((unit_o == UNIT_ALU) & mode_o.alu.cmp) begin

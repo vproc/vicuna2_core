@@ -283,6 +283,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         op_regd              rd;
         logic                pend_load;
         logic                pend_store;
+        decode_metadata      decode_metadata; //TODO: This struct should encompass all relevant signals from decoder_data and replace it
     } decoder_data;
 
     // signals for decoder and for decoder buffer
@@ -352,7 +353,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .rs1_o              ( dec_data_d.rs1                      ),
         .rs2_o              ( dec_data_d.rs2                      ),
         .rd_o               ( dec_data_d.rd                       ),
-        .vl_override_o      ( dec_vl_override                     )
+        .vl_override_o      ( dec_vl_override                     ),
+        .decode_metadata_o  ( dec_data_d.decode_metadata          )
     );
     assign dec_data_d.id         = xif_issue_if.issue_req.id;
     assign dec_data_d.vl_0       = vl_0_q & ~dec_vl_override;
