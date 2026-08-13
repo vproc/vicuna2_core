@@ -119,6 +119,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
                 .pipe_in_ctrl_i           ( pipe_in_ctrl_i                              ),
                 .pipe_in_op1_i            ( pipe_in_op_data_i[0]                        ),
                 .pipe_in_op2_i            ( pipe_in_op_data_i[1]                        ),
+                .pipe_in_op3_i            ( pipe_in_op_data_i[2]                        ),
                 .pipe_in_mask_i           ( pipe_in_mask_data_i                         ),
                 .pipe_out_valid_o         ( unit_out_valid                              ),
                 .pipe_out_ready_i         ( pipe_out_ready_i                            ),

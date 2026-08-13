@@ -178,6 +178,7 @@ module vproc_lsu #(
         input  CTRL_T                 pipe_in_ctrl_i,
         input  logic [MAX_OP_W-1:0]   pipe_in_op1_i,
         input  logic [MAX_OP_W-1:0]   pipe_in_op2_i,
+        input  logic [MAX_OP_W-1:0]   pipe_in_op3_i,
         input  logic [MAX_OP_W/8  -1:0] pipe_in_mask_i,
 
         output logic [MEM_PORTS-1:0]  pipe_out_valid_o,
@@ -227,22 +228,45 @@ module vproc_lsu #(
                             port_mask_in[i][VMEM_W/8-1:0] = pipe_in_mask_i[(i * VMEM_W/8) +: VMEM_W/8];
 
                     end
-                    3'b001: begin //For segmented case, 1 element from each input op per register group (TODO: Can potentially scale to multiple ports this way by loading/shifting more data per cycle)
+                    //For segmented cases, 1 element from each input op per register group (TODO: Can potentially scale to multiple ports this way by loading/shifting more data per cycle)
+                    3'b001: begin //2 segments
                             unique case (pipe_in_ctrl_i.eew)
                                 VSEW_8: begin
-                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-2*8){1'b0}}, pipe_in_op1_i[i * 8 +: 8], pipe_in_op2_i[i * 8 +: 8]};
+                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(2*8)){1'b0}}, pipe_in_op1_i[i * 8 +: 8], pipe_in_op2_i[i * 8 +: 8]};
                                     port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2){1'b0}}, {(2){pipe_in_mask_i[i]}}}; //Mask applies to both elements being loaded/stored
                                 end
                                 VSEW_16: begin
-                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-2*16){1'b0}}, pipe_in_op1_i[i * 16 +: 16], pipe_in_op2_i[i * 16 +: 16]};
-                                    port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2*2){1'b0}}, {(4){pipe_in_mask_i[i*2 +: 2]}}}; //Mask applies to both elements being loaded/stored
+                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(2*16)){1'b0}}, pipe_in_op1_i[i * 16 +: 16], pipe_in_op2_i[i * 16 +: 16]};
+                                    port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-(2*2)){1'b0}}, {(4){pipe_in_mask_i[i*2 +: 2]}}}; //Mask applies to both elements being loaded/stored
+                                end
+                                //TODO: 32 bit case depends on VMEM_W
+                                default: begin
+                                    port_data_in[i] = '0;
+                                    port_mask_in[i] = '0;
+                                end
+                            endcase
+                    end
+                    3'b010: begin //3 segments
+                            unique case (pipe_in_ctrl_i.eew)
+                                VSEW_8: begin
+                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(3*8)){1'b0}}, pipe_in_op3_i[i * 8 +: 8], pipe_in_op1_i[i * 8 +: 8], pipe_in_op2_i[i * 8 +: 8]};
+                                    port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-3){1'b0}}, {(3){pipe_in_mask_i[i]}}}; //Mask applies to both elements being loaded/stored
+                                end
+                                //TODO: 16 and 32 bit case depends on VMEM_W
+                                // VSEW_16: begin
+                                //     port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-2*16){1'b0}}, pipe_in_op1_i[i * 16 +: 16], pipe_in_op2_i[i * 16 +: 16]};
+                                //     port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2*2){1'b0}}, {(4){pipe_in_mask_i[i*2 +: 2]}}}; //Mask applies to both elements being loaded/stored
+                                // end
+                                default: begin
+                                    port_data_in[i] = '0;
+                                    port_mask_in[i] = '0;
                                 end
                             endcase
                     end
                     //TODO: Cases for additional fields here
                     default: begin //TODO: Should be possible to remove this case
                                 port_data_in[i] = '0;
-                                port_data_in[i] = '0;
+                                port_mask_in[i] = '0;
                     end
                 endcase
             end

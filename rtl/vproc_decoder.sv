@@ -299,7 +299,25 @@ module vproc_decoder #(
                                                 endcase
 
                                             end
-                                            3'b010:;
+                                            3'b010: begin   //3 segments, 1 group per operand
+                                                decode_metadata_o.operands[0].vreg = 1'b1;
+                                                decode_metadata_o.operands[0].xreg = 1'b0;
+                                                decode_metadata_o.operands[0].shift_rate   = SHIFT_ELEMWISE;
+                                                decode_metadata_o.operands[2].vreg = 1'b1;
+                                                decode_metadata_o.operands[2].xreg = 1'b0;
+                                                decode_metadata_o.operands[2].shift_rate   = SHIFT_ELEMWISE;
+                                                unique case (emul_o) //NFIELDS * EMUL always <= 8
+                                                    EMUL_1: begin
+                                                        decode_metadata_o.operands[0].r.vaddr = instr_vd + 1;
+                                                        decode_metadata_o.operands[2].r.vaddr = instr_vd + 2;
+                                                    end
+                                                    EMUL_2: begin
+                                                        decode_metadata_o.operands[0].r.vaddr = instr_vd + 2;
+                                                        decode_metadata_o.operands[2].r.vaddr = instr_vd + 4;
+                                                    end
+                                                endcase
+
+                                            end
                                             3'b011:;
                                             default:; //TODO: Handle all cases
                                         endcase
