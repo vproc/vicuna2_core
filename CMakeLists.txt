@@ -142,6 +142,7 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul_block.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_zvbb.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_zvbc.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_redsum.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pending_wr.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline_wrapper.sv

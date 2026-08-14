@@ -109,6 +109,7 @@ typedef enum logic [3:0] {
     UNIT_ELEM,
     UNIT_ZVBB,
     UNIT_ZVBC,
+    UNIT_REDSUM,
     UNIT_CUSTOM, //Used for arbitrary custom functional units
     // pseudo-units (used for instructions that require no unit):
     UNIT_CFG
@@ -511,6 +512,7 @@ localparam fpu_features_t RV32ZVFH = '{
 typedef struct packed {
     op_regs [2:0] operands; //TODO: Dynamically select # operands based on # read ports, currently fixed to 3
     op_regs       mask_operand; //Todo: many signals in the op_regs datatype are unncessesary for the mask operand.  Should probably have its own, smaller version of the struct
+    logic         masked;
 } decode_metadata;
 
 endpackage

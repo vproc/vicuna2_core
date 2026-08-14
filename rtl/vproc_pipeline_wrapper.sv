@@ -347,6 +347,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
     end
 
     // set the initial pipeline state for the incoming instruction
+
     state_t state_init;
     always_comb begin
         state_init = state_t'('0);
@@ -578,6 +579,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         state_init.res_vreg  [0] = 1'b1;
         state_init.res_narrow[0] = '0;
         state_init.res_vaddr     = pipe_in_data_i.rd.addr;
+        state_init.masked        = pipe_in_data_i.decode_metadata.masked;
 
         for(int i = 0; i < OP_CNT; i++) begin
             state_init.op_flags[i].lsu_instr   = 0;
@@ -616,6 +618,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             state_init.op_vaddr[(OP_CNT >= 3) ? 2 : 0]      = pipe_in_data_i.mode.mul.op2_is_vd ? pipe_in_data_i.rs2.r.vaddr : pipe_in_data_i.rd.addr;
         end
         if (unit_elem) begin
+            state_init.masked                                          = pipe_in_data_i.decode_metadata.masked;
             state_init.op_flags[0                           ].vreg     = pipe_in_data_i.rs2.vreg & elem_vs2_data;
             state_init.op_flags[0                           ].elemwise = 1'b1;
             state_init.op_flags[0                           ].sigext   = pipe_in_data_i.mode.elem.sigext;

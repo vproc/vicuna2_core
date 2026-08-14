@@ -151,7 +151,7 @@ module vproc_decoder #(
         `endif
 
         decode_metadata_o = '0; //TODO: This struct should be used to contain all decoded instr data.  Should be directly set instead of indirectly through rs1_o, rs2_o, rd_o
-
+        decode_metadata_o.masked = instr_masked;
         unique case (instr_i[6:0])
 
             // OPCODE SYSTEM:
@@ -402,10 +402,6 @@ module vproc_decoder #(
                         rs2_o.r.xval      = x_rs2_i;
                         rd_o.shift_rate   = SHIFT_ELEMWISE;
                         decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
-                        // rs1_o.vreg = 1'b1;
-                        // rs1_o.xreg = 1'b0;
-                        // rs1_o.r.vaddr = instr_vd;//set to base address
-                        // rd_o.vreg = 1'b0;
                     end
                     2'b01,
                     2'b11: begin // indexed load/store
@@ -755,9 +751,7 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
-                            rs1_o.shift_rate    = SHIFT_HALF_WIDTH;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
-                            rs2_o.shift_rate    = SHIFT_FULL_WIDTH; //OP_NARROWING UPDATES EEW
                             decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
                             decode_metadata_o.operands[1].sign = 1'b0;
                             decode_metadata_o.operands[0].sign = 1'b0;
@@ -2428,10 +2422,7 @@ module vproc_decoder #(
                             mode_o.elem.masked = instr_masked;
                         end
                         {6'b000000, 3'b010}: begin  // vredsum VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDSUM;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM;       //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand
                         end
                         {6'b000001, 3'b010}: begin  // vredand VV
                             unit_o             = UNIT_ELEM;
@@ -2476,20 +2467,20 @@ module vproc_decoder #(
                             mode_o.elem.masked = instr_masked;
                         end
                         {6'b110000, 3'b000}: begin  // vwredsumu VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDSUM;
-                            mode_o.elem.sigext = 1'b0;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM; //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand
                             widenarrow_o       = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110001, 3'b000}: begin  // vwredsum VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDSUM;
-                            mode_o.elem.sigext = 1'b1;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM; //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand
                             widenarrow_o       = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
 
 

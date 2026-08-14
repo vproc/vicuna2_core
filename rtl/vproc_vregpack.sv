@@ -91,24 +91,30 @@ module vproc_vregpack #(
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
             ctrl_q <= '0;
-            ctrl_q.shifts_remaining <= '1;
+            ctrl_q.shifts_remaining <= '0;
         end else begin
             ctrl_q <= ctrl_d;
         end
     end
 
     // In case of narrowing ops, check if last cycle has been signalled, but total number of shifts is not complete. 
-    //In this case, keep shifting until completion and fill rf be bits with 0
+    // In this case, keep shifting until completion and fill rf be bits with 0
     logic narrowing;
-    assign narrowing = ctrl_q.last_cycle & !(ctrl_q.shifts_remaining == '0);
+    assign narrowing = ctrl_q.last_cycle & !(ctrl_q.shifts_remaining == '0) & (ctrl_q.shift_rate == RES_NARROW_WIDTH);
+
+    // In case of ops which write a single element, bypass shifting logic and attempt write directly.
+    // In this case, functional units should signal first and last cycle together to complete transaction in one cycle
+    logic single_element_res;
+    assign single_element_res = pipe_in_res_flags_i[0].first_cycle & pipe_in_res_flags_i[0].last_cycle;
 
     always_comb begin
         ctrl_d = ctrl_q;
-        ctrl_d.valid = pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store) | (ctrl_q.last_cycle & narrowing & !vreg_wr_gnt_i)); //Hold valid signal if write port is blocked on last write
-        ctrl_d.last_cycle = (pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store) | (ctrl_q.last_cycle & narrowing));
+        ctrl_d.valid = (pipe_in_valid_i | (ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store) | (ctrl_q.last_cycle & narrowing & !vreg_wr_gnt_i))) & !single_element_res; //Hold valid signal if write port is blocked on last write
+        ctrl_d.last_cycle = ((pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store) | (ctrl_q.last_cycle & narrowing))) & !single_element_res;
         ctrl_d.store = pipe_in_res_flags_i[0].store;
         if (pipe_in_valid_i & pipe_in_res_flags_i[0].first_cycle ) begin
-            //Load configuration from the pipeline  //TODO: Only one set of result flags should be passed through the pipeline
+            if (!single_element_res) begin
+                    //Load configuration from the pipeline if not single element result //TODO: Only one set of result flags should be passed through the pipeline
                 ctrl_d.current_vreg = pipe_in_vaddr_i;
                 ctrl_d.eew = pipe_in_eew_i;
                 ctrl_d.instr_id = pipe_in_instr_id_i;
@@ -124,8 +130,8 @@ module vproc_vregpack #(
                                         endcase
 
                     end
-
                 endcase
+            end
         end else if (ctrl_q.valid | narrowing) begin
             if (ctrl_q.shifts_remaining == '0) begin //Full register data ready to write
                 if (vreg_wr_gnt_i | ctrl_q.store) begin
@@ -226,23 +232,24 @@ module vproc_vregpack #(
     // register write port logic
     //////
     always_comb begin
-        vreg_wr_req_o = (ctrl_q.shifts_remaining == '0) & ((ctrl_q.valid & !ctrl_q.store) | narrowing);  //Only write on last cycle and when the instruction is valid
-        vreg_wr_addr_o  = ctrl_q.current_vreg;
-        vreg_wr_be_o    = shift_reg_mask_q;
-        vreg_wr_data_o  = shift_reg_q;
-        vreg_wr_id_o    = ctrl_q.instr_id;
+        vreg_wr_req_o = (ctrl_q.shifts_remaining == '0) & ((ctrl_q.valid & !ctrl_q.store) | narrowing) | single_element_res;  //Only write on last cycle and when the instruction is valid
+        vreg_wr_addr_o  = single_element_res ? pipe_in_vaddr_i : ctrl_q.current_vreg;
+        vreg_wr_be_o    = single_element_res ? pipe_in_res_mask_i[0] : shift_reg_mask_q;
+        vreg_wr_data_o  = single_element_res ? pipe_in_res_data_i[0] : shift_reg_q;
+        vreg_wr_id_o    = single_element_res ? pipe_in_instr_id_i : ctrl_q.instr_id;
     end
 
     // signalling completion logic
     always_comb begin
-        instr_done_valid_o = (vreg_wr_gnt_i | ctrl_q.store) & ctrl_q.valid & ctrl_q.last_cycle; //Done on last valid write
-        instr_done_id_o = ctrl_q.instr_id;
+        instr_done_valid_o = (vreg_wr_gnt_i | ctrl_q.store) & ctrl_q.valid & ctrl_q.last_cycle | (single_element_res & vreg_wr_gnt_i); //Done on last valid write
+        instr_done_id_o = single_element_res ? pipe_in_instr_id_i : ctrl_q.instr_id;
     end
 
     //////
     // Handshake logic with unit mux
     //////
-    assign pipe_in_ready_o = !narrowing; //TODO: Need to stall if write fails?
+    //Unit ready when writes are successful, not narrowing, and successful single element writes occur //TODO: Confirm stall condition for failed write is correct?
+    assign pipe_in_ready_o = !(!vreg_wr_gnt_i & vreg_wr_req_o) & !narrowing & !(single_element_res & !vreg_wr_gnt_i); //TODO: Allow single cycle "writes" to signal completion and not actually write back (xreg results)
 
 
     // // width of the pending write vreg clear counter (choosen such that it can span up to 1/4 of the
