@@ -182,7 +182,7 @@ module vproc_vregpack #(
 
     always_comb begin
         if (pipe_in_valid_i | narrowing) begin //Continue shifting if narrowing op
-            if (!(ctrl_q.shifts_remaining == '0) || ( vreg_wr_gnt_i | ctrl_q.store )) begin
+            if (!(ctrl_q.shifts_remaining == '0) || ( vreg_wr_gnt_i | ctrl_q.store ) || pipe_in_res_flags_i[0].first_cycle) begin
                 unique case ({cur_shift_mode, cur_sew})
                 {RES_FULL_WIDTH,VSEW_32},
                 {RES_FULL_WIDTH,VSEW_16},
