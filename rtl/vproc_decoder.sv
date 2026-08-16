@@ -2483,7 +2483,10 @@ module vproc_decoder #(
                             mode_o.sld.dir    = SLD_UP;
                             mode_o.sld.slide1 = 1'b1;
                             mode_o.sld.masked = instr_masked;
-                            rd_o.vreg         = 1'b1;
+                            decode_metadata_o.operands[1].vreg = 1'b0;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[1].xreg = 1'b0;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
                         end
                         {6'b001111, 3'b110}: begin  // vslide1down VX
                             unit_o            = UNIT_SLD;
