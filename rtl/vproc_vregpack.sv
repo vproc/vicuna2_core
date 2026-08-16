@@ -306,7 +306,6 @@ module vproc_vregpack #(
     //Unit ready when writes are successful, not narrowing, and successful single element writes occur //TODO: Confirm stall condition for failed write is correct?
     assign pipe_in_ready_o = !(!vreg_wr_gnt_i & vreg_wr_req_o) & !narrowing & !(single_element_res & !vreg_wr_gnt_i) & !(ctrl_q.mask_complete & !vreg_wr_gnt_i); //TODO: Allow single cycle "writes" to signal completion and not actually write back (xreg results)
 
-
     // // width of the pending write vreg clear counter (choosen such that it can span up to 1/4 of the
     // // vector register addresses)
     // localparam int unsigned PEND_CLEAR_CNT_W = $clog2(VADDR_W-1);

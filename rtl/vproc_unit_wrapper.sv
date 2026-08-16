@@ -347,6 +347,7 @@ module vproc_unit_wrapper import vproc_pkg::*; #(
             logic [MAX_OP_W/8-1:0] unit_out_mask;
             vproc_sld #(
                 .OP_W             ( MAX_OP_W                                    ),
+                .VLEN             ( VREG_W                                      ),
                 .METADATA_T       ( CTRL_T                                      ),
                 .DONT_CARE_ZERO   ( DONT_CARE_ZERO                              )
             ) sld (
