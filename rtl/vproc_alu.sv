@@ -4,6 +4,7 @@
 
 
 module vproc_alu #(
+        parameter int unsigned        VLEN             = 128,
         parameter int unsigned        ALU_OP_W         = 64,   // ALU operand width in bits
         parameter bit                 BUF_OPERANDS     = 1'b1, // insert pipeline stage after operand extraction
         parameter bit                 BUF_INTERMEDIATE = 1'b1, // insert pipeline stage for intermediate results
@@ -20,6 +21,13 @@ module vproc_alu #(
         input  CTRL_T                 pipe_in_ctrl_i,
         input  logic [ALU_OP_W  -1:0] pipe_in_op1_i,
         input  logic [ALU_OP_W  -1:0] pipe_in_op2_i,
+
+        input  logic                  pipe_in_op3_valid_i,
+        output logic                  pipe_in_op3_ready_o, //OP3 used for tu/mu mask generation operations
+        input  logic [ALU_OP_W  -1:0] pipe_in_op3_i, 
+
+        input  logic                  pipe_in_mask_valid_i,
+        output logic                  pipe_in_mask_ready_o,
         input  logic [ALU_OP_W/8-1:0] pipe_in_mask_i,
 
         output logic                  pipe_out_valid_o,
@@ -261,8 +269,28 @@ module vproc_alu #(
     end
 
     assign pipe_in_ready_o   = state_ex1_ready;
-    assign state_ex1_valid_d = pipe_in_valid_i;
+    assign state_ex1_valid_d = pipe_in_valid_i | lmul1_cond_q; //need to hold valid in this condition
     assign state_ex1_d       = pipe_in_ctrl_i;
+
+    //for vadc/sbc, need to reapply vl mask to output, vl passed in as # bytes -1 TODO:
+    logic [$clog2(VLEN * 8)-1 : 0] processed_vl_d, processed_vl_q; 
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_ni) begin
+            processed_vl_q <= '0;
+        end else begin
+            processed_vl_q <= processed_vl_d;
+        end
+    end
+
+    always_comb begin
+        processed_vl_d = processed_vl_q;
+        if (pipe_in_valid_i & pipe_in_ctrl_i.first_cycle) begin
+            processed_vl_d = '0;
+        end else if (pipe_in_valid_i & pipe_in_ready_o) begin
+            processed_vl_d = processed_vl_q + ALU_OP_W/8;
+        end
+    end
+
     assign operand_mask_d    = pipe_in_mask_i;
 
     logic [ALU_OP_W-1:0] operand1_32, operand2_32;
@@ -274,9 +302,15 @@ module vproc_alu #(
     end
     assign operand1_tmp_d     = operand1_32;
     assign operand2_tmp_d     = operand2_32;
-    assign operand_mask_tmp_d = operand_mask_q;
 
-    // result byte mask //Computed in unpack
+    generate
+        for (genvar i = 0; i < ALU_OP_W/8; i++) begin
+            always_comb begin
+                operand_mask_tmp_d[i] = state_ex1_q.mode.alu.op_mask == ALU_MASK_CARRY ? ((state_ex1_q.vl_0 | ((processed_vl_q + i) > state_ex1_q.vl)) ? 1'b0 : 1'b1) : operand_mask_q[i];
+            end
+        end
+    endgenerate
+    // result byte mask
     assign result_mask_d = operand_mask_tmp_q;
 
     assign pipe_out_valid_o   = state_res_valid_q;
@@ -563,6 +597,78 @@ module vproc_alu #(
         endcase
     end
 
+    ///////
+    // Destination Buffer for tu/mu bitwise operations
+    //
+    // Use extra OP3 read port to read the destination register
+    // For masked out elements, replace result with the corresponding bit from the destination register for undisturbed operation
+    ///////
+
+    logic [ALU_OP_W-1:0]            dest_reg_d, dest_reg_q;  //Currently configured to buffer ALU_OP_W destination register here.  Could potentially buffer less with lower shift rate in UNPACK, but this will increase lost cycles to clear remaining data in unpack
+    logic [$clog2(32)-1:0]          counter_d, counter_q;
+    logic                           cmp_op_d, cmp_op_q;
+    logic                           flush_op3_d, flush_op3_q;
+    logic                           lmul1_cond_d, lmul1_cond_q; //Special condition for LMUL1 SEW32, need to extend operation to write a full byte to the destination
+
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_ni) begin
+            dest_reg_q <= '0;
+            counter_q <= '0;
+            cmp_op_q <= 1'b0;
+            flush_op3_q <= 1'b0;
+            lmul1_cond_q <= 1'b0;
+        end else begin
+            dest_reg_q <= dest_reg_d;
+            counter_q <= counter_d;
+            cmp_op_q <= cmp_d;
+            flush_op3_q <= flush_op3_d;
+            lmul1_cond_q <= lmul1_cond_d;
+        end
+    end
+
+    always_comb begin
+        dest_reg_d = dest_reg_q;
+        counter_d = counter_q;
+        if (((counter_q == '0) | pipe_in_ctrl_i.first_cycle) & (pipe_in_ready_o & pipe_in_valid_i & pipe_in_mask_valid_i & pipe_in_mask_ready_o & pipe_in_op3_ready_o & pipe_in_op3_valid_i)) begin  //latch new data on first cycle or when counter == 0 and all inputs are ready
+            dest_reg_d = pipe_in_op3_i;
+            unique case(pipe_in_ctrl_i.eew)                      //could setting this on input SEW cause issues?
+                VSEW_32: counter_d  = 32 -1;                     //Set counter value.  SEW==# cycles to consume ALU_OP_W bits
+                VSEW_16: counter_d  = 16 -1;
+                VSEW_8:  counter_d  = 8  -1;
+            endcase
+        end else if (state_ex2_valid_q & state_ex2_ready) begin  //shift based on SEW when bits consumed (in ex2)
+            unique case(state_ex2_q.eew)                         //Using first stage buffer
+                VSEW_32: dest_reg_d = {{(ALU_OP_W/32){1'b0}}, dest_reg_d[ALU_OP_W-1:ALU_OP_W/32]};
+                VSEW_16: dest_reg_d = {{(ALU_OP_W/16){1'b0}}, dest_reg_d[ALU_OP_W-1:ALU_OP_W/16]};
+                VSEW_8:  dest_reg_d = {{(ALU_OP_W/8){1'b0}},  dest_reg_d[ALU_OP_W-1:ALU_OP_W/8]};
+            endcase
+            counter_d = counter_q - 1;
+        end
+    end
+
+    //If all of op3 is not consumed by the operation, need to hold ready signal high to flush data and reset unpack shift reg
+    always_comb begin
+        flush_op3_d = flush_op3_q ? pipe_in_op3_valid_i : flush_op3_q;
+        if (state_ex2_valid_q & state_ex2_ready & state_ex2_q.last_cycle) begin
+            flush_op3_d = pipe_in_op3_valid_i; //only need to flush if valid data still in op3
+        end
+    end
+
+    //Special condition for LMUL1 SEW32 to extend operation
+    always_comb begin
+        lmul1_cond_d = lmul1_cond_q ? pipe_in_mask_valid_i : lmul1_cond_q;
+        if (pipe_in_ctrl_i.mode.alu.cmp & pipe_in_valid_i & pipe_in_ctrl_i.first_cycle & (VLEN==128) & (pipe_in_ctrl_i.eew == VSEW_32) & (pipe_in_ctrl_i.emul == EMUL_1)) begin
+            lmul1_cond_d = 1'b1; //only need if EMUL1 and SEW32
+        end
+    end
+
+    assign pipe_in_op3_ready_o = flush_op3_q | (pipe_in_ready_o & pipe_in_valid_i & pipe_in_mask_valid_i & pipe_in_mask_ready_o & pipe_in_op3_valid_i & ((counter_q == '0) | pipe_in_ctrl_i.first_cycle));  //Ready when all other args ready, and held until data in unpack cleared
+
+    //To handle case when VLEN==128, SEW32, EMUL_1, need to write 4 more bits to the destination register.  Mask register configured to continue to be valid for additional cycles
+
+    //Mask ready when normal operands are valid, normal + op3 are valid for mask ops, 
+    assign pipe_in_mask_ready_o = (pipe_in_valid_i & pipe_in_ready_o & pipe_in_mask_valid_i) | lmul1_cond_q; //TODO: Might cause issues with data hazards?
+
     // compare result; comparisons are done using the compare register `cmp_q';
     // equality (or inequality) is determined by testing whether the sum is 0
     logic [ALU_OP_W/8-1:0] neq;
@@ -589,12 +695,42 @@ module vproc_alu #(
     end
     always_comb begin
         result_cmp_d = DONT_CARE_ZERO ? '0 : 'x;
-        unique case (state_ex2_q.mode.alu.opx2.cmp)
-            ALU_CMP_CMP:  result_cmp_d =  cmp_q;
-            ALU_CMP_CMPN: result_cmp_d = ~cmp_q;
-            ALU_CMP_EQ:   result_cmp_d = ~neq;
-            ALU_CMP_NE:   result_cmp_d =  neq;
-            default: ;
+
+        //Based on SEW and input mask, select whether to use the computed value or the original destination value for undisturbed operation
+        unique case (state_ex2_q.eew)
+            VSEW_32: begin
+                for (int i = 0; i < ALU_OP_W / 32; i++) begin
+                    unique case (state_ex2_q.mode.alu.opx2.cmp)
+                        ALU_CMP_CMP:  result_cmp_d[i*4] = operand_mask_tmp_q[i*4] ?  cmp_q[i*4] : dest_reg_q[i];
+                        ALU_CMP_CMPN: result_cmp_d[i*4] = operand_mask_tmp_q[i*4] ? ~cmp_q[i*4] : dest_reg_q[i];
+                        ALU_CMP_EQ:   result_cmp_d[i*4] = operand_mask_tmp_q[i*4] ? ~neq[i*4] : dest_reg_q[i];
+                        ALU_CMP_NE:   result_cmp_d[i*4] = operand_mask_tmp_q[i*4] ?  neq[i*4] : dest_reg_q[i];
+                        default: ;
+                    endcase
+                end
+            end
+            VSEW_16: begin
+                for (int i = 0; i < ALU_OP_W / 16; i++) begin
+                    unique case (state_ex2_q.mode.alu.opx2.cmp)
+                        ALU_CMP_CMP:  result_cmp_d[i*2] = operand_mask_tmp_q[i*2] ?  cmp_q[i*2] : dest_reg_q[i];
+                        ALU_CMP_CMPN: result_cmp_d[i*2] = operand_mask_tmp_q[i*2] ? ~cmp_q[i*2] : dest_reg_q[i];
+                        ALU_CMP_EQ:   result_cmp_d[i*2] = operand_mask_tmp_q[i*2] ? ~neq[i*2] : dest_reg_q[i];
+                        ALU_CMP_NE:   result_cmp_d[i*2] = operand_mask_tmp_q[i*2] ?  neq[i*2] : dest_reg_q[i];
+                        default: ;
+                    endcase
+                end
+            end
+            VSEW_8: begin
+                for (int i = 0; i < ALU_OP_W / 8; i++) begin
+                    unique case (state_ex2_q.mode.alu.opx2.cmp)
+                        ALU_CMP_CMP:  result_cmp_d[i] = operand_mask_tmp_q[i] ?  cmp_q[i] : dest_reg_q[i];
+                        ALU_CMP_CMPN: result_cmp_d[i] = operand_mask_tmp_q[i] ? ~cmp_q[i] : dest_reg_q[i];
+                        ALU_CMP_EQ:   result_cmp_d[i] = operand_mask_tmp_q[i] ? ~neq[i] : dest_reg_q[i];
+                        ALU_CMP_NE:   result_cmp_d[i] = operand_mask_tmp_q[i] ?  neq[i] : dest_reg_q[i];
+                        default: ;
+                    endcase
+                end
+            end
         endcase
     end
 

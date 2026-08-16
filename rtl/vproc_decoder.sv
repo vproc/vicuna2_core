@@ -152,6 +152,10 @@ module vproc_decoder #(
 
         decode_metadata_o = '0; //TODO: This struct should be used to contain all decoded instr data.  Should be directly set instead of indirectly through rs1_o, rs2_o, rd_o
         decode_metadata_o.masked = instr_masked;
+        decode_metadata_o.operands[0].emul = emul_o;
+        decode_metadata_o.operands[1].emul = emul_o;
+        decode_metadata_o.operands[2].emul = emul_o;
+        decode_metadata_o.mask_operand.emul = emul_o;
         unique case (instr_i[6:0])
 
             // OPCODE SYSTEM:
@@ -912,6 +916,7 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = ALU_MASK_CARRY;
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.masked = 1'b1;
                         end
                         {6'b010010, 3'b000},        // vsbc VV
                         {6'b010010, 3'b011},        // vsbc VI
@@ -925,6 +930,7 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = ALU_MASK_CARRY;
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.masked = 1'b1;
                         end
                         {6'b010010, 3'b010}: begin  // VXUNARY0
                             rs1_o.vreg          = 1'b0; // No vector register
@@ -1121,6 +1127,20 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            //Use OP3 for bitwise undisturbed operation
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].emul = EMUL_1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            //For undisturbed operation, need to copy at least 1 byte.
+                            //Pipeline final result signalling is based on the mask register.  By increasing lmul of the mask operand, this ensures a full byte is written, at the cost of extra latency cycles for fractional lmul/smaller configurations
+                            //Vicuna pipeline already handles most of these cases by treating fractional lmuls and EMUL_1, but VREG_W==128 VSEW=32 only has 4 elements for MF4-M1
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.mask_operand.emul = EMUL_2;
+                                end
+                            end
                         end
                         {6'b011001, 3'b000},        // vmsne VV
                         {6'b011001, 3'b011},        // vmsne VI
@@ -1134,6 +1154,15 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].emul = EMUL_1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.mask_operand.emul = EMUL_2;
+                                end
+                            end
                         end
                         {6'b011010, 3'b000},        // vmsltu VV
                         {6'b011010, 3'b100}: begin  // vmsltu VX
@@ -1147,6 +1176,15 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].emul = EMUL_1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.mask_operand.emul = EMUL_2;
+                                end
+                            end
                         end
                         {6'b011011, 3'b000},        // vmslt VV
                         {6'b011011, 3'b100}: begin  // vmslt VX
@@ -1160,6 +1198,15 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].emul = EMUL_1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.mask_operand.emul = EMUL_2;
+                                end
+                            end
                         end
                         {6'b011100, 3'b000},        // vmsleu VV
                         {6'b011100, 3'b011},        // vmsleu VI
@@ -1174,6 +1221,15 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].emul = EMUL_1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.mask_operand.emul = EMUL_2;
+                                end
+                            end
                         end
                         {6'b011101, 3'b000},        // vmsle VV
                         {6'b011101, 3'b011},        // vmsle VI
@@ -1188,6 +1244,15 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].emul = EMUL_1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.mask_operand.emul = EMUL_2;
+                                end
+                            end
                         end
                         {6'b011110, 3'b011},        // vmsgtu VI
                         {6'b011110, 3'b100}: begin  // vmsgtu VX
@@ -1201,6 +1266,15 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].emul = EMUL_1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.mask_operand.emul = EMUL_2;
+                                end
+                            end
                         end
                         {6'b011111, 3'b011},        // vmsgt VI
                         {6'b011111, 3'b100}: begin  // vmsgt VX
@@ -1214,6 +1288,15 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].emul = EMUL_1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.mask_operand.emul = EMUL_2;
+                                end
+                            end
                         end
                         {6'b010001, 3'b000},        // vmadc VV
                         {6'b010001, 3'b011},        // vmadc VI
@@ -1228,6 +1311,10 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_CARRY : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            // decode_metadata_o.operands[2].vreg = 1'b1;  //TODO: Is this necessary?  should not be
+                            // decode_metadata_o.operands[2].emul = EMUL_1;
+                            // decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            // decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b010011, 3'b000},        // vmsbc VV
                         {6'b010011, 3'b011},        // vmsbc VI
@@ -2628,7 +2715,6 @@ module vproc_decoder #(
         endcase
 
          if (unit_o == UNIT_LSU) begin
-             //Why is vl scaling?  Not necessary
             unique case ({mode_o.lsu.eew, vsew_i})
                 {VSEW_8 , VSEW_32}: begin   // EEW / SEW = 1 / 4
                     // use EMUL == 1 for fractional EMUL (LMUL < 4), VL is updated anyways

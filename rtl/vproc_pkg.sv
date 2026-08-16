@@ -429,6 +429,7 @@ typedef struct packed {
     op_shift_rate   shift_rate;
     logic           sign;
     cfg_vsew        sew;
+    cfg_emul        emul;
 `ifdef VPROC_OP_REGS_UNION
     union {
 `else
@@ -470,7 +471,7 @@ typedef enum logic [1:0] {
     RES_FULL_WIDTH,     // Result produces full datapath width of data every cycle
     RES_NARROW_WIDTH,      // Result produces half datapath width of data every cycle
     RES_ELEMWISE_WIDTH,   // Result is a single element (reduction operations)
-    RES_BITWISE_WIDTH    // Result is a single bit (mask creation operations)
+    RES_BITWISE_WIDTH    // Result is a single bit/OP_W (mask creation operations)
 } result_shift_rate;
 
 // result store info structure
@@ -489,6 +490,7 @@ typedef struct packed {
     logic       lsu_instr;
     logic       store;
     logic       field_instr;
+    logic       mask_res;
 } pack_flags;
 
 
@@ -510,7 +512,7 @@ localparam fpu_features_t RV32ZVFH = '{
 };
 //New struct for decode flags to be passed to unpack:  TODO: Migrate all necessary signal outputs from vproc_decode to this struct and remove duplicates
 typedef struct packed {
-    op_regs [2:0] operands; //TODO: Dynamically select # operands based on # read ports, currently fixed to 3
+    op_regs [2:0] operands;     //TODO: Dynamically select # operands based on # read ports, currently fixed to 3
     op_regs       mask_operand; //Todo: many signals in the op_regs datatype are unncessesary for the mask operand.  Should probably have its own, smaller version of the struct
     logic         masked;
 } decode_metadata;

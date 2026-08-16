@@ -119,7 +119,7 @@ module vreg_shift_register
             VREG_SHIFT: begin
                 if (vfu_ready_i & ctrl_q.valid_data & !(ctrl_q.shifts_remaining == 0)) begin
                     ctrl_d.shifts_remaining = ctrl_q.shifts_remaining - 1; //Only shift if vector functional unit is ready
-                end else if (ctrl_q.shifts_remaining == 0) begin
+                end else if (ctrl_q.shifts_remaining == 0 & (vfu_ready_i | !ctrl_q.valid_data)) begin
                     if (ctrl_q.vreg_reads_remaining == 0) begin //if all reads complete, return to idle
                         state_d = IDLE;
                         finished_o = 1'b1;
@@ -182,7 +182,7 @@ module vreg_shift_register
 
     always_comb begin
         shift_reg_d = shift_reg_q;
-        if(state_q == VREG_SHIFT && ctrl_q.shifts_remaining == '0) begin
+        if(state_q == VREG_SHIFT & ctrl_q.shifts_remaining == '0 & (vfu_ready_i | !ctrl_q.valid_data)) begin
             if (use_xval_i) begin
                 unique case (ctrl_q.eew)
                         VSEW_32: begin
@@ -672,7 +672,7 @@ module vproc_vregunpack
                 .pipe_in_valid_i(shift_reg_in_valid_q & (metadata_q.ctrl.decode_metadata.operands[i].vreg | metadata_q.ctrl.decode_metadata.operands[i].xreg)),
                 .shift_reg_ready_o(shift_regs_ready[i]),
                 .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
-                .operand_emul_i(metadata_q.emul), 
+                .operand_emul_i(metadata_q.ctrl.decode_metadata.operands[i].emul),
                 .operand_vaddr_base_i(metadata_q.ctrl.decode_metadata.operands[i].r.vaddr),
                 .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[i].shift_rate),
                 .operand_sign_i(metadata_q.ctrl.decode_metadata.operands[i].sign), 
@@ -687,7 +687,7 @@ module vproc_vregunpack
                 .vreg_rd_addr_o(vreg_rd_addr_o[i]),
                 .vreg_rd_data_i(vreg_rd_data_i[i]),
 
-                .vfu_ready_i(pipe_out_ready_i),                                          //TODO: For desynced operands, will need a ready signal per operand
+                .vfu_ready_i(pipe_out_ready_i[i]),                                          //TODO: For desynced operands, will need a ready signal per operand
                 .vfu_data_valid_o(shift_regs_valid[i]),
                 .vfu_data_o(shift_reg_outputs[i])
             );
@@ -716,12 +716,12 @@ module vproc_vregunpack
         .pipe_in_valid_i(shift_reg_in_valid_q), //Mask shift reg triggered for every instruction
         .shift_reg_ready_o(mask_reg_ready),
         .operand_eew_i(metadata_q.eew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
-        .operand_emul_i(metadata_q.emul),
+        .operand_emul_i(metadata_q.ctrl.decode_metadata.mask_operand.emul),
         .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[1].shift_rate), //TODO: Currently based off of OP1 shift rate
         
         .vl_i(metadata_q.ctrl.vl),
         .vl_0_i(metadata_q.ctrl.vl_0),
-        .masked_i(metadata_q.masked),
+        .masked_i(metadata_q.ctrl.decode_metadata.masked),
 
         .finished_o(mask_done),   //Currently last cycle signalling ignored for shift reg.
 
