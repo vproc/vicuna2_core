@@ -1107,13 +1107,8 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_SEL : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
-                            if (~instr_masked) begin
-                                rs2_o.vreg      = 1'b0;
-                            end
-                            //TODO: Currently setup for vmv VX/VI.  handle vmerge and vmv vv
-                             rs2_o.r.xval = '0;
-                             rs2_o.xreg = 1; //Contains immediate
-                             rs2_o.vreg = 0;
+                            
+                        
                         end
                         {6'b011000, 3'b000},        // vmseq VV
                         {6'b011000, 3'b011},        // vmseq VI

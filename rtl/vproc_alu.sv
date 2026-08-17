@@ -94,6 +94,7 @@ module vproc_alu #(
                 operand1_q        = operand1_d;
                 operand2_q        = operand2_d;
                 operand_mask_q    = operand_mask_d;
+
             end
             assign state_ex1_ready = state_ex2_ready;
         end
@@ -272,7 +273,7 @@ module vproc_alu #(
     assign state_ex1_valid_d = pipe_in_valid_i | lmul1_cond_q; //need to hold valid in this condition
     assign state_ex1_d       = pipe_in_ctrl_i;
 
-    //for vadc/sbc, need to reapply vl mask to output, vl passed in as # bytes -1 TODO:
+    //for vadc/sbc/vmerge, need to reapply vl mask to output, vl passed in as # bytes -1 TODO:
     logic [$clog2(VLEN * 8)-1 : 0] processed_vl_d, processed_vl_q; 
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
@@ -306,7 +307,7 @@ module vproc_alu #(
     generate
         for (genvar i = 0; i < ALU_OP_W/8; i++) begin
             always_comb begin
-                operand_mask_tmp_d[i] = state_ex1_q.mode.alu.op_mask == ALU_MASK_CARRY ? ((state_ex1_q.vl_0 | ((processed_vl_q + i) > state_ex1_q.vl)) ? 1'b0 : 1'b1) : operand_mask_q[i];
+                operand_mask_tmp_d[i] = (state_ex1_q.mode.alu.op_mask == ALU_MASK_CARRY | state_ex1_q.mode.alu.op_mask == ALU_MASK_SEL) ? ((state_ex1_q.vl_0 | ((processed_vl_q + i) > state_ex1_q.vl)) ? 1'b0 : 1'b1) : operand_mask_q[i];
             end
         end
     endgenerate
