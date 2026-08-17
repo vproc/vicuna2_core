@@ -159,7 +159,7 @@ module vproc_sld #(
     //main buffer assignment
     always_comb begin
         slide_buffer_d = slide_buffer_q;
-        if (pipe_in_valid_i & pipe_in_ready_o) begin  //Only update on accepting new data
+        if (pipe_in_valid_i & pipe_in_ready_o | pipe_in_mask_valid_i & pipe_in_mask_ready_o) begin  //Only update on accepting new data (from input data OR mask)
             unique case (state_q)
                 READY: begin
                     //Initialize buffer based on shift type and SEW
@@ -215,7 +215,7 @@ module vproc_sld #(
     //no modifications to the mask buffer necessary, pass directly through
     always_comb begin
         mask_buffer_d = mask_buffer_q;
-        if (pipe_in_mask_valid_i & pipe_in_valid_i & !(state_q == SLIDEDOWN_SETUP)) begin
+        if (pipe_in_mask_valid_i & !(state_q == SLIDEDOWN_SETUP)) begin
             mask_buffer_d = pipe_in_mask_i;
         end  
     end
