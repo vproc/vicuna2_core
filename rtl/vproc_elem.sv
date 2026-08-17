@@ -43,6 +43,7 @@ module vproc_elem #(
   typedef struct packed {
     logic [(VLEN/OP_W) - 1:0] counter;
     logic [(VLEN/OP_W) - 1:0] vl;
+    logic vfirst_found;
   } elem_ctrl_t;
 
   // --- Buffers ---
@@ -59,20 +60,29 @@ module vproc_elem #(
       always_ff @(posedge clk_i or negedge async_rst_ni) begin : vproc_elem_stage_res_valid
         if (~async_rst_ni) begin
           state_res_valid_q <= 1'b0;
+          state_res_q <= '0;
+          vfirst_xreg_signal_pending_q <= 1'b0;
+          vfirst_found_q <= 1'b0;
+          elem_ctrl_q    <= '0;
         end else if (~sync_rst_ni) begin
           state_res_valid_q <= 1'b0;
+          state_res_q <= '0;
+          vfirst_xreg_signal_pending_q <= 1'b0;
+          vfirst_found_q <= 1'b0;
+          elem_ctrl_q    <= '0;
         end else if (state_res_ready) begin
           state_res_valid_q <= state_res_valid_d;
-        end
-      end
-      always_ff @(posedge clk_i) begin : vproc_elem_stage_res
-        if (state_res_ready & state_res_valid_d) begin
-          elem_ctrl_q                  <= elem_ctrl_d;
+          state_res_q <= state_res_d;
           vfirst_xreg_signal_pending_q <= vfirst_xreg_signal_pending_d;
-          vfirst_found_q               <= vfirst_found_d;
-          state_res_q                  <= state_res_d;
+          vfirst_found_q <= vfirst_found_d;
+          elem_ctrl_q    <= elem_ctrl_d;
         end
       end
+      // always_ff @(posedge clk_i) begin : vproc_elem_stage_res
+      //   if (state_res_ready & state_res_valid_d) begin
+      //     state_res_q <= state_res_d;
+      //   end
+      // end
       assign state_res_ready = ~state_res_valid_q | pipe_out_ready_i;
     end else gen_elem_comb: begin
       // TODO result needs always to be buffered as well
@@ -115,8 +125,6 @@ module vproc_elem #(
   assign cnt = elem_ctrl_q.counter;
   logic [(VLEN/OP_W) - 1:0] vl;
   assign vl = pipe_in_ctrl_i.first_cycle ? pipe_in_ctrl_i.vl : elem_ctrl_q.vl;
-  logic vfirst_found;
-  assign vfirst_found = pipe_in_ctrl_i.first_cycle ? 1'b1 : vfirst_found_q;
 
   // Instantiate leading zero counter (pulp) for vfirst.m
   // int a = VLEN / VFIRST_OP_W;
@@ -139,6 +147,9 @@ module vproc_elem #(
     pipe_out_xreg_data_o = DONT_CARE_ZERO ? '0 : 'x;
     unique case (pipe_in_ctrl_i.mode.elem.op)
       ELEM_VFIRST: begin
+        // Buffers
+        vfirst_xreg_signal_pending_d = vfirst_xreg_signal_pending_q;
+        vfirst_found_d = vfirst_found_q;
         // Default -1
         pipe_out_xreg_data_o = '1;
         pipe_out_xreg_valid_o = 1'b0;
@@ -147,7 +158,7 @@ module vproc_elem #(
         // elem1: chunk of vs2 (pipeline width)
         // elem2: chunk of mask register v0 (pipeline width)
         // Find first one by ANDing and counting leading zeroes
-        if (elem_ctrl_q.counter < vl && pipe_in_valid_i && pipe_in_ready_o && !vfirst_found) begin
+        if (elem_ctrl_q.counter < vl && pipe_in_valid_i && pipe_in_ready_o && !vfirst_found_q) begin
           lzc_input = elem1 & elem2;
         end else begin
           lzc_input = '0;
@@ -165,12 +176,12 @@ module vproc_elem #(
 
         // On the last cycle, if no result has been found, signal xreg
         if (pipe_in_ctrl_i.last_cycle || vfirst_xreg_signal_pending_q) begin
-          vfirst_found_d = 1'b0;
           if (pipe_in_ready_o) begin
-            if (!vfirst_found) begin
-              // Result will be -1
+            if (!vfirst_found_q) begin
+              // Result will be -1, or the one found in the last cycle
               pipe_out_xreg_valid_o = 1'b1;
             end
+            vfirst_found_d = 1'b0;
             vfirst_xreg_signal_pending_d = 1'b0;
           end else begin
             vfirst_xreg_signal_pending_d = 1'b1;
