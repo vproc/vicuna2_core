@@ -392,6 +392,18 @@ typedef struct packed {
     logic [15:0] unused;
 } op_mode_zvbc;
 
+typedef enum logic [1:0] { 
+    OP_REDSUM = 2'b00,
+    OP_REDAND = 2'b01,
+    OP_REDOR  = 2'b10,
+    OP_REDXOR = 2'b11
+} opcode_reduction;
+
+typedef struct packed {
+    opcode_reduction op; 
+    logic [15:0] unused;
+} op_mode_reduction;
+
 typedef struct packed { //Meant to be reinterpreted by the custom functional unit and the custom decoder
     logic [17:0] unused;
 } op_mode_custom;
@@ -413,6 +425,7 @@ typedef struct packed {
     op_mode_zvbb zvbb;
     op_mode_zvbc zvbc;
     op_mode_custom custom;
+    op_mode_reduction reduction;
 } op_mode;
 
 typedef enum logic [1:0] {

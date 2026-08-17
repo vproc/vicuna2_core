@@ -1,10 +1,12 @@
 // Copyright TU Wien
 // Licensed under the Solderpad Hardware License v2.1, see LICENSE.txt for details
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
-//Fracturable + Maskable adder for use below
-module fractureable_adder import vproc_pkg::*; #(
+//Fracturable + Maskable adder/and/or/xor for use below
+module fractureable_reduction_unit import vproc_pkg::*; #(
 )(
-    input  cfg_vsew             sew_i,
+    input  cfg_vsew               sew_i,
+
+    input  opcode_reduction       op_i,
 
     input  logic [32  -1:0]       a_i,
     input  logic [4   -1:0]       a_mask_i,
@@ -13,14 +15,34 @@ module fractureable_adder import vproc_pkg::*; #(
     output logic [32  -1:0]       c_o
 
 );
+
     // Masking logic signals
     logic [31:0] a_masked;
-    assign a_masked[7:0]   = a_mask_i[0] ? a_i[7:0] : '0;
-    assign a_masked[15:8]  = a_mask_i[1] ? a_i[15:8] : '0;
-    assign a_masked[23:16] = a_mask_i[2] ? a_i[23:16] : '0;
-    assign a_masked[31:24] = a_mask_i[3] ? a_i[31:24] : '0;
-
-    // Carry logic signals
+    always_comb begin
+        unique case (op_i)
+            OP_REDOR,
+            OP_REDSUM: begin
+                a_masked[7:0]   = a_mask_i[0] ? a_i[7:0] : '0;
+                a_masked[15:8]  = a_mask_i[1] ? a_i[15:8] : '0;
+                a_masked[23:16] = a_mask_i[2] ? a_i[23:16] : '0;
+                a_masked[31:24] = a_mask_i[3] ? a_i[31:24] : '0;
+            end
+            OP_REDAND: begin
+                a_masked[7:0]   = a_mask_i[0] ? a_i[7:0] : '1;
+                a_masked[15:8]  = a_mask_i[1] ? a_i[15:8] : '1;
+                a_masked[23:16] = a_mask_i[2] ? a_i[23:16] : '1;
+                a_masked[31:24] = a_mask_i[3] ? a_i[31:24] : '1;
+            end
+            OP_REDXOR: begin
+                a_masked[7:0]   = a_mask_i[0] ? a_i[7:0]   : ~b_i[7:0];
+                a_masked[15:8]  = a_mask_i[1] ? a_i[15:8]  : ~b_i[15:8];
+                a_masked[23:16] = a_mask_i[2] ? a_i[23:16] : ~b_i[23:16];
+                a_masked[31:24] = a_mask_i[3] ? a_i[31:24] : ~b_i[31:24];
+            end
+        endcase
+    end
+    
+    // Carry logic signals for fracturable redsum
     logic carry_0_1, carry_1_2, carry_2_3;
     assign carry_0_1 = (sew_i != VSEW_8);
     assign carry_1_2 = (sew_i == VSEW_32);
@@ -29,13 +51,36 @@ module fractureable_adder import vproc_pkg::*; #(
 
     //Adder
     always_comb begin
-        c_0 = a_masked[7:0] + b_i[7:0];
-        c_1 = a_masked[15:8] + b_i[15:8] + (carry_0_1 && c_0[8]);
-        c_2 = a_masked[23:16] + b_i[23:16] + (carry_1_2 && c_1[8]);
-        c_3 = a_masked[31:24] + b_i[31:24] + (carry_2_3 && c_2[8]);
+        unique case (op_i)
+        OP_REDSUM: begin
+            c_0 = a_masked[7:0] + b_i[7:0];
+            c_1 = a_masked[15:8] + b_i[15:8] + (carry_0_1 && c_0[8]);
+            c_2 = a_masked[23:16] + b_i[23:16] + (carry_1_2 && c_1[8]);
+            c_3 = a_masked[31:24] + b_i[31:24] + (carry_2_3 && c_2[8]);
+        end
+        OP_REDAND: begin
+            c_0 = a_masked[7:0] & b_i[7:0];
+            c_1 = a_masked[15:8] & b_i[15:8];
+            c_2 = a_masked[23:16] & b_i[23:16];
+            c_3 = a_masked[31:24] & b_i[31:24];
+        end
+        OP_REDOR: begin
+            c_0 = a_masked[7:0] | b_i[7:0];
+            c_1 = a_masked[15:8] | b_i[15:8];
+            c_2 = a_masked[23:16] | b_i[23:16];
+            c_3 = a_masked[31:24] | b_i[31:24];
+        end
+        OP_REDXOR: begin
+            c_0 = a_masked[7:0] ^ b_i[7:0];
+            c_1 = a_masked[15:8] ^ b_i[15:8];
+            c_2 = a_masked[23:16] ^ b_i[23:16];
+            c_3 = a_masked[31:24] ^ b_i[31:24];
+        end
+        endcase
     end
 
     assign c_o = {c_3[7:0], c_2[7:0], c_1[7:0], c_0[7:0]};
+
 endmodule;
 
 //Redsum module
@@ -236,8 +281,8 @@ module vproc_vredsum import vproc_pkg::*; #(
          //first cycle takes value from other vreg
         if (pipe_in_ctrl_i.first_cycle & pipe_in_valid_i) begin
             unique case (pipe_in_ctrl_i.eew) //# cycles to spend in RESULT_RED state - 1
-                                VSEW_8:  input_b[0][31:0] = {24'b00000000000000000000 , pipe_in_op1_i[7:0]};
-                                VSEW_16: input_b[0][31:0] = {16'b000000000000 , pipe_in_op1_i[15:0]};
+                                VSEW_8:  input_b[0][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR) ? {{(24){1'b0}} , pipe_in_op1_i[7:0]} : (pipe_in_ctrl_i.mode.reduction.op == OP_REDAND) ? {{(24){1'b1}} , pipe_in_op1_i[7:0]} : {~pipe_in_op2_i[31:24] , pipe_in_op1_i[7:0]};
+                                VSEW_16: input_b[0][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR) ? {{(16){1'b0}} , pipe_in_op1_i[15:0]} : (pipe_in_ctrl_i.mode.reduction.op == OP_REDAND) ? {{(16){1'b1}} , pipe_in_op1_i[15:0]} : {~pipe_in_op2_i[31:16] , pipe_in_op1_i[15:0]};
                                 VSEW_32: input_b[0][31:0] = pipe_in_op1_i[31:0];
             endcase
         end else begin
@@ -326,7 +371,7 @@ module vproc_vredsum import vproc_pkg::*; #(
             always_comb begin : input_handling_b
                 for ( int i = 1; i< (OP_W / 32); i++) begin
                     if (pipe_in_ctrl_i.first_cycle & pipe_in_valid_i) begin
-                        input_b[i][31:0] = '0; //first cycle has no input data
+                        input_b[i][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR) ? '0 : (pipe_in_ctrl_i.mode.reduction.op == OP_REDAND)  ? '1 : ~pipe_in_op2_i[i*32 +: 32]; //first cycle has no input data, set to initial
                     end else begin
                         input_b[i][31:0] = acc_q[i][31:0]; //other cycles take value from accumulator
                     end
@@ -424,13 +469,16 @@ module vproc_vredsum import vproc_pkg::*; #(
     //////////////////
     cfg_vsew sew;
     assign sew = (pipe_in_ctrl_i.first_cycle) ? ctrl_d.eew : ctrl_q.eew;
+    opcode_reduction op_mode;
+    assign op_mode = (pipe_in_ctrl_i.first_cycle) ? ctrl_d.mode.reduction.op : ctrl_q.mode.reduction.op;
 
     generate
         for (genvar i = 0; i < OP_W / 32; i++) begin
             //Fracturable adder
-            fractureable_adder #(
-            ) fractureable_adder (
+            fractureable_reduction_unit #(
+            ) fractureable_reduction_unit (
                 .sew_i(sew),
+                .op_i(op_mode),
 
                 .a_i(input_a[i]),
                 .a_mask_i(input_a_mask[i]),
