@@ -20,6 +20,7 @@ module fractureable_reduction_unit import vproc_pkg::*; #(
     logic [31:0] a_masked;
     always_comb begin
         unique case (op_i)
+            OP_REDXOR,
             OP_REDOR,
             OP_REDSUM: begin
                 a_masked[7:0]   = a_mask_i[0] ? a_i[7:0] : '0;
@@ -32,12 +33,6 @@ module fractureable_reduction_unit import vproc_pkg::*; #(
                 a_masked[15:8]  = a_mask_i[1] ? a_i[15:8] : '1;
                 a_masked[23:16] = a_mask_i[2] ? a_i[23:16] : '1;
                 a_masked[31:24] = a_mask_i[3] ? a_i[31:24] : '1;
-            end
-            OP_REDXOR: begin
-                a_masked[7:0]   = a_mask_i[0] ? a_i[7:0]   : ~b_i[7:0];
-                a_masked[15:8]  = a_mask_i[1] ? a_i[15:8]  : ~b_i[15:8];
-                a_masked[23:16] = a_mask_i[2] ? a_i[23:16] : ~b_i[23:16];
-                a_masked[31:24] = a_mask_i[3] ? a_i[31:24] : ~b_i[31:24];
             end
         endcase
     end
@@ -281,8 +276,8 @@ module vproc_vredsum import vproc_pkg::*; #(
          //first cycle takes value from other vreg
         if (pipe_in_ctrl_i.first_cycle & pipe_in_valid_i) begin
             unique case (pipe_in_ctrl_i.eew) //# cycles to spend in RESULT_RED state - 1
-                                VSEW_8:  input_b[0][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR) ? {{(24){1'b0}} , pipe_in_op1_i[7:0]} : (pipe_in_ctrl_i.mode.reduction.op == OP_REDAND) ? {{(24){1'b1}} , pipe_in_op1_i[7:0]} : {~pipe_in_op2_i[31:24] , pipe_in_op1_i[7:0]};
-                                VSEW_16: input_b[0][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR) ? {{(16){1'b0}} , pipe_in_op1_i[15:0]} : (pipe_in_ctrl_i.mode.reduction.op == OP_REDAND) ? {{(16){1'b1}} , pipe_in_op1_i[15:0]} : {~pipe_in_op2_i[31:16] , pipe_in_op1_i[15:0]};
+                                VSEW_8:  input_b[0][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR | pipe_in_ctrl_i.mode.reduction.op == OP_REDXOR) ? {{(24){1'b0}} , pipe_in_op1_i[7:0]} : {{(24){1'b1}} , pipe_in_op1_i[7:0]};
+                                VSEW_16: input_b[0][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR | pipe_in_ctrl_i.mode.reduction.op == OP_REDXOR) ? {{(16){1'b0}} , pipe_in_op1_i[15:0]} : {{(16){1'b1}} , pipe_in_op1_i[15:0]};
                                 VSEW_32: input_b[0][31:0] = pipe_in_op1_i[31:0];
             endcase
         end else begin
@@ -371,7 +366,7 @@ module vproc_vredsum import vproc_pkg::*; #(
             always_comb begin : input_handling_b
                 for ( int i = 1; i< (OP_W / 32); i++) begin
                     if (pipe_in_ctrl_i.first_cycle & pipe_in_valid_i) begin
-                        input_b[i][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR) ? '0 : (pipe_in_ctrl_i.mode.reduction.op == OP_REDAND)  ? '1 : ~pipe_in_op2_i[i*32 +: 32]; //first cycle has no input data, set to initial
+                        input_b[i][31:0] = (pipe_in_ctrl_i.mode.reduction.op == OP_REDSUM | pipe_in_ctrl_i.mode.reduction.op == OP_REDOR | (pipe_in_ctrl_i.mode.reduction.op == OP_REDXOR)) ? '0 : '1 ; //first cycle has no input data, set to initial
                     end else begin
                         input_b[i][31:0] = acc_q[i][31:0]; //other cycles take value from accumulator
                     end
