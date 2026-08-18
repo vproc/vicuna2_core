@@ -2516,23 +2516,14 @@ module vproc_decoder #(
                         end
                         {6'b000001, 3'b010}: begin  // vredand VV
                             unit_o             = UNIT_REDSUM;
-                            mode_o.elem.op     = ELEM_VREDAND;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
                             mode_o.reduction.op = OP_REDAND;
                         end
                         {6'b000010, 3'b010}: begin  // vredor VV
                             unit_o             = UNIT_REDSUM;
-                            mode_o.elem.op     = ELEM_VREDOR;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
                             mode_o.reduction.op = OP_REDOR;
                         end
                         {6'b000011, 3'b010}: begin  // vredxor VV
                             unit_o             = UNIT_REDSUM;
-                            mode_o.elem.op     = ELEM_VREDXOR;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
                             mode_o.reduction.op = OP_REDXOR;
                         end
                         {6'b000100, 3'b010}: begin  // vredminu VV
