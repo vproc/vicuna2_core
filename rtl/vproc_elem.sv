@@ -7,7 +7,6 @@ module vproc_elem #(
     parameter int unsigned VLEN           = 128,    // Width in bits of vector registers
     parameter int unsigned XLEN           = 32,     // Width in bits of scalar registers
     parameter int unsigned OP_W           = 32,     // Operand width for vfirst.m
-    parameter bit          BUF_RESULTS    = 1'b1,   // insert pipeline stage after computing result
     parameter type         CTRL_T         = logic,
     parameter bit          DONT_CARE_ZERO = 1'b0    // initialize don't care values to zero
 ) (
@@ -22,7 +21,7 @@ module vproc_elem #(
     input logic  [31 : 0] pipe_in_op1_i,
     input logic  [31 : 0] pipe_in_op2_i,
     input logic           pipe_out_ready_i,
-    input logic           pipe_in_xreg_ready_i,
+    input logic           pipe_out_xreg_ready_i,
 
     // --- Outputs ---
     output logic                 pipe_in_ready_o,
@@ -47,31 +46,51 @@ module vproc_elem #(
     logic vfirst_xreg_signal_pending;
   } elem_ctrl_t;
 
-  // --- Buffers ---
+  typedef enum logic [1:0] {
+    ACCEPTING = 2'b00,
+    WAIT_XREG_READY = 2'b01,
+    WAIT_LAST_CYCLE = 2'b10
+  } elem_state_t;
 
+  // --- Buffers ---
   elem_ctrl_t elem_ctrl_d, elem_ctrl_q;
+  elem_state_t elem_state_d, elem_state_q;
   logic state_res_ready;
   logic state_res_valid_q, state_res_valid_d;
   CTRL_T state_res_q, state_res_d;
+  logic [XLEN-1:0] xresult_d, xresult_q;
+  logic last_cycle_d, last_cycle_q, last_cycle;
 
   always_ff @(posedge clk_i or negedge async_rst_ni) begin : vproc_elem_stage_res_valid
     if (~async_rst_ni) begin
       state_res_valid_q <= 1'b0;
-      state_res_q <= '0;
-      elem_ctrl_q    <= '0;
+      state_res_q       <= '0;
+      elem_ctrl_q       <= '0;
+      elem_state_q      <= ACCEPTING;
+      xresult_q         <= '0;
+      last_cycle_q      <= 1'b0;
+
     end else if (~sync_rst_ni) begin
       state_res_valid_q <= 1'b0;
-      state_res_q <= '0;
-      elem_ctrl_q    <= '0;
+      state_res_q       <= '0;
+      elem_ctrl_q       <= '0;
+      elem_state_q      <= ACCEPTING;
+      xresult_q         <= '0;
+      last_cycle_q      <= 1'b0;
+
     end else if (state_res_ready) begin
       state_res_valid_q <= state_res_valid_d;
-      state_res_q <= state_res_d;
-      elem_ctrl_q    <= elem_ctrl_d;
+      state_res_q       <= state_res_d;
+      elem_ctrl_q       <= elem_ctrl_d;
+      elem_state_q      <= elem_state_d;
+      xresult_q         <= xresult_d;
+      last_cycle_q      <= last_cycle_d;
+
     end
   end
 
   assign state_res_ready   = ~state_res_valid_q | pipe_out_ready_i;
-  assign pipe_in_ready_o   = pipe_in_xreg_ready_i;
+  assign pipe_in_ready_o   = pipe_out_xreg_ready_i;
   assign state_res_valid_d = pipe_in_valid_i;
   assign state_res_d       = pipe_in_ctrl_i;
 
@@ -80,16 +99,17 @@ module vproc_elem #(
   assign elem2 = pipe_in_op2_i;
 
   // XREG write-back
-  assign pipe_out_xreg_addr_o = state_res_q.res_vaddr;
+  assign pipe_out_xreg_addr_o = pipe_in_ctrl_i.first_cycle ? pipe_in_ctrl_i.res_vaddr : state_res_q.res_vaddr;
 `ifdef RISCV_ZVE32F
-
   assign pipe_out_freg = pipe_out_xreg_valid_o & state_res_q.mode.elem.freg;
 `endif
 
-  assign pipe_out_valid_o = state_res_valid_q;
+  assign pipe_out_valid_o = pipe_out_xreg_valid_o & pipe_out_xreg_ready_i;
   assign pipe_out_ctrl_o  = state_res_q;
 
-  // --- Comb. logic ---
+  logic valid_first_cycle, valid_last_cycle;
+  assign valid_first_cycle = pipe_in_ctrl_i.first_cycle & pipe_in_valid_i;
+  assign valid_last_cycle  = pipe_in_ctrl_i.last_cycle & pipe_in_valid_i;
 
   logic [31:0] counter_inc;
   assign elem_ctrl_d.counter = (pipe_in_ctrl_i.first_cycle ? '0 : elem_ctrl_q.counter) + counter_inc;
@@ -103,7 +123,7 @@ module vproc_elem #(
   logic lzc_empty;
   lzc #(
       .WIDTH    (OP_W),  // Feed in as much as we get in one shift round
-      .MODE     (1'b1),  // 1: leading zeros mode
+      .MODE     (1'b0),  // 0: trailing zeros mode
       .CNT_WIDTH(XLEN)   // Result is a scalar register, so make it XLEN wide
   ) lzc (
       .in_i(lzc_input),
@@ -111,55 +131,105 @@ module vproc_elem #(
       .empty_o(lzc_empty)
   );
 
+  // --- Helper signals ---
+  logic [(VLEN/OP_W) - 1:0] counter;
+  logic valid_last_cycle_detected;
+
+  assign counter = pipe_in_ctrl_i.first_cycle ? '0 : elem_ctrl_q.counter;
+  assign last_cycle_d = valid_first_cycle ? 1'b0 : last_cycle_q;
+  assign valid_last_cycle_detected = last_cycle_q | valid_last_cycle;
+  assign pipe_out_xreg_data_o = xresult_q;
+
+  // --- State machine logic ---
   always_comb begin
-    counter_inc          = DONT_CARE_ZERO ? '0 : 'x;
-    lzc_input            = DONT_CARE_ZERO ? '0 : 'x;
-    pipe_out_xreg_data_o = DONT_CARE_ZERO ? '0 : 'x;
-    unique case (pipe_in_ctrl_i.mode.elem.op)
-      ELEM_VFIRST: begin
-        // Buffers
-        elem_ctrl_d.vfirst_xreg_signal_pending = elem_ctrl_q.vfirst_xreg_signal_pending;
-        elem_ctrl_d.vfirst_found = elem_ctrl_q.vfirst_found;
-        // Default -1
-        pipe_out_xreg_data_o = '1;
-        pipe_out_xreg_valid_o = 1'b0;
-        // VL is in bytes, increment the counter by the number of bytes processed
-        counter_inc = (OP_W >> 3);
-        // elem1: chunk of vs2 (pipeline width)
-        // elem2: chunk of mask register v0 (pipeline width)
-        // Find first one by ANDing and counting leading zeroes
-        if (elem_ctrl_q.counter < vl && pipe_in_valid_i && pipe_in_ready_o && !elem_ctrl_q.vfirst_found) begin
-          lzc_input = elem1 & elem2;
-        end else begin
-          lzc_input = '0;
-        end
+    // Zero or don't care signals
+    counter_inc = DONT_CARE_ZERO ? '0 : 'x;
+    lzc_input = DONT_CARE_ZERO ? '0 : 'x;
 
-        // Accept result if it lies within VL and no result has been found yet
-        if (!lzc_empty && !elem_ctrl_q.vfirst_found) begin
-          if (elem_ctrl_q.counter + (lzc_result >> 3) < vl) begin
-            // Result + # of already searched bits
-            pipe_out_xreg_data_o = lzc_result + (elem_ctrl_q.counter << 3);
-          end
-          pipe_out_xreg_valid_o = 1'b1;
-          elem_ctrl_d.vfirst_found = 1'b1;
-        end
+    // Default zero signals
+    pipe_out_xreg_valid_o = 1'b0;
 
-        // On the last cycle, if no result has been found, signal xreg
-        if (pipe_in_ctrl_i.last_cycle || elem_ctrl_q.vfirst_xreg_signal_pending) begin
-          if (pipe_in_ready_o) begin
-            if (!elem_ctrl_q.vfirst_found) begin
-              // Result will be -1, or the one found in the last cycle
-              pipe_out_xreg_valid_o = 1'b1;
+    // Default register assignments
+    xresult_d = xresult_q;
+    unique case (elem_state_q)
+      ACCEPTING: begin
+        unique case (pipe_in_ctrl_i.mode.elem.op)
+          ELEM_VFIRST: begin
+
+            if (counter < vl && pipe_in_valid_i && pipe_in_ready_o) begin
+              lzc_input = pipe_in_ctrl_i.decode_metadata.masked ? (elem1 & elem2) : elem1;
+            end else begin
+              lzc_input = '0;
             end
-            elem_ctrl_d.vfirst_found = 1'b0;
-            elem_ctrl_d.vfirst_xreg_signal_pending = 1'b0;
-          end else begin
-            elem_ctrl_d.vfirst_xreg_signal_pending = 1'b1;
+
+            if (!lzc_empty && (counter + (lzc_result >> 3) < vl)) begin
+              xresult_d = lzc_result;
+            end else begin
+              xresult_d = '1;
+            end
+
           end
-        end
+          default: ;
+        endcase
+      end
+      WAIT_XREG_READY: begin
+        unique case (pipe_in_ctrl_i.mode.elem.op)
+          ELEM_VFIRST: begin
+            pipe_out_xreg_valid_o = 1'b1;
+          end
+          default: ;
+        endcase
+      end
+      WAIT_LAST_CYCLE: begin
+        unique case (pipe_in_ctrl_i.mode.elem.op)
+          ELEM_VFIRST: begin
+          end
+          default: ;
+        endcase
       end
       default: ;
+    endcase
+  end
 
+  // --- State machine transitions ---
+  always_comb begin
+    elem_state_d = elem_state_q;
+    unique case (elem_state_q)
+      ACCEPTING: begin
+        unique case (pipe_in_ctrl_i.mode.elem.op)
+          ELEM_VFIRST: begin
+            if (!lzc_empty | counter >= vl) begin
+              elem_state_d = WAIT_XREG_READY;
+            end
+          end
+          default: elem_state_d = ACCEPTING;
+        endcase
+      end
+      WAIT_XREG_READY: begin
+        unique case (pipe_in_ctrl_i.mode.elem.op)
+          ELEM_VFIRST: begin
+            if (pipe_out_xreg_ready_i) begin
+              if (valid_last_cycle_detected) begin
+                elem_state_d = ACCEPTING;
+              end else begin
+                elem_state_d = WAIT_LAST_CYCLE;
+              end
+            end
+          end
+          default: elem_state_d = ACCEPTING;
+        endcase
+      end
+      WAIT_LAST_CYCLE: begin
+        unique case (pipe_in_ctrl_i.mode.elem.op)
+          ELEM_VFIRST: begin
+            if (valid_last_cycle_detected) begin
+              elem_state_d = ACCEPTING;
+            end
+          end
+          default: elem_state_d = ACCEPTING;
+        endcase
+      end
+      default: elem_state_d = ACCEPTING;
     endcase
   end
 

@@ -2588,7 +2588,16 @@ module vproc_decoder #(
                                             `endif
                                         end
                                 5'b10000: mode_o.elem.op = ELEM_VPOPC;  // vpopc
-                                5'b10001: mode_o.elem.op = ELEM_VFIRST; // vfirst
+                                5'b10001: begin // vfirst
+                                    mode_o.elem.op = ELEM_VFIRST;
+                                    // First operand is vs2, second is mask register, but we treat is a regular vreg
+                                    decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[1].r.vaddr = '0;
+                                    decode_metadata_o.operands[0].vreg = 1'b1;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b1;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                end
                                 default:  instr_illegal  = 1'b1;
                             endcase
                             mode_o.elem.xreg   = 1'b1;
