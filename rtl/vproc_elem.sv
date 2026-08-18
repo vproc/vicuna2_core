@@ -198,7 +198,7 @@ module vproc_elem #(
       ACCEPTING: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
           ELEM_VFIRST: begin
-            if (!lzc_empty | counter >= vl) begin
+            if ((!lzc_empty || counter >= vl) && pipe_in_valid_i) begin
               elem_state_d = WAIT_XREG_READY;
             end
           end
