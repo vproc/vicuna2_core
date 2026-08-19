@@ -46,9 +46,10 @@ module vproc_sld #(
     typedef struct packed {
         METADATA_T                          ctrl;
         logic [$clog2((2*OP_W)/8)-1:0]      input_idx; //byte index to load input from pipeline into slidebuffer
-        logic [$clog2((8*VLEN)/8/OP_W)-1:0] setup_cycles; //Maximum setup cycles is total cycles to go through all data in an LMUL8 vector
+        logic [$clog2(32)-1:0] setup_cycles; //Maximum setup cycles is total cycles to go through all data in an LMUL8 vector
         logic [(8*VLEN)/8-1:0]              insertion_idx;  // when to begin inserting entires for slidedown
         logic                               valid;
+        logic                               input_consumed;
     } slide_meta_t;
 
     slide_state state_d, state_q;
@@ -87,16 +88,30 @@ module vproc_sld #(
     //
     //      Because the mask is applied directly (without any shifting), it is always consumed at a constant rate, allowing it to be used to synchronize state transitions
     //////////////////
+    logic [31:0] test_setup_count;
+    assign test_setup_count = metadata_q.setup_cycles;
+    logic [31:0] test_insertion_idx;
+    assign test_insertion_idx = metadata_q.insertion_idx;
+    logic [31:0] test_input_idx;
+    assign test_input_idx = metadata_q.input_idx;
+
+    logic [31:0] test_shift_mask;
+    assign test_shift_mask = ((pipe_in_ctrl_i.op_xval[1][31:0] << 1) & {{(32-OP_W/8){1'b0}}, {(OP_W/8){1'b1}}});
+
+    logic [31:0] test_shift_reg_input;
+    assign test_shift_reg_input = slide_buffer_q[39:8];
 
     always_comb begin
         state_d = state_q;
         metadata_d = metadata_q;
-        metadata_d.valid = pipe_in_mask_valid_i;
+        metadata_d.valid = metadata_q.valid;
         unique case (state_q)
             READY: begin
+                metadata_d.valid = 1'b0;
                 if (pipe_in_ctrl_i.first_cycle & (pipe_in_valid_i & pipe_in_mask_valid_i) & pipe_out_ready_i) begin
                     metadata_d.ctrl = pipe_in_ctrl_i;
                     //on first cycle, select next state based on operation performed
+                    metadata_d.valid = pipe_in_valid_i & pipe_in_mask_valid_i;
                     unique case ({pipe_in_ctrl_i.mode.sld.dir, pipe_in_ctrl_i.mode.sld.slide1})
                         {SLD_UP, 1'b0}:;    //TODO
                         {SLD_UP, 1'b1}: begin
@@ -107,14 +122,33 @@ module vproc_sld #(
                                     VSEW_8 : metadata_d.input_idx = 1;
                                 endcase
                         end
-                        {SLD_DOWN, 1'b0}:;  //TODO:
+                        {SLD_DOWN, 1'b0}: begin
+                                state_d = SLIDEDOWN_SETUP;
+                                unique case (pipe_in_ctrl_i.eew)            //Select writing index in buffer based on SEW of slide
+                                    VSEW_32: begin
+                                        metadata_d.input_idx        = OP_W/8 - ((pipe_in_ctrl_i.op_xval[1][31:0] << 2) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});  //insertion index is xval(bytes)%(OP_W/8), accomplished via bit mask of lower bits
+                                        metadata_d.insertion_idx    = (pipe_in_ctrl_i.op_xval[1][31:0] << 2) > (pipe_in_ctrl_i.vlmax << 2) ? '0 : (pipe_in_ctrl_i.vlmax << 2) - (pipe_in_ctrl_i.op_xval[1][31:0] << 2);//slidedown inserts 0s based on xreg val * 4, vl_max given in elements
+                                        metadata_d.setup_cycles     = (pipe_in_ctrl_i.op_xval[1][31:0] << 2) >> $clog2(OP_W/8);                                             //num cycles in setup is xval(bytes)/(OP_W/8), determined via upper bits
+                                    end
+                                    VSEW_16: begin
+                                        metadata_d.input_idx        = OP_W/8 - ((pipe_in_ctrl_i.op_xval[1][31:0] << 1) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});
+                                        metadata_d.insertion_idx    = (pipe_in_ctrl_i.op_xval[1][31:0] << 1) > (pipe_in_ctrl_i.vlmax << 1) ? '0 : (pipe_in_ctrl_i.vlmax << 1) - (pipe_in_ctrl_i.op_xval[1][31:0] << 1); 
+                                        metadata_d.setup_cycles     = (pipe_in_ctrl_i.op_xval[1][31:0] << 1) >> $clog2(OP_W/8);
+                                    end
+                                    VSEW_8 : begin
+                                        metadata_d.input_idx        = OP_W/8  - ((pipe_in_ctrl_i.op_xval[1][31:0]) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});
+                                        metadata_d.insertion_idx    = pipe_in_ctrl_i.op_xval[1][31:0] > pipe_in_ctrl_i.vlmax ? '0 : pipe_in_ctrl_i.vlmax - pipe_in_ctrl_i.op_xval[1][31:0];
+                                        metadata_d.setup_cycles     = (pipe_in_ctrl_i.op_xval[1][31:0]) >> $clog2(OP_W/8);
+                                    end
+                                endcase
+                        end
                         {SLD_DOWN, 1'b1}: begin
                                 state_d = SLIDEDOWN_SETUP;
                                 metadata_d.setup_cycles = 0;                    // Only 1 cycle in setup for slide1down
                                 unique case (pipe_in_ctrl_i.eew)            //Select writing index in buffer based on SEW of slide
                                     VSEW_32: begin
                                         metadata_d.input_idx        = OP_W/8 - 4;
-                                        metadata_d.insertion_idx    = pipe_in_ctrl_i.vl - 3; //slide1down inserts at last index, vl given in bytes -1
+                                        metadata_d.insertion_idx    = pipe_in_ctrl_i.vl - 3; //slide1down inserts at last index in vl, vl given in bytes -1
                                     end
                                     VSEW_16: begin
                                         metadata_d.input_idx        = OP_W/8 - 2;
@@ -130,7 +164,7 @@ module vproc_sld #(
                 end
             end
             SLIDEDOWN_SETUP: begin
-                if (metadata_q.setup_cycles == 0) begin
+                if (metadata_q.setup_cycles == 0) begin  //Leave this state if the setup is complete
                     state_d = SLIDING;
                 end else begin
                     metadata_d.setup_cycles = metadata_q.setup_cycles - 1;  
@@ -144,6 +178,7 @@ module vproc_sld #(
                 metadata_d.insertion_idx = metadata_q.insertion_idx < OP_W/8 ? '0 : metadata_q.insertion_idx - OP_W/8;    //Reduce index by amount processed each cycle, minimum 0
             end
             CLEANUP: begin
+                metadata_d.valid = 1'b0;
                 if (!pipe_in_valid_i) begin  //if all register data has been cleared, return to READY
                     state_d = READY;
                 end
@@ -159,7 +194,7 @@ module vproc_sld #(
     //main buffer assignment
     always_comb begin
         slide_buffer_d = slide_buffer_q;
-        if (pipe_in_valid_i & pipe_in_ready_o | pipe_in_mask_valid_i & pipe_in_mask_ready_o) begin  //Only update on accepting new data (from input data OR mask)
+        if ((pipe_in_valid_i & pipe_in_ready_o) | pipe_in_mask_valid_i & pipe_in_mask_ready_o | (state_q == SLIDEDOWN_SETUP)) begin  //Only update on accepting new data (from input data OR mask), with extra case if input data runs out while in slidedown setup
             unique case (state_q)
                 READY: begin
                     //Initialize buffer based on shift type and SEW
@@ -172,7 +207,11 @@ module vproc_sld #(
                                     VSEW_8 : slide_buffer_d[2*OP_W-1 : 0] = {{(OP_W-8){1'b0}}, pipe_in_op_i, pipe_in_ctrl_i.op_xval[1][7:0]};
                                 endcase
                         end
-                        {SLD_DOWN, 1'b0}:;  //TODO:
+                        {SLD_DOWN, 1'b0}: begin
+                            for (int i = 0; i < (OP_W*2/8); i++) begin
+                                slide_buffer_d[i*8 +: 8] = (i < metadata_d.input_idx) ? slide_buffer_q[(OP_W + i*8) +: 8] : pipe_in_op_i[(i - metadata_d.input_idx)*8 +: 8]; //Initial cycle index computed from above
+                            end
+                        end
                         {SLD_DOWN, 1'b1}: begin
                                 unique case (pipe_in_ctrl_i.eew)            //Select writing index in buffer based on SEW of slide
                                     VSEW_32: slide_buffer_d[2*OP_W-1 : 0] = {{(32){1'b0}}, pipe_in_op_i, {(OP_W-32){1'b0}}};
@@ -188,11 +227,10 @@ module vproc_sld #(
                     // when sliding, copy bytes from upper part of buffer or from input depending on the byte index of the slide
                     // SLIDEDOWN_SETUP performs the same operation, but without allowing the mask to advance or signalling valid
                     for (int i = 0; i < (OP_W*2/8); i++) begin
-                        slide_buffer_d[i*8 +: 8] = (i < metadata_q.input_idx) ? slide_buffer_d[(OP_W + i*8) +: 8] : pipe_in_op_i[(i - metadata_q.input_idx)*8 +: 8];
+                        slide_buffer_d[i*8 +: 8] = (i < metadata_q.input_idx) ? slide_buffer_q[(OP_W + i*8) +: 8] : pipe_in_op_i[(i - metadata_q.input_idx)*8 +: 8];
                     end
                     //For slidedown, insert xval or 0s depending on insertion_idx
                     case ({pipe_in_ctrl_i.mode.sld.dir, pipe_in_ctrl_i.mode.sld.slide1})
-                        {SLD_DOWN, 1'b0}:;  //TODO:
                         {SLD_DOWN, 1'b1}: begin
                                 if (metadata_d.insertion_idx < OP_W/8) begin
                                     unique case (metadata_q.ctrl.eew)            //Select writing index in buffer based on SEW of slide
@@ -226,12 +264,21 @@ module vproc_sld #(
     //operand ready when both input are valid in IDLE or SLIDING state OR when in CLEANUP state
     assign pipe_in_ready_o      = (pipe_in_valid_i & pipe_in_mask_valid_i & (state_q == SLIDING | state_q == READY | state_q == SLIDEDOWN_SETUP)) | state_q == CLEANUP;
     //mask ready whenever all input are valid and not setting up initial buffer for slidedown
-    assign pipe_in_mask_ready_o = ( pipe_in_mask_valid_i) & !(state_q == SLIDEDOWN_SETUP);
-
-
+    assign pipe_in_mask_ready_o = ( pipe_in_mask_valid_i) & !(state_q == SLIDEDOWN_SETUP) & (!(!pipe_in_valid_i & state_q == READY));
     assign pipe_out_valid_o = metadata_q.valid & !(state_q == SLIDEDOWN_SETUP);
-    assign pipe_out_res_o = slide_buffer_q[OP_W-1:0];
     assign pipe_out_ctrl_o = metadata_q.ctrl;
     assign pipe_out_mask_o = mask_buffer_q;
+
+    //For slideup/slide down, write zeros when necessary
+    always_comb begin
+        pipe_out_res_o = slide_buffer_q[OP_W-1:0];
+        case ({metadata_q.ctrl.mode.sld.dir, metadata_q.ctrl.mode.sld.slide1})
+            {SLD_DOWN, 1'b0}: begin
+                for (int i = 0; i < OP_W/8; i++) begin
+                    pipe_out_res_o[8*i +: 8] = i < metadata_q.insertion_idx ? slide_buffer_q[8*i +: 8] : '0; //Write zeroes in slidedown region
+                end
+            end
+        endcase
+    end
 
 endmodule
