@@ -8,6 +8,7 @@ module vproc_elem #(
     parameter int unsigned XLEN           = 32,     // Width in bits of scalar registers
     parameter int unsigned OP_W           = 32,     // Operand width for vfirst.m
     parameter type         CTRL_T         = logic,
+    parameter int unsigned XIF_ID_W       = 4,
     parameter bit          DONT_CARE_ZERO = 1'b0    // initialize don't care values to zero
 ) (
     // --- Clock & reset ---
@@ -24,15 +25,16 @@ module vproc_elem #(
     input logic           pipe_out_xreg_ready_i,
 
     // --- Outputs ---
-    output logic                 pipe_in_ready_o,
-    output logic                 pipe_out_valid_o,
-    output CTRL_T                pipe_out_ctrl_o,
+    output logic                    pipe_in_ready_o,
+    output logic                    pipe_out_valid_o,
+    output CTRL_T                   pipe_out_ctrl_o,
 `ifdef RISCV_ZVE32F
-    output logic                 pipe_out_freg,
+    output logic                    pipe_out_freg,
 `endif
-    output logic                 pipe_out_xreg_valid_o,
-    output logic  [XLEN - 1 : 0] pipe_out_xreg_data_o,
-    output logic  [       4 : 0] pipe_out_xreg_addr_o
+    output logic                    pipe_out_xreg_valid_o,
+    output logic  [XIF_ID_W- 1 : 0] pipe_out_xreg_id_o,
+    output logic  [   XLEN - 1 : 0] pipe_out_xreg_data_o,
+    output logic  [          4 : 0] pipe_out_xreg_addr_o
 );
 
   import vproc_pkg::*;
@@ -42,8 +44,6 @@ module vproc_elem #(
   typedef struct packed {
     logic [(VLEN/OP_W) - 1:0] counter;
     logic [(VLEN/OP_W) - 1:0] vl;
-    logic vfirst_found;
-    logic vfirst_xreg_signal_pending;
   } elem_ctrl_t;
 
   typedef enum logic [1:0] {
@@ -89,10 +89,11 @@ module vproc_elem #(
     end
   end
 
-  assign state_res_ready   = ~state_res_valid_q | pipe_out_ready_i;
-  assign pipe_in_ready_o   = pipe_out_xreg_ready_i;
-  assign state_res_valid_d = pipe_in_valid_i;
-  assign state_res_d       = pipe_in_ctrl_i;
+  assign state_res_ready    = ~state_res_valid_q | pipe_out_ready_i;
+  assign pipe_out_xreg_id_o = state_res_q.id;
+  assign pipe_in_ready_o    = '1;
+  assign state_res_valid_d  = pipe_in_valid_i;
+  assign state_res_d        = pipe_in_ctrl_i;
 
   logic [31:0] elem1, elem2;
   assign elem1 = pipe_in_op1_i;
@@ -140,6 +141,9 @@ module vproc_elem #(
   assign valid_last_cycle_detected = last_cycle_q | valid_last_cycle;
   assign pipe_out_xreg_data_o = xresult_q;
 
+  // --- Debug signals ---
+  logic res_vmv;
+
   // --- State machine logic ---
   always_comb begin
     // Zero or don't care signals
@@ -148,15 +152,17 @@ module vproc_elem #(
 
     // Default zero signals
     pipe_out_xreg_valid_o = 1'b0;
+    res_vmv = 1'b0;
 
     // Default register assignments
     xresult_d = xresult_q;
     unique case (elem_state_q)
+
       ACCEPTING: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
-          ELEM_VFIRST: begin
 
-            if (counter < vl && pipe_in_valid_i && pipe_in_ready_o) begin
+          ELEM_VFIRST: begin
+            if (counter < vl && pipe_in_valid_i) begin
               lzc_input = pipe_in_ctrl_i.decode_metadata.masked ? (elem1 & elem2) : elem1;
             end else begin
               lzc_input = '0;
@@ -167,26 +173,35 @@ module vproc_elem #(
             end else begin
               xresult_d = '1;
             end
-
           end
+
+          ELEM_XMV: begin
+            if (valid_first_cycle) begin
+              res_vmv = 1'b1;
+              unique case (pipe_in_ctrl_i.eew)
+                VSEW_8:  xresult_d = {{(XLEN - 8) {elem1[7]}}, elem1[7 : 0]};
+                VSEW_16: xresult_d = {{(XLEN - 16) {elem1[15]}}, elem1[15 : 0]};
+                VSEW_32: xresult_d = elem1[31 : 0];
+                default: ;
+              endcase
+            end
+          end
+
           default: ;
         endcase
       end
+
       WAIT_XREG_READY: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
-          ELEM_VFIRST: begin
+
+          ELEM_VFIRST, ELEM_XMV: begin
             pipe_out_xreg_valid_o = 1'b1;
           end
+
           default: ;
         endcase
       end
-      WAIT_LAST_CYCLE: begin
-        unique case (pipe_in_ctrl_i.mode.elem.op)
-          ELEM_VFIRST: begin
-          end
-          default: ;
-        endcase
-      end
+
       default: ;
     endcase
   end
@@ -195,19 +210,30 @@ module vproc_elem #(
   always_comb begin
     elem_state_d = elem_state_q;
     unique case (elem_state_q)
+
       ACCEPTING: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
+
           ELEM_VFIRST: begin
             if ((!lzc_empty || counter >= vl) && pipe_in_valid_i) begin
               elem_state_d = WAIT_XREG_READY;
             end
           end
+
+          ELEM_XMV: begin
+            if (pipe_in_valid_i) begin
+              elem_state_d = WAIT_XREG_READY;
+            end
+          end
+
           default: elem_state_d = ACCEPTING;
         endcase
       end
+
       WAIT_XREG_READY: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
-          ELEM_VFIRST: begin
+
+          ELEM_VFIRST, ELEM_XMV: begin
             if (pipe_out_xreg_ready_i) begin
               if (valid_last_cycle_detected) begin
                 elem_state_d = ACCEPTING;
@@ -216,19 +242,24 @@ module vproc_elem #(
               end
             end
           end
+
           default: elem_state_d = ACCEPTING;
         endcase
       end
+
       WAIT_LAST_CYCLE: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
-          ELEM_VFIRST: begin
+
+          ELEM_VFIRST, ELEM_XMV: begin
             if (valid_last_cycle_detected) begin
               elem_state_d = ACCEPTING;
             end
           end
+
           default: elem_state_d = ACCEPTING;
         endcase
       end
+
       default: elem_state_d = ACCEPTING;
     endcase
   end

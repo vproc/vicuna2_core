@@ -2572,21 +2572,23 @@ module vproc_decoder #(
                         {6'b010000, 3'b010}: begin  // VWXUNARY0
                             unit_o = UNIT_ELEM;
                             unique case (instr_i[19:15])
-                                5'b00000: begin
-                                            mode_o.elem.op = ELEM_XMV;    // vmv.x.s 
-                                            `ifndef OLD_VICUNA
-                                            evl_pol             = EVL_1;
-                                            `endif
-                                        end
-                                5'b10000: mode_o.elem.op = ELEM_VPOPC;  // vpopc
-                                5'b10001: begin // vfirst
-                                    mode_o.elem.op = ELEM_VFIRST;
-                                    // First operand is vs2, second is mask register, but we treat is a regular vreg
+                                5'b00000: begin // vmv.x.s
+                                    mode_o.elem.op = ELEM_XMV;
                                     decode_metadata_o.operands[0].r.vaddr = instr_vs2;
                                     decode_metadata_o.operands[1].r.vaddr = '0;
                                     decode_metadata_o.operands[0].vreg = 1'b1;
                                     decode_metadata_o.operands[0].xreg = 1'b0;
-                                    decode_metadata_o.operands[1].vreg = 1'b1;
+                                    decode_metadata_o.operands[1].vreg = 1'b0;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                end
+                                5'b10000: mode_o.elem.op = ELEM_VPOPC;  // vpopc
+                                5'b10001: begin // vfirst
+                                    mode_o.elem.op = ELEM_VFIRST;
+                                    // First operand is vs2, second is mask register, but we treat is a regular vector register
+                                    decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[0].vreg = 1'b1;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b0;
                                     decode_metadata_o.operands[1].xreg = 1'b0;
                                 end
                                 default:  instr_illegal  = 1'b1;

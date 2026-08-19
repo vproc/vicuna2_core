@@ -7,7 +7,7 @@ module vproc_unit_wrapper
   import vproc_pkg::*;
 #(
     parameter op_unit                         UNIT             = UNIT_ALU,
-    parameter int unsigned                    XIF_ID_W         = 3,
+    parameter int unsigned                    XIF_ID_W         = 4,
     parameter int unsigned                    XIF_ID_CNT       = 8,
     parameter int unsigned                    VREG_W           = 128,
     parameter int unsigned                    OP_CNT           = 2,
@@ -412,6 +412,7 @@ module vproc_unit_wrapper
           .XLEN          (32),
           .OP_W          (MAX_OP_W),
           .CTRL_T        (CTRL_T),
+          .XIF_ID_W      (XIF_ID_W),
           .DONT_CARE_ZERO(DONT_CARE_ZERO)
       ) elem (
           .clk_i                (clk_i),
@@ -427,6 +428,7 @@ module vproc_unit_wrapper
           .pipe_out_valid_o     (pipe_out_valid_o),
           .pipe_out_ctrl_o      (unit_out_ctrl),
           .pipe_out_xreg_valid_o(xreg_valid_o),
+          .pipe_out_xreg_id_o   (xreg_id_o),
           .pipe_out_xreg_data_o (xreg_data_o),
           .pipe_out_xreg_addr_o (xreg_addr_o)
       );
