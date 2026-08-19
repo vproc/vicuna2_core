@@ -859,7 +859,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     //////////////// write signals
     logic [PIPE_CNT-1:0]               vreg_wr_req;
     logic [PIPE_CNT-1:0]               vreg_wr_gnt;
-    logic [PIPE_CNT-1:0]               vreg_wr_id;
+    logic [PIPE_CNT-1:0][XIF_ID_W-1:0] vreg_wr_id;
     logic [PIPE_CNT-1:0][4:0]          pipe_vreg_wr_addr;
     logic [PIPE_CNT-1:0][VREG_W  -1:0] pipe_vreg_wr_data;
     logic [PIPE_CNT-1:0][VREG_W/8-1:0] pipe_vreg_wr_be;
