@@ -88,18 +88,6 @@ module vproc_sld #(
     //
     //      Because the mask is applied directly (without any shifting), it is always consumed at a constant rate, allowing it to be used to synchronize state transitions
     //////////////////
-    logic [31:0] test_setup_count;
-    assign test_setup_count = metadata_q.setup_cycles;
-    logic [31:0] test_insertion_idx;
-    assign test_insertion_idx = metadata_q.insertion_idx;
-    logic [31:0] test_input_idx;
-    assign test_input_idx = metadata_q.input_idx;
-
-    logic [31:0] test_shift_mask;
-    assign test_shift_mask = ((pipe_in_ctrl_i.op_xval[1][31:0] << 1) & {{(32-OP_W/8){1'b0}}, {(OP_W/8){1'b1}}});
-
-    logic [31:0] test_shift_reg_input;
-    assign test_shift_reg_input = slide_buffer_q[39:8];
 
     always_comb begin
         state_d = state_q;
@@ -171,11 +159,13 @@ module vproc_sld #(
                 end 
             end
             SLIDING: begin
-                 metadata_d.ctrl = pipe_in_ctrl_i;
-                if (pipe_in_ctrl_i.last_cycle & (pipe_in_mask_valid_i)) begin  //On last cycle of mask input, leave sliding state.  All relevant data has been loaded
-                    state_d = (pipe_in_ctrl_i.mode.sld.dir == SLD_UP) ? CLEANUP : READY; //Slideup operations need to enter cleanup state
+                if (pipe_out_ready_i) begin
+                    metadata_d.ctrl = pipe_in_ctrl_i;
+                    if (pipe_in_ctrl_i.last_cycle & (pipe_in_mask_valid_i)) begin  //On last cycle of mask input, leave sliding state.  All relevant data has been loaded
+                        state_d = (pipe_in_ctrl_i.mode.sld.dir == SLD_UP) ? CLEANUP : READY; //Slideup operations need to enter cleanup state
+                    end
+                    metadata_d.insertion_idx = metadata_q.insertion_idx < OP_W/8 ? '0 : metadata_q.insertion_idx - OP_W/8;    //Reduce index by amount processed each cycle, minimum 0
                 end
-                metadata_d.insertion_idx = metadata_q.insertion_idx < OP_W/8 ? '0 : metadata_q.insertion_idx - OP_W/8;    //Reduce index by amount processed each cycle, minimum 0
             end
             CLEANUP: begin
                 metadata_d.valid = 1'b0;
@@ -226,21 +216,23 @@ module vproc_sld #(
                 SLIDING: begin
                     // when sliding, copy bytes from upper part of buffer or from input depending on the byte index of the slide
                     // SLIDEDOWN_SETUP performs the same operation, but without allowing the mask to advance or signalling valid
-                    for (int i = 0; i < (OP_W*2/8); i++) begin
-                        slide_buffer_d[i*8 +: 8] = (i < metadata_q.input_idx) ? slide_buffer_q[(OP_W + i*8) +: 8] : pipe_in_op_i[(i - metadata_q.input_idx)*8 +: 8];
-                    end
-                    //For slidedown, insert xval or 0s depending on insertion_idx
-                    case ({pipe_in_ctrl_i.mode.sld.dir, pipe_in_ctrl_i.mode.sld.slide1})
-                        {SLD_DOWN, 1'b1}: begin
-                                if (metadata_d.insertion_idx < OP_W/8) begin
-                                    unique case (metadata_q.ctrl.eew)            //Select writing index in buffer based on SEW of slide
-                                        VSEW_32: slide_buffer_d[metadata_d.insertion_idx * 8 +: 32] = metadata_q.ctrl.op_xval[1][31:0];
-                                        VSEW_16: slide_buffer_d[metadata_d.insertion_idx * 8 +: 16] = metadata_q.ctrl.op_xval[1][15:0];
-                                        VSEW_8 : slide_buffer_d[metadata_d.insertion_idx * 8 +: 8]  = metadata_q.ctrl.op_xval[1][7:0];
-                                    endcase
-                                end
+                    if ((pipe_out_ready_i && state_q == SLIDING) | state_q == SLIDEDOWN_SETUP) begin //If output not ready, don't advance slide
+                        for (int i = 0; i < (OP_W*2/8); i++) begin
+                            slide_buffer_d[i*8 +: 8] = (i < metadata_q.input_idx) ? slide_buffer_q[(OP_W + i*8) +: 8] : pipe_in_op_i[(i - metadata_q.input_idx)*8 +: 8];
                         end
-                    endcase
+                        //For slidedown, insert xval or 0s depending on insertion_idx
+                        case ({pipe_in_ctrl_i.mode.sld.dir, pipe_in_ctrl_i.mode.sld.slide1})
+                            {SLD_DOWN, 1'b1}: begin
+                                    if (metadata_d.insertion_idx < OP_W/8) begin
+                                        unique case (metadata_q.ctrl.eew)            //Select writing index in buffer based on SEW of slide
+                                            VSEW_32: slide_buffer_d[metadata_d.insertion_idx * 8 +: 32] = metadata_q.ctrl.op_xval[1][31:0];
+                                            VSEW_16: slide_buffer_d[metadata_d.insertion_idx * 8 +: 16] = metadata_q.ctrl.op_xval[1][15:0];
+                                            VSEW_8 : slide_buffer_d[metadata_d.insertion_idx * 8 +: 8]  = metadata_q.ctrl.op_xval[1][7:0];
+                                        endcase
+                                    end
+                            end
+                        endcase
+                    end
                 end
                 SLIDEUP_ZEROS:;     //TODO:
                 SLIDEDOWN_ZEROS:;   //TODO:
@@ -253,7 +245,7 @@ module vproc_sld #(
     //no modifications to the mask buffer necessary, pass directly through
     always_comb begin
         mask_buffer_d = mask_buffer_q;
-        if (pipe_in_mask_valid_i & !(state_q == SLIDEDOWN_SETUP)) begin
+        if (pipe_in_mask_valid_i & !(state_q == SLIDEDOWN_SETUP) & pipe_out_ready_i) begin
             mask_buffer_d = pipe_in_mask_i;
         end  
     end
@@ -262,9 +254,9 @@ module vproc_sld #(
     /////////
 
     //operand ready when both input are valid in IDLE or SLIDING state OR when in CLEANUP state
-    assign pipe_in_ready_o      = (pipe_in_valid_i & pipe_in_mask_valid_i & (state_q == SLIDING | state_q == READY | state_q == SLIDEDOWN_SETUP)) | state_q == CLEANUP;
+    assign pipe_in_ready_o      = ((pipe_in_valid_i & pipe_in_mask_valid_i & (state_q == SLIDING | state_q == READY | state_q == SLIDEDOWN_SETUP)) | state_q == CLEANUP) & pipe_out_ready_i;
     //mask ready whenever all input are valid and not setting up initial buffer for slidedown
-    assign pipe_in_mask_ready_o = ( pipe_in_mask_valid_i) & !(state_q == SLIDEDOWN_SETUP) & (!(!pipe_in_valid_i & state_q == READY));
+    assign pipe_in_mask_ready_o = (( pipe_in_mask_valid_i) & !(state_q == SLIDEDOWN_SETUP) & (!(!pipe_in_valid_i & state_q == READY))) & pipe_out_ready_i;
     assign pipe_out_valid_o = metadata_q.valid & !(state_q == SLIDEDOWN_SETUP);
     assign pipe_out_ctrl_o = metadata_q.ctrl;
     assign pipe_out_mask_o = mask_buffer_q;
