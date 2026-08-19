@@ -115,7 +115,7 @@ module vproc_mem_port #(
         .data_i     ( req_queue_data_in ),
         .push_i     ( obi_bus.req & obi_bus.gnt ),
         .data_o     ( req_queue_data_out        ),
-        .pop_i      ( obi_bus.rvalid & (req_queue_data_out.req_id == obi_bus.rid)),
+        .pop_i      ( ((!resp_queue_empty | obi_bus.rvalid)) & (req_queue_data_out.req_id == resp_queue_data_out.req_id) & ready_i),
         .empty_o    (),
         .full_o     ( req_queue_full )
     );
@@ -137,17 +137,43 @@ module vproc_mem_port #(
     assign obi_bus.aid = '0; //TODO: Support multiple outstanding requests
 
     //////////
-    // Queue of Responses //TODO: Buffer responses in case they return out of order
+    // Queue of Responses //TODO: Buffer responses in case they return out of order using IDs
     //////////
-    //What happens if output is not ready? //TODO: Output queue can resolve this
+    typedef struct packed {
+        logic[$bits(obi_bus.rid)-1:0] req_id; //TODO: support out of order response of requests
+        logic[PORT_WIDTH-1:0] data;
+    } resp_data_t;
+
+    resp_data_t resp_queue_data_in, resp_queue_data_out;
+
+    assign resp_queue_data_in.req_id = obi_bus.rid;
+    assign resp_queue_data_in.data = obi_bus.rdata;
+
+    logic resp_queue_push, resp_queue_pop, resp_queue_empty;
+
+    fifo_v3 #(
+    .FALL_THROUGH (1'b1      ),  //Fallthrough mode allowed for responses?
+    .dtype        (resp_data_t),
+    .DEPTH        (OUTSTANDING_REQ)
+    ) response_queue (
+        .clk_i,
+        .rst_ni     (sync_rst_ni),
+        .flush_i    (1'b0       ),
+        .data_i     ( resp_queue_data_in ),
+        .push_i     ( obi_bus.rvalid ),
+        .data_o     ( resp_queue_data_out        ),
+        .pop_i      ( (!resp_queue_empty | obi_bus.rvalid) & (req_queue_data_out.req_id == resp_queue_data_out.req_id) & ready_i),
+        .empty_o    ( resp_queue_empty ),
+        .full_o     ( )
+    );
 
     //////////
     // Output assignments
     //////////
 
-    assign valid_o = obi_bus.rvalid & (req_queue_data_out.req_id == obi_bus.rid);
+    assign valid_o = (!resp_queue_empty | obi_bus.rvalid) & (req_queue_data_out.req_id == resp_queue_data_out.req_id);
     assign mask_o = req_queue_data_out.mask;
-    assign data_o = obi_bus.rdata;
+    assign data_o = resp_queue_data_out.data;
 
 endmodule
 
@@ -318,7 +344,7 @@ module vproc_lsu #(
 
     always_comb begin
         metadata_d = metadata_q;
-        if (pipe_in_valid_i) begin
+        if (pipe_in_valid_i & pipe_out_ready_i) begin
             metadata_d = pipe_in_ctrl_i;
         end
     end
