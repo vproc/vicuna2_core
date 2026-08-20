@@ -42,8 +42,8 @@ module vproc_elem #(
   // --- Structs ---
 
   typedef struct packed {
-    logic [(VLEN/OP_W) - 1:0] counter;
-    logic [(VLEN/OP_W) - 1:0] vl;
+    logic [$clog2(VLEN):0] counter;
+    logic [$clog2(VLEN):0] vl;
   } elem_ctrl_t;
 
   typedef enum logic [1:0] {
@@ -99,8 +99,16 @@ module vproc_elem #(
   assign elem1 = pipe_in_op1_i;
   assign elem2 = pipe_in_op2_i;
 
+  // --- Helper Signals ---
+  logic first_cycle_i, vl_0_i, masked_i;
+  logic [$clog2(VLEN):0] vl_i;
+  assign first_cycle_i = pipe_in_ctrl_i.first_cycle;
+  assign vl_0_i = pipe_in_ctrl_i.vl_0;
+  assign vl_i = pipe_in_ctrl_i.vl;
+  assign masked_i = pipe_in_ctrl_i.decode_metadata.masked;
+
   // XREG write-back
-  assign pipe_out_xreg_addr_o = pipe_in_ctrl_i.first_cycle ? pipe_in_ctrl_i.res_vaddr : state_res_q.res_vaddr;
+  assign pipe_out_xreg_addr_o = first_cycle_i ? pipe_in_ctrl_i.res_vaddr : state_res_q.res_vaddr;
 `ifdef RISCV_ZVE32F
   assign pipe_out_freg = pipe_out_xreg_valid_o & state_res_q.mode.elem.freg;
 `endif
@@ -109,14 +117,14 @@ module vproc_elem #(
   assign pipe_out_ctrl_o  = state_res_q;
 
   logic valid_first_cycle, valid_last_cycle;
-  assign valid_first_cycle = pipe_in_ctrl_i.first_cycle & pipe_in_valid_i;
+  assign valid_first_cycle = first_cycle_i & pipe_in_valid_i;
   assign valid_last_cycle  = pipe_in_ctrl_i.last_cycle & pipe_in_valid_i;
 
-  logic [31:0] counter_inc;
-  assign elem_ctrl_d.counter = (pipe_in_ctrl_i.first_cycle ? '0 : elem_ctrl_q.counter) + counter_inc;
-  assign elem_ctrl_d.vl = pipe_in_ctrl_i.first_cycle ? pipe_in_ctrl_i.vl : elem_ctrl_q.vl;
-  logic [(VLEN/OP_W) - 1:0] vl;
-  assign vl = pipe_in_ctrl_i.first_cycle ? pipe_in_ctrl_i.vl : elem_ctrl_q.vl;
+  logic [$clog2(VLEN)-1:0] counter_inc;
+  assign elem_ctrl_d.counter = (first_cycle_i ? '0 : elem_ctrl_q.counter) + counter_inc;
+  assign elem_ctrl_d.vl = first_cycle_i ? (vl_0_i ? '0 : vl_i + 1) : elem_ctrl_q.vl;
+  logic [$clog2(VLEN):0] vl;
+  assign vl = first_cycle_i ? (vl_0_i ? '0 : vl_i + 1) : elem_ctrl_q.vl;
 
   // Instantiate leading zero counter (pulp) for vfirst.m
   logic [OP_W - 1 : 0] lzc_input;
@@ -132,17 +140,32 @@ module vproc_elem #(
       .empty_o(lzc_empty)
   );
 
-  // --- Helper signals ---
-  logic [(VLEN/OP_W) - 1:0] counter;
+  // Instantiate pop counter (pulp) for vcpop.m
+  logic [OP_W - 1 : 0] popc_input;
+  // Result width is ceil(log2(INPUT_WIDTH)) + 1
+  logic [$clog2(OP_W) : 0] popc_result;
+  popcount #(
+      .INPUT_WIDTH(OP_W)
+  ) popc (
+      .data_i(popc_input),
+      .popcount_o(popc_result)
+  );
+
+  logic [$clog2(VLEN):0] counter;
   logic valid_last_cycle_detected;
 
-  assign counter = pipe_in_ctrl_i.first_cycle ? '0 : elem_ctrl_q.counter;
+  assign counter = first_cycle_i ? '0 : elem_ctrl_q.counter;
   assign last_cycle_d = valid_first_cycle ? 1'b0 : last_cycle_q;
   assign valid_last_cycle_detected = last_cycle_q | valid_last_cycle;
   assign pipe_out_xreg_data_o = xresult_q;
 
   // --- Debug signals ---
   logic res_vmv;
+  logic counter_bit_ge_vl;
+  assign counter_bit_ge_vl = (counter >= vl) ? '1 : '0;
+
+  logic [$clog2(VLEN):0] vl_diff;
+  logic [OP_W - 1:0] vl_mask;
 
   // --- State machine logic ---
   always_comb begin
@@ -162,16 +185,35 @@ module vproc_elem #(
         unique case (pipe_in_ctrl_i.mode.elem.op)
 
           ELEM_VFIRST: begin
+            counter_inc = OP_W;
             if (counter < vl && pipe_in_valid_i) begin
-              lzc_input = pipe_in_ctrl_i.decode_metadata.masked ? (elem1 & elem2) : elem1;
+              lzc_input = masked_i ? (elem1 & elem2) : elem1;
             end else begin
               lzc_input = '0;
             end
 
-            if (!lzc_empty && (counter + (lzc_result >> 3) < vl)) begin
+            if (!lzc_empty && ((counter + lzc_result) < vl)) begin
               xresult_d = lzc_result;
             end else begin
               xresult_d = '1;
+            end
+          end
+
+          ELEM_VPOPC: begin
+            counter_inc = OP_W;
+            // Need to mask off partial input if VL does not align with OP_W
+            vl_diff = vl - counter;
+            // If we are in the last round (less than OP_W bits left) regarding VL
+            // shift '1 according to the difference in counter and VL to produce a partial mask
+            vl_mask = (vl_diff >= OP_W ? '1 : ({OP_W{1'b1}} >> (OP_W - vl_diff)));
+            if (counter < vl && pipe_in_valid_i) begin
+              popc_input = (masked_i ? (elem1 & elem2) : elem1) & vl_mask;
+            end else begin
+              popc_input = '0;
+            end
+
+            if (pipe_in_valid_i) begin
+              xresult_d = (first_cycle_i ? '0 : xresult_q) + popc_result;
             end
           end
 
@@ -194,7 +236,7 @@ module vproc_elem #(
       WAIT_XREG_READY: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
 
-          ELEM_VFIRST, ELEM_XMV: begin
+          ELEM_VFIRST, ELEM_VPOPC, ELEM_XMV: begin
             pipe_out_xreg_valid_o = 1'b1;
           end
 
@@ -220,6 +262,12 @@ module vproc_elem #(
             end
           end
 
+          ELEM_VPOPC: begin
+            if (counter >= vl && pipe_in_valid_i) begin
+              elem_state_d = WAIT_XREG_READY;
+            end
+          end
+
           ELEM_XMV: begin
             if (pipe_in_valid_i) begin
               elem_state_d = WAIT_XREG_READY;
@@ -233,7 +281,7 @@ module vproc_elem #(
       WAIT_XREG_READY: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
 
-          ELEM_VFIRST, ELEM_XMV: begin
+          ELEM_VFIRST, ELEM_VPOPC, ELEM_XMV: begin
             if (pipe_out_xreg_ready_i) begin
               if (valid_last_cycle_detected) begin
                 elem_state_d = ACCEPTING;
@@ -250,7 +298,7 @@ module vproc_elem #(
       WAIT_LAST_CYCLE: begin
         unique case (pipe_in_ctrl_i.mode.elem.op)
 
-          ELEM_VFIRST, ELEM_XMV: begin
+          ELEM_VFIRST, ELEM_VPOPC, ELEM_XMV: begin
             if (valid_last_cycle_detected) begin
               elem_state_d = ACCEPTING;
             end
