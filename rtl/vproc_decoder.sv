@@ -178,6 +178,9 @@ module vproc_decoder #(
 
         decode_metadata_o.dest_emul = emul_o;
         decode_metadata_o.mask_operand.regs = 1; //most operations only need to read the mask register once
+        decode_metadata_o.operands[0].sew = vsew_o;
+        decode_metadata_o.operands[1].sew = vsew_o;
+        decode_metadata_o.operands[2].sew = vsew_o;
 
         unique case (instr_i[6:0])
 
@@ -281,6 +284,13 @@ module vproc_decoder #(
                     default: instr_illegal = 1'b1;
                 endcase
 
+                unique case ({instr_i[28], instr_i[14:12]})
+                    4'b0000: decode_metadata_o.operands[1].sew = VSEW_8;
+                    4'b0101: decode_metadata_o.operands[1].sew = VSEW_16;
+                    4'b0110: decode_metadata_o.operands[1].sew = VSEW_32;
+                    default: instr_illegal = 1'b1;
+                endcase
+
                 // mop field
                 unique case (instr_i[27:26])
                     2'b00: begin // unit-strided load/store
@@ -308,47 +318,64 @@ module vproc_decoder #(
 
 
                                 if (instr_i[31:29] != '0) begin
-                                    // Unit-strided segment stores result in strided stores
+                                    // Unit-strided segment loads/stores result in strided stores
+
+                                    decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
                                     mode_o.lsu.stride = LSU_STRIDED;
+                                    unique case ({emul_o, instr_i[31:29]})  //change number of registers to read based on emul and nfields
+                                        {EMUL_1, 3'b001} : decode_metadata_o.operands[1].regs = 2;
+                                        {EMUL_1, 3'b010} : decode_metadata_o.operands[1].regs = 3;
+                                        {EMUL_1, 3'b011} : decode_metadata_o.operands[1].regs = 4;
+                                        {EMUL_1, 3'b100} : decode_metadata_o.operands[1].regs = 5;
+                                        {EMUL_1, 3'b101} : decode_metadata_o.operands[1].regs = 6;
+                                        {EMUL_1, 3'b110} : decode_metadata_o.operands[1].regs = 7;
+                                        {EMUL_1, 3'b111} : decode_metadata_o.operands[1].regs = 8;
+                                        {EMUL_2, 3'b001} : decode_metadata_o.operands[1].regs = 4;
+                                        {EMUL_2, 3'b010} : decode_metadata_o.operands[1].regs = 6;
+                                        {EMUL_2, 3'b011} : decode_metadata_o.operands[1].regs = 8;
+                                        {EMUL_4, 3'b001} : decode_metadata_o.operands[1].regs = 8;
+                                        default: instr_illegal = 1'b1;
+                                    endcase
+                                    decode_metadata_o.mask_operand.regs = (instr_i[31:29] + 1); //repeat mask reg for nfields
 
-                                    //Segmented stores can be accelerated by dividing register groups between operand registers.
-                                    if ((instr_i[6:0] == 7'h27)) begin
-                                        decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
-                                        unique case (instr_i[31:29]) //nfields  
-                                            3'b001: begin   //2 segments, 1 group per operand
-                                                decode_metadata_o.operands[0].vreg = 1'b1;
-                                                decode_metadata_o.operands[0].xreg = 1'b0;
-                                                decode_metadata_o.operands[0].shift_rate   = SHIFT_ELEMWISE;
-                                                unique case (emul_o) //NFIELDS * EMUL always <= 8
-                                                    EMUL_1: decode_metadata_o.operands[0].r.vaddr = instr_vd + 1;
-                                                    EMUL_2: decode_metadata_o.operands[0].r.vaddr = instr_vd + 2;
-                                                    EMUL_4: decode_metadata_o.operands[0].r.vaddr = instr_vd + 4;
-                                                endcase
+                                    // //Segmented stores can be accelerated by dividing register groups between operand registers.
+                                    // if ((instr_i[6:0] == 7'h27)) begin
+                                    //     decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                                    //     unique case (instr_i[31:29]) //nfields  
+                                    //         3'b001: begin   //2 segments, 1 group per operand
+                                    //             decode_metadata_o.operands[0].vreg = 1'b1;
+                                    //             decode_metadata_o.operands[0].xreg = 1'b0;
+                                    //             decode_metadata_o.operands[0].shift_rate   = SHIFT_ELEMWISE;
+                                    //             unique case (emul_o) //NFIELDS * EMUL always <= 8
+                                    //                 EMUL_1: decode_metadata_o.operands[0].r.vaddr = instr_vd + 1;
+                                    //                 EMUL_2: decode_metadata_o.operands[0].r.vaddr = instr_vd + 2;
+                                    //                 EMUL_4: decode_metadata_o.operands[0].r.vaddr = instr_vd + 4;
+                                    //             endcase
 
-                                            end
-                                            3'b010: begin   //3 segments, 1 group per operand
-                                                decode_metadata_o.operands[0].vreg = 1'b1;
-                                                decode_metadata_o.operands[0].xreg = 1'b0;
-                                                decode_metadata_o.operands[0].shift_rate   = SHIFT_ELEMWISE;
-                                                decode_metadata_o.operands[2].vreg = 1'b1;
-                                                decode_metadata_o.operands[2].xreg = 1'b0;
-                                                decode_metadata_o.operands[2].shift_rate   = SHIFT_ELEMWISE;
-                                                unique case (emul_o) //NFIELDS * EMUL always <= 8
-                                                    EMUL_1: begin
-                                                        decode_metadata_o.operands[0].r.vaddr = instr_vd + 1;
-                                                        decode_metadata_o.operands[2].r.vaddr = instr_vd + 2;
-                                                    end
-                                                    EMUL_2: begin
-                                                        decode_metadata_o.operands[0].r.vaddr = instr_vd + 2;
-                                                        decode_metadata_o.operands[2].r.vaddr = instr_vd + 4;
-                                                    end
-                                                endcase
+                                    //         end
+                                    //         3'b010: begin   //3 segments, 1 group per operand
+                                    //             decode_metadata_o.operands[0].vreg = 1'b1;
+                                    //             decode_metadata_o.operands[0].xreg = 1'b0;
+                                    //             decode_metadata_o.operands[0].shift_rate   = SHIFT_ELEMWISE;
+                                    //             decode_metadata_o.operands[2].vreg = 1'b1;
+                                    //             decode_metadata_o.operands[2].xreg = 1'b0;
+                                    //             decode_metadata_o.operands[2].shift_rate   = SHIFT_ELEMWISE;
+                                    //             unique case (emul_o) //NFIELDS * EMUL always <= 8
+                                    //                 EMUL_1: begin
+                                    //                     decode_metadata_o.operands[0].r.vaddr = instr_vd + 1;
+                                    //                     decode_metadata_o.operands[2].r.vaddr = instr_vd + 2;
+                                    //                 end
+                                    //                 EMUL_2: begin
+                                    //                     decode_metadata_o.operands[0].r.vaddr = instr_vd + 2;
+                                    //                     decode_metadata_o.operands[2].r.vaddr = instr_vd + 4;
+                                    //                 end
+                                    //             endcase
 
-                                            end
-                                            3'b011:;
-                                            default:; //TODO: Handle all cases
-                                        endcase
-                                    end
+                                    //         end
+                                    //         3'b011:;
+                                    //         default:; //TODO: Handle all cases
+                                    //     endcase
+                                    // end
                                     // set the byte stride (which is usually held in rs2) depending
                                     // on the element width and the number of fields as follows:
                                     //     stride = (EEW/8) * nf = (EEW/8) * (instr_i[31:29] + 1)
@@ -368,6 +395,24 @@ module vproc_decoder #(
                                 if (instr_i[31:29] != '0) begin
                                     // Unit-strided segment stores result in strided stores
                                     mode_o.lsu.stride = LSU_STRIDED;
+
+                                    decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                                    mode_o.lsu.stride = LSU_STRIDED;
+                                    unique case ({emul_o, instr_i[31:29]})  //change number of registers to read based on emul and nfields
+                                        {EMUL_1, 3'b001} : decode_metadata_o.operands[1].regs = 2;
+                                        {EMUL_1, 3'b010} : decode_metadata_o.operands[1].regs = 3;
+                                        {EMUL_1, 3'b011} : decode_metadata_o.operands[1].regs = 4;
+                                        {EMUL_1, 3'b100} : decode_metadata_o.operands[1].regs = 5;
+                                        {EMUL_1, 3'b101} : decode_metadata_o.operands[1].regs = 6;
+                                        {EMUL_1, 3'b110} : decode_metadata_o.operands[1].regs = 7;
+                                        {EMUL_1, 3'b111} : decode_metadata_o.operands[1].regs = 8;
+                                        {EMUL_2, 3'b001} : decode_metadata_o.operands[1].regs = 4;
+                                        {EMUL_2, 3'b010} : decode_metadata_o.operands[1].regs = 6;
+                                        {EMUL_2, 3'b011} : decode_metadata_o.operands[1].regs = 8;
+                                        {EMUL_4, 3'b001} : decode_metadata_o.operands[1].regs = 8;
+                                        default: instr_illegal = 1'b1;
+                                    endcase
+                                    decode_metadata_o.mask_operand.regs = (instr_i[31:29] + 1); //repeat mask reg for nfields
 
 
                                     // set the byte stride (which is usually held in rs2) depending
@@ -429,6 +474,23 @@ module vproc_decoder #(
                         rs2_o.r.xval      = x_rs2_i;
                         rd_o.shift_rate   = SHIFT_ELEMWISE;
                         decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                        decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                        mode_o.lsu.stride = LSU_STRIDED;
+                        unique case ({emul_o, instr_i[31:29]})  //change number of registers to read based on emul and nfields
+                            {EMUL_1, 3'b001} : decode_metadata_o.operands[1].regs = 2;
+                            {EMUL_1, 3'b010} : decode_metadata_o.operands[1].regs = 3;
+                            {EMUL_1, 3'b011} : decode_metadata_o.operands[1].regs = 4;
+                            {EMUL_1, 3'b100} : decode_metadata_o.operands[1].regs = 5;
+                            {EMUL_1, 3'b101} : decode_metadata_o.operands[1].regs = 6;
+                            {EMUL_1, 3'b110} : decode_metadata_o.operands[1].regs = 7;
+                            {EMUL_1, 3'b111} : decode_metadata_o.operands[1].regs = 8;
+                            {EMUL_2, 3'b001} : decode_metadata_o.operands[1].regs = 4;
+                            {EMUL_2, 3'b010} : decode_metadata_o.operands[1].regs = 6;
+                            {EMUL_2, 3'b011} : decode_metadata_o.operands[1].regs = 8;
+                            {EMUL_4, 3'b001} : decode_metadata_o.operands[1].regs = 8;
+                            default; //standard strided uses default cases which are already set
+                        endcase
+                        decode_metadata_o.mask_operand.regs = (instr_i[31:29] + 1); //repeat mask reg for nfields
                     end
                     2'b01,
                     2'b11: begin // indexed load/store

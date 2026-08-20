@@ -669,7 +669,7 @@ module vproc_vregunpack
 
                 .pipe_in_valid_i(shift_reg_in_valid_q & (metadata_q.ctrl.decode_metadata.operands[i].vreg | metadata_q.ctrl.decode_metadata.operands[i].xreg)),
                 .shift_reg_ready_o(shift_regs_ready[i]),
-                .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
+                .operand_eew_i(metadata_q.ctrl.decode_metadata.operands[i].sew),                                          //TODO: Mixed precision operations will need an EEW/operand
                 .operand_regs_i(metadata_q.ctrl.decode_metadata.operands[i].regs),
                 .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
                 .operand_vaddr_base_i(metadata_q.ctrl.decode_metadata.operands[i].r.vaddr),
@@ -714,7 +714,7 @@ module vproc_vregunpack
 
         .pipe_in_valid_i(shift_reg_in_valid_q), //Mask shift reg triggered for every instruction
         .shift_reg_ready_o(mask_reg_ready),
-        .operand_eew_i(metadata_q.eew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
+        .operand_eew_i(metadata_q.ctrl.decode_metadata.operands[1].sew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
         .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
         .repeats_i(metadata_q.ctrl.decode_metadata.mask_operand.regs),
         .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[1].shift_rate), //TODO: Currently based off of OP1 shift rate

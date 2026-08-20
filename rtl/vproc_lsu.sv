@@ -16,7 +16,7 @@ module vproc_mem_port #(
         input  logic[PORT_WIDTH-1:0]    data_i,
         output logic                    ready_o,
 
-        input  logic                    first_cycle,
+        input  logic                    first_cycle_i,
 
         input  logic[31:0]              base_addr_i,
         input  logic[PORT_WIDTH/8-1:0]  mask_i,
@@ -74,7 +74,7 @@ module vproc_mem_port #(
         if (valid_i & ready_o) begin
             mask_d = mask_i;
             data_d = data_i;
-            if (first_cycle) begin
+            if (first_cycle_i) begin
                 req_addr_d = base_addr_i;
                 store_d = store_i;
                 stride_d = stride_i;
@@ -181,7 +181,7 @@ endmodule
 module vproc_lsu #(
         parameter int unsigned        MAX_OP_W        = 32,
         parameter int unsigned        VMEM_W          = 32,   // width in bits of the vector memory interface
-        parameter int unsigned        VREG_W          = 128,   // width in bits of a vector register
+        parameter int unsigned        VLEN            = 128,   // width in bits of a vector register
         parameter int unsigned        MEM_PORTS       = 1,
         parameter bit                 BUF_REQUEST     = 1'b1, // insert pipeline stage before issuing request
         parameter bit                 BUF_RDATA       = 1'b1, // insert pipeline stage after memory read
@@ -238,99 +238,28 @@ module vproc_lsu #(
 
 
     /////////
-    //  Input routing for standard vs segmented operations
+    // Top level control of memory ports
     /////////
 
-    logic [MEM_PORTS-1:0][VMEM_W-1:0] port_data_in;
-    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] port_mask_in;
+    typedef struct packed {
+    logic [31:0]            next_base_addr;
+    logic [31:0]            stride;
+    logic [2:0]             nfields_remaining;
+    logic [$clog2(VLEN*8/8) :0] vl_remaining;  //maximum value is LMUL8 SEW8 elements
+    cfg_vsew                eew;
+    } vlsu_ctrl;
 
-    generate
-        for (genvar i = 0; i < MEM_PORTS; i++) begin
-            always_comb begin
-                unique case (pipe_in_ctrl_i.mode.lsu.nfields)
-                    3'b000: begin
-                            //Non-Segmented Case
-                            port_data_in[i][VMEM_W-1:0] = pipe_in_op2_i[(i * VMEM_W) +: VMEM_W];
-                            port_mask_in[i][VMEM_W/8-1:0] = pipe_in_mask_i[(i * VMEM_W/8) +: VMEM_W/8];
+    vlsu_ctrl lsu_ctrl_d, lsu_ctrl_q;
 
-                    end
-                    //For segmented cases, 1 element from each input op per register group (TODO: Can potentially scale to multiple ports this way by loading/shifting more data per cycle)
-                    3'b001: begin //2 segments
-                            unique case (pipe_in_ctrl_i.eew)
-                                VSEW_8: begin
-                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(2*8)){1'b0}}, pipe_in_op1_i[i * 8 +: 8], pipe_in_op2_i[i * 8 +: 8]};
-                                    port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2){1'b0}}, {(2){pipe_in_mask_i[i]}}}; //Mask applies to both elements being loaded/stored
-                                end
-                                VSEW_16: begin
-                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(2*16)){1'b0}}, pipe_in_op1_i[i * 16 +: 16], pipe_in_op2_i[i * 16 +: 16]};
-                                    port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-(2*2)){1'b0}}, {(4){pipe_in_mask_i[i*2 +: 2]}}}; //Mask applies to both elements being loaded/stored
-                                end
-                                //TODO: 32 bit case depends on VMEM_W
-                                default: begin
-                                    port_data_in[i] = '0;
-                                    port_mask_in[i] = '0;
-                                end
-                            endcase
-                    end
-                    3'b010: begin //3 segments
-                            unique case (pipe_in_ctrl_i.eew)
-                                VSEW_8: begin
-                                    port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(3*8)){1'b0}}, pipe_in_op3_i[i * 8 +: 8], pipe_in_op1_i[i * 8 +: 8], pipe_in_op2_i[i * 8 +: 8]};
-                                    port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-3){1'b0}}, {(3){pipe_in_mask_i[i]}}}; //Mask applies to both elements being loaded/stored
-                                end
-                                //TODO: 16 and 32 bit case depends on VMEM_W
-                                // VSEW_16: begin
-                                //     port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-2*16){1'b0}}, pipe_in_op1_i[i * 16 +: 16], pipe_in_op2_i[i * 16 +: 16]};
-                                //     port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2*2){1'b0}}, {(4){pipe_in_mask_i[i*2 +: 2]}}}; //Mask applies to both elements being loaded/stored
-                                // end
-                                default: begin
-                                    port_data_in[i] = '0;
-                                    port_mask_in[i] = '0;
-                                end
-                            endcase
-                    end
-                    //TODO: Cases for additional fields here
-                    default: begin //TODO: Should be possible to remove this case
-                                port_data_in[i] = '0;
-                                port_mask_in[i] = '0;
-                    end
-                endcase
-            end
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_ni) begin
+            lsu_ctrl_q <= '0;
+        end else begin
+            lsu_ctrl_q <= lsu_ctrl_d;
         end
-    endgenerate
+    end
 
-    ////////
-    // Instantiation of memory ports
-    ////////
-
-    generate
-        for (genvar i = 0; i < MEM_PORTS; i++) begin //TODO: Definitely issues with signalling with multiple ports, untested
-            vproc_mem_port #(
-                .PORT_WIDTH(VMEM_W),
-                .OUTSTANDING_REQ(OUTSTANDING_REQ),
-                .NUM_PORTS(MEM_PORTS)
-            ) mem_port (
-                .clk_i(clk_i),
-                .sync_rst_ni(sync_rst_ni),
-                .valid_i(pipe_in_valid_i),
-                .store_i(pipe_in_ctrl_i.mode.lsu.store),
-                .data_i(port_data_in[i]),
-                .ready_o(ports_ready_i[i]),
-                .first_cycle(pipe_in_ctrl_i.first_cycle),
-                .base_addr_i(pipe_in_ctrl_i.op_xval[1]),
-                .mask_i(port_mask_in[i]),
-                .stride_i(pipe_in_ctrl_i.mode.lsu.stride),
-                .stride_val_i(pipe_in_ctrl_i.op_xval[0]),
-                .obi_bus(obi_bus[i]),
-                .valid_o(ports_valid_o[i]),
-                .ready_i(pipe_out_ready_i),
-                .data_o(pipe_out_res_o[(VMEM_W)*i +: VMEM_W]),
-                .mask_o(pipe_out_mask_o[(VMEM_W/8)*i +:VMEM_W/8])
-            );
-        end
-    endgenerate
-
-    //Buffer for metadata
+    //Buffer for pipeline metadata
 
     CTRL_T metadata_d, metadata_q;
 
@@ -349,6 +278,170 @@ module vproc_lsu #(
         end
     end
 
+    /////////
+    // Top level signal control for ports
+    // These signals are only relevant for segmented operation, so input operands are assumed to be elemwise
+    /////////
+
+    //stride value calculation
+    logic [31:0] stride_val_i;
+    assign stride_val_i = pipe_in_ctrl_i.op_xval[0];
+
+
+    always_comb begin
+        lsu_ctrl_d = lsu_ctrl_q;
+        if (pipe_in_ctrl_i.first_cycle & !(pipe_in_ctrl_i.mode.lsu.nfields == '0)) begin //Latch values on first cycle for segmented operation
+            lsu_ctrl_d.nfields_remaining = pipe_in_ctrl_i.mode.lsu.nfields;
+            lsu_ctrl_d.eew = pipe_in_ctrl_i.decode_metadata.operands[1].sew; //take eew of one of the data operands (all are the same)
+            lsu_ctrl_d.stride = stride_val_i;
+            //VLMAX given in number of elements, fractional lmuls need to be raised to one whole register
+            unique case (pipe_in_ctrl_i.decode_metadata.operands[1].sew)
+                    VSEW_32: begin
+                            lsu_ctrl_d.vl_remaining = (pipe_in_ctrl_i.vlmax > VLEN/32) ? pipe_in_ctrl_i.vlmax - (MEM_PORTS) : VLEN/32 - (MEM_PORTS); //TODO: Allow VREGUNPACK to scale amount of data per port
+                            lsu_ctrl_d.next_base_addr = pipe_in_ctrl_i.op_xval[1] + 4;
+                    end
+                    VSEW_16: begin
+                            lsu_ctrl_d.vl_remaining = (pipe_in_ctrl_i.vlmax > VLEN/16) ? pipe_in_ctrl_i.vlmax - (MEM_PORTS) : VLEN/16 - (MEM_PORTS);
+                            lsu_ctrl_d.next_base_addr = pipe_in_ctrl_i.op_xval[1] + 2;
+                    end
+                    VSEW_8:  begin
+                        lsu_ctrl_d.vl_remaining = (pipe_in_ctrl_i.vlmax > VLEN/8)  ? pipe_in_ctrl_i.vlmax - (MEM_PORTS) : VLEN/8  - (MEM_PORTS);
+                        lsu_ctrl_d.next_base_addr = pipe_in_ctrl_i.op_xval[1] + 1;
+                    end
+            endcase
+        end else if (pipe_in_valid_i & pipe_in_ready_o) begin //On a port accepting a memory transaction, decrement total number of elems left to process, or reset value for next segment
+            if (lsu_ctrl_q.vl_remaining == 0) begin
+                unique case (pipe_in_ctrl_i.decode_metadata.operands[1].sew)
+                    VSEW_32: begin
+                            lsu_ctrl_d.vl_remaining = (metadata_q.vlmax > VLEN/32) ? metadata_q.vlmax - (MEM_PORTS) : VLEN/32 - (MEM_PORTS); //TODO: Allow VREGUNPACK to scale amount of data per port
+                            lsu_ctrl_d.next_base_addr = lsu_ctrl_q.next_base_addr + 4;
+                    end
+                    VSEW_16: begin
+                            lsu_ctrl_d.vl_remaining = (metadata_q.vlmax > VLEN/16) ? metadata_q.vlmax - (MEM_PORTS) : VLEN/16 - (MEM_PORTS);
+                            lsu_ctrl_d.next_base_addr = lsu_ctrl_q.next_base_addr + 2;
+                    end
+                    VSEW_8:  begin
+                            lsu_ctrl_d.vl_remaining = (metadata_q.vlmax > VLEN/8)  ? metadata_q.vlmax - (MEM_PORTS) : VLEN/8  - (MEM_PORTS);
+                            lsu_ctrl_d.next_base_addr = lsu_ctrl_q.next_base_addr + 1;
+                    end
+                endcase
+            end else begin
+                lsu_ctrl_d.vl_remaining = lsu_ctrl_q.vl_remaining - (MEM_PORTS);
+            end
+        end
+    end
+
+
+    /////////
+    //  Input routing for standard vs optimized segmented operations
+    /////////
+
+    logic [MEM_PORTS-1:0][VMEM_W-1:0] port_data_in;
+    logic [MEM_PORTS-1:0][VMEM_W/8-1:0] port_mask_in;
+
+    generate
+        for (genvar i = 0; i < MEM_PORTS; i++) begin
+            always_comb begin
+                unique case (pipe_in_ctrl_i.mode.lsu.nfields)
+                    default: begin
+                    //3'b000: begin
+                            //Non-Segmented Case
+                            port_data_in[i][VMEM_W-1:0] = pipe_in_op2_i[(i * VMEM_W) +: VMEM_W];
+                            port_mask_in[i][VMEM_W/8-1:0] = pipe_in_mask_i[(i * VMEM_W/8) +: VMEM_W/8];
+
+                    end
+
+                    //TODO: Reenable the optimized cases for segment operations based on MEM_W + NFIELDS
+                    // //For segmented cases, 1 element from each input op per register group (TODO: Can potentially scale to multiple ports this way by loading/shifting more data per cycle)
+                    // 3'b001: begin //2 segments
+                    //         unique case (pipe_in_ctrl_i.eew)
+                    //             VSEW_8: begin
+                    //                 port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(2*8)){1'b0}}, pipe_in_op1_i[i * 8 +: 8], pipe_in_op2_i[i * 8 +: 8]};
+                    //                 port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2){1'b0}}, {(2){pipe_in_mask_i[i]}}}; //Mask applies to both elements being loaded/stored
+                    //             end
+                    //             VSEW_16: begin
+                    //                 port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(2*16)){1'b0}}, pipe_in_op1_i[i * 16 +: 16], pipe_in_op2_i[i * 16 +: 16]};
+                    //                 port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-(2*2)){1'b0}}, {(4){pipe_in_mask_i[i*2 +: 2]}}}; //Mask applies to both elements being loaded/stored
+                    //             end
+                    //             //TODO: 32 bit case depends on VMEM_W
+                    //             default: begin
+                    //                 port_data_in[i] = '0;
+                    //                 port_mask_in[i] = '0;
+                    //             end
+                    //         endcase
+                    // end
+                    // 3'b010: begin //3 segments
+                    //         unique case (pipe_in_ctrl_i.eew)
+                    //             VSEW_8: begin
+                    //                 port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-(3*8)){1'b0}}, pipe_in_op3_i[i * 8 +: 8], pipe_in_op1_i[i * 8 +: 8], pipe_in_op2_i[i * 8 +: 8]};
+                    //                 port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-3){1'b0}}, {(3){pipe_in_mask_i[i]}}}; //Mask applies to both elements being loaded/stored
+                    //             end
+                    //             //TODO: 16 and 32 bit case depends on VMEM_W
+                    //             // VSEW_16: begin
+                    //             //     port_data_in[i][VMEM_W-1:0] = {{(VMEM_W-2*16){1'b0}}, pipe_in_op1_i[i * 16 +: 16], pipe_in_op2_i[i * 16 +: 16]};
+                    //             //     port_mask_in[i][VMEM_W/8-1:0] = {{(VMEM_W/8-2*2){1'b0}}, {(4){pipe_in_mask_i[i*2 +: 2]}}}; //Mask applies to both elements being loaded/stored
+                    //             // end
+                    //             default: begin
+                    //                 port_data_in[i] = '0;
+                    //                 port_mask_in[i] = '0;
+                    //             end
+                    //         endcase
+                    // end
+                    //TODO: Cases for additional fields here
+                    // default: begin //TODO: Should be possible to remove this case
+                    //             port_data_in[i] = '0;
+                    //             port_mask_in[i] = '0;
+                    // end
+                endcase
+            end
+        end
+    endgenerate
+
+    ////////
+    // Instantiation of memory ports
+    ////////
+
+
+    logic port_first_cycle;
+    assign port_first_cycle = pipe_in_ctrl_i.first_cycle | !(pipe_in_ctrl_i.mode.lsu.nfields == '0) & (lsu_ctrl_q.vl_remaining == '0);
+
+    //TODO: Will need a different base address for every memory port
+    logic [31:0] base_addr, stride_val;
+
+    assign base_addr = pipe_in_ctrl_i.first_cycle ? pipe_in_ctrl_i.op_xval[1] : lsu_ctrl_q.next_base_addr;
+    assign stride_val = pipe_in_ctrl_i.first_cycle ? stride_val_i : lsu_ctrl_q.stride;
+
+    generate
+        for (genvar i = 0; i < MEM_PORTS; i++) begin //TODO: Definitely issues with signalling with multiple ports, untested
+            vproc_mem_port #(
+                .PORT_WIDTH(VMEM_W),
+                .OUTSTANDING_REQ(OUTSTANDING_REQ),
+                .NUM_PORTS(MEM_PORTS)
+            ) mem_port (
+                .clk_i(clk_i),
+                .sync_rst_ni(sync_rst_ni),
+                .valid_i(pipe_in_valid_i),
+                .store_i(pipe_in_ctrl_i.mode.lsu.store),
+                .data_i(port_data_in[i]),
+                .ready_o(ports_ready_i[i]),
+                .first_cycle_i(port_first_cycle),
+                .base_addr_i(base_addr),
+                .mask_i(port_mask_in[i]),
+                .stride_i(pipe_in_ctrl_i.mode.lsu.stride),
+                .stride_val_i(stride_val),
+                .obi_bus(obi_bus[i]),
+                .valid_o(ports_valid_o[i]),
+                .ready_i(pipe_out_ready_i),
+                .data_o(pipe_out_res_o[(VMEM_W)*i +: VMEM_W]),
+                .mask_o(pipe_out_mask_o[(VMEM_W/8)*i +:VMEM_W/8])
+            );
+        end
+    endgenerate
+
+
+
+
+    // Buffer for first/last cycle signals
     logic[1:0] metadata_in, metadata_out;
 
     assign metadata_in[0] = pipe_in_ctrl_i.first_cycle;

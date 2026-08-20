@@ -101,7 +101,7 @@ module vproc_unit_wrapper
       vproc_lsu #(
           .MAX_OP_W        (MAX_OP_W),
           .VMEM_W          (MEM_W),
-          .VREG_W          (VREG_W),
+          .VLEN            (VREG_W),
           .MEM_PORTS       (MEM_PORTS),
           .CTRL_T          (CTRL_T),
           .XIF_ID_W        (XIF_ID_W),
