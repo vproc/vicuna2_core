@@ -4,7 +4,7 @@
 
 
 module vproc_div #(
-        parameter int unsigned        DIV_OP_W       = 64,   // DIV unit operand width in bits.
+        parameter int unsigned        DIV_OP_W       = 32,   // DIV unit operand width in bits.
         parameter type                CTRL_T         = logic
     )(
         input  logic                  clk_i,
@@ -31,222 +31,80 @@ module vproc_div #(
     //Input/Output Buffers Defines
     ///////////////////////////////////////////////////////////////////////////
 
-    logic [DIV_OP_W  -1:0] opa_i_d, opa_i_q, opb_i_d, opb_i_q;
-    CTRL_T                unit_ctrl_d, unit_ctrl_q;
-    logic                 data_valid_i_d, data_valid_i_q;
+    logic [DIV_OP_W  -1:0] opa_i_q, opb_i_q;
+    CTRL_T                  unit_ctrl_q;
+    logic                   data_valid_i_q;
 
-    logic                  div_valid_o_d, div_valid_o_q;
-    logic                  div_ready_i_d;
-
-    logic [DIV_OP_W/8-1:0] operand_mask_d, operand_mask_q;
-
-    logic [DIV_OP_W/8-1:0] result_mask_d, result_mask_q;
-
-    logic [DIV_OP_W  -1:0] result, result_partial_d, result_partial_d_shifted,result_partial_q;
+    logic [DIV_OP_W/8-1:0] operand_mask_q;
 
     ///////////////////////////////////////////////////////////////////////////
     // DIV ARITHMETIC Defines
     ///////////////////////////////////////////////////////////////////////////
-    logic [DIV_OP_W/32  -1:0] div_en, div_ready_o, div_valid_o;
-    logic [DIV_OP_W  -1:0] div_in_opa, div_in_opb;
+    logic [DIV_OP_W/32  -1:0] div_ready_o, div_valid_o;
     logic [DIV_OP_W  -1:0] div_out;
-
-    ///////////////////////////////////////////////////////////////////////////
-    //Shift counter control defines
-    ///////////////////////////////////////////////////////////////////////////
-    logic [1:0] shift_counter, shift_counter_next;
-
-    ///////////////////////////////////////////////////////////////////////////
-    //Input connections
-    ///////////////////////////////////////////////////////////////////////////
-    assign data_valid_i_d = pipe_in_valid_i;
-    assign div_ready_i_d = pipe_out_ready_i;
-    assign operand_mask_d = pipe_in_mask_i;
-    ///////////////////////////////////////////////////////////////////////////
+    logic [DIV_OP_W  -1:0] div_in_opa, div_in_opb;
 
     ///////////////////////////////////////////////////////////////////////////
     //Output Connections
     ///////////////////////////////////////////////////////////////////////////
     assign pipe_out_ctrl_o = unit_ctrl_q;
-    assign pipe_out_res_o = result;
-    assign pipe_out_valid_o = div_valid_o_d;
-
-    always_comb begin
-        pipe_in_ready_o = &div_ready_o & (shift_counter_next == 2'b00); //only signal out when all data has been processed
-        div_valid_o_d = &div_valid_o & (shift_counter_next == 2'b00);
-    end
+    assign pipe_out_res_o = div_out;
+    assign pipe_out_valid_o = &div_valid_o;
+    assign pipe_out_mask_o = operand_mask_q;
+    assign pipe_in_ready_o  = &div_ready_o & ~data_valid_i_q;
     ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
     //Input/Output Buffers
     ///////////////////////////////////////////////////////////////////////////
-
-
-    always_ff @(posedge clk_i) begin
-        //only advance input buffers if ALL div units are ready
-        if ( &div_ready_o ) begin
-            opa_i_q <= opa_i_d;
-            opb_i_q <= opb_i_d;
-            unit_ctrl_q <= unit_ctrl_d;
-            data_valid_i_q <= data_valid_i_d | !(shift_counter_next == 2'b00); //Hold data valid high if still data left to process
-            operand_mask_q <= operand_mask_d;
-            if (pipe_out_valid_o & unit_ctrl_q.last_cycle) begin
-                opa_i_q <= 'b0;
-                opb_i_q <= 'b0;
-                unit_ctrl_q <= 'b0;
-                data_valid_i_q <= 'b0;
-                operand_mask_q <= 'b0;
-            end
+    always_ff @(posedge clk_i or negedge async_rst_ni) begin
+        if (~async_rst_ni || ~sync_rst_ni) begin
+            opa_i_q        <= '0;
+            opb_i_q        <= '0;
+            unit_ctrl_q    <= '0;
+            data_valid_i_q <= 1'b0;
+            operand_mask_q <= '0;
+        end else if (pipe_in_valid_i & pipe_in_ready_o) begin
+            opa_i_q        <= pipe_in_op2_i;
+            opb_i_q        <= pipe_in_op1_i;
+            unit_ctrl_q    <= pipe_in_ctrl_i;
+            operand_mask_q <= pipe_in_mask_i;
+            data_valid_i_q <= 1'b1;
+        end else if (&div_ready_o) begin
+            data_valid_i_q <= 1'b0;
         end
-
-        if (&div_valid_o) begin
-            result_partial_q <= result_partial_d_shifted; 
-        end
-
     end
 
     ///////////////////////////////////////////////////////////////////////////
-
-    ///////////////////////////////////////////////////////////////////////////
-    // Mask out generation
-
-    // result byte mask
-    logic [DIV_OP_W/8-1:0] vl_mask;
-
-    assign vl_mask        = ~unit_ctrl_q.vl_part_0 ? ({(DIV_OP_W/8){1'b1}} >> (~unit_ctrl_q.vl_part)) : '0;
-    assign pipe_out_mask_o = (unit_ctrl_q.mode.div.masked ? operand_mask_q : {(DIV_OP_W/8){1'b1}}) & vl_mask;
-
-    ///////////////////////////////////////////////////////////////////////////
-
-    
-    ///////////////////////////////////////////////////////////////////////////
-    //Shifts + sign extensions for inputs
+    // sign extension
     always_comb begin
-        //if counter == 00 (meaning SEW==32 or all data finished) pass through from inputs
-        if (shift_counter_next == 2'b00) begin
-            opa_i_d = pipe_in_op2_i;
-            opb_i_d = pipe_in_op1_i;
-            unit_ctrl_d = pipe_in_ctrl_i;
-        end else if (unit_ctrl_q.eew == VSEW_16) begin
-            //if SEW is 16, shift top half down
-            opa_i_d[DIV_OP_W/2-1:0] = opa_i_q[DIV_OP_W-1:DIV_OP_W/2];
-            opb_i_d[DIV_OP_W/2-1:0] = opb_i_q[DIV_OP_W-1:DIV_OP_W/2];
-            unit_ctrl_d = unit_ctrl_q;
-        end else if (unit_ctrl_q.eew == VSEW_8) begin
-            //if SEW is 8, shift top 3/4 down
-            opa_i_d[(3*DIV_OP_W/4)-1:0] = opa_i_q[DIV_OP_W-1:(DIV_OP_W/4)];
-            opb_i_d[(3*DIV_OP_W/4)-1:0] = opb_i_q[DIV_OP_W-1:(DIV_OP_W/4)];
-            unit_ctrl_d = unit_ctrl_q;
-        end else begin
-            opa_i_d = opa_i_q;
-            opb_i_d = opb_i_q;
-            unit_ctrl_d = unit_ctrl_q;
-        end
-
-    end
-
-    //Shifts + combinatins with buffer for outputs
-    always_comb begin
-        
-        unique case (unit_ctrl_q.eew)
-                VSEW_16 : begin 
-                              result = {result_partial_d[(DIV_OP_W/2-1):0], result_partial_q[(DIV_OP_W/2-1):0]}; //Combine top half saved in buffer with current bottom half
-                              result_partial_d_shifted = result_partial_d;                                       //Data already in lower half, dont need to save anything from buffer
-                        end
-
-                VSEW_8  : begin 
-                              result = {result_partial_d[(DIV_OP_W/4-1):0], result_partial_q[(3*DIV_OP_W/4)-1:0]};                                             //Combine top 3/4 saved in buffer with current bottom 1/4
-                              result_partial_d_shifted = {8'b00000000, result_partial_d[(DIV_OP_W/4)-1:0], result_partial_q[(3*DIV_OP_W/4)-1:(DIV_OP_W/4)] }; //put new data in position 2, previous pos 2/3 become new position 3/4
-                        end
-                default : begin
-                    result = result_partial_d;                                                               //Result is already DIV_OP_W wide, pass directly
-                    result_partial_d_shifted = '0;
-                end
-        endcase
-    end
-
-    always_ff @(posedge clk_i) begin
-        if (async_rst_ni == 1'b0 | (pipe_out_valid_o & unit_ctrl_q.last_cycle)) begin
-            shift_counter <= 2'b0;
-        end else begin
-            shift_counter <= shift_counter_next;
-        end
-
-    end
-
-    always_comb begin
-        if (&div_valid_o == 1'b1) begin
-            unique case (unit_ctrl_q.eew)
-                VSEW_32 : shift_counter_next = 2'b00;
-                VSEW_16 : shift_counter_next = shift_counter + 2;
-                VSEW_8  : shift_counter_next = shift_counter + 1;
-                default: shift_counter_next = 2'b00;
-            endcase
-        end else begin
-            shift_counter_next = shift_counter;
-        end 
-    end
-
-    ///////////////////////////////////////////////////////////////////////////
-
-
-
-    ///////////////////////////////////////////////////////////////////////////
-    // DIV ARITHMETIC
-    // Each div unit handles one 32 bit result.
-
-    //based on SEW and OP, select and extend the operands and pack the current set of outputs
-    always_comb begin
-        result_partial_d = '0;
+        div_in_opa = '0;
+        div_in_opb = '0;
 
         for (integer g = 0; g < DIV_OP_W / 32; g++) begin
-            unique case ({unit_ctrl_q.eew, unit_ctrl_q.mode.div.op})
-                {VSEW_32, DIV_DIVU},
-                {VSEW_32, DIV_REMU},
-                {VSEW_32, DIV_DIV},
-                {VSEW_32, DIV_REM}: begin
-                    div_in_opa[32*g +: 32]  = opa_i_q[32*g +: 32];
-                    div_in_opb[32*g +: 32]  = opb_i_q[32*g +: 32];
-                    result_partial_d[32*g +: 32]    = div_out[32*g +: 32];
+            unique case (unit_ctrl_q.eew)
+                VSEW_32: begin
+                    div_in_opa[32*g +: 32] = opa_i_q[32*g +: 32];
+                    div_in_opb[32*g +: 32] = opb_i_q[32*g +: 32];
                 end
-                {VSEW_16, DIV_DIVU},
-                {VSEW_16, DIV_REMU}: begin
-                    div_in_opa[32*g +: 32]  = {16'b0,  opa_i_q[16*g +: 16]};
-                    div_in_opb[32*g +: 32]  = {16'b0,  opb_i_q[16*g +: 16]};
-                    result_partial_d[16*g +: 16]    = div_out[32*g +: 16];
+                VSEW_16: begin
+                    div_in_opa[32*g +: 32] = {{16{unit_ctrl_q.decode_metadata.operands[0].sign & opa_i_q[16*g + 15]}}, opa_i_q[16*g +: 16]};
+                    div_in_opb[32*g +: 32] = {{16{unit_ctrl_q.decode_metadata.operands[1].sign & opb_i_q[16*g + 15]}}, opb_i_q[16*g +: 16]};
                 end
-                {VSEW_16, DIV_DIV},
-                {VSEW_16, DIV_REM}: begin
-                    div_in_opa[32*g +: 32]  = {{16{opa_i_q[16*g + 15]}},  opa_i_q[16*g +: 16]};
-                    div_in_opb[32*g +: 32]  = {{16{opb_i_q[16*g + 15]}},  opb_i_q[16*g +: 16]};
-                    result_partial_d[16*g +: 16]    = div_out[32*g +: 16];
+                VSEW_8: begin
+                    div_in_opa[32*g +: 32] = {{24{unit_ctrl_q.decode_metadata.operands[0].sign & opa_i_q[8*g + 7]}}, opa_i_q[8*g +: 8]};
+                    div_in_opb[32*g +: 32] = {{24{unit_ctrl_q.decode_metadata.operands[1].sign & opb_i_q[8*g + 7]}}, opb_i_q[8*g +: 8]};
                 end
-                {VSEW_8, DIV_DIVU},
-                {VSEW_8, DIV_REMU}: begin
-                    div_in_opa[32*g +: 32]  = {24'b0,  opa_i_q[8*g +: 8]};
-                    div_in_opb[32*g +: 32]  = {24'b0,  opb_i_q[8*g +: 8]};
-                    result_partial_d[8*g +: 8]      = div_out[32*g +: 8];
-                end
-                {VSEW_8, DIV_DIV},
-                {VSEW_8, DIV_REM}: begin
-                    div_in_opa[32*g +: 32]  = {{24{opa_i_q[8*g + 7]}},  opa_i_q[8*g +: 8]};
-                    div_in_opb[32*g +: 32]  = {{24{opb_i_q[8*g + 7]}},  opb_i_q[8*g +: 8]};
-                    result_partial_d[8*g +: 8]      = div_out[32*g +: 8];
-                end
-                default: begin
-                    div_in_opa[32*g +: 32]  = 32'b0;
-                    div_in_opb[32*g +: 32]  = 32'b0;
-                    result_partial_d[32*g +: 32]    = 32'b0;
-                end
+                default: ;
             endcase
         end
     end
 
+    ///////////////////////////////////////////////////////////////////////////
     //generate div units
      generate
         for (genvar g = 0; g < DIV_OP_W / 32; g++) begin
 
-            logic           div_en;               
             logic           div_clz_en;
             logic [31:0]    div_clz_data_rev;
             logic [5:0]     div_clz_result;
@@ -262,8 +120,8 @@ module vproc_div #(
             // Input IF
             .data_ind_timing_i  ( 1'b1                                 ), // When enabled, all divisions take same number of cycles.  Drastically improves performance on unit tests(unexpected)
             .operator_i         ( unit_ctrl_q.mode.div.op           ), 
-            .op_a_i             ( div_in_opa[32*g +: 32]            ),
-            .op_b_i             ( div_in_opb[32*g +: 32]            ),
+            .op_a_i             ( div_in_opa[32*g +: 32]         ),
+            .op_b_i             ( div_in_opb[32*g +: 32]         ),
 
             // ALU CLZ interface
             .alu_clz_result_i   ( div_clz_result                       ), 
@@ -285,7 +143,7 @@ module vproc_div #(
             .valid_i            ( data_valid_i_q                        ), //comes from EX_VALID
             .ready_o            ( div_ready_o[g]                       ), //goes to EX_READY
             .valid_o            ( div_valid_o[g]                       ), //goes to WB_VALID
-            .ready_i            ( div_ready_i_d                          )  //comes from WB_READY 
+            .ready_i            ( pipe_out_ready_i                        )  //comes from WB_READY 
 
             );
 
@@ -294,7 +152,7 @@ module vproc_div #(
             ////
             vproc_div_shift_clz shift_clz_i
             (
-            .muldiv_operand_b_i  ( div_in_opb[32*g +: 32]  ),
+            .muldiv_operand_b_i  ( div_in_opb[32*g +: 32] ),
 
             // ALU CLZ interface
             .div_clz_en_i        ( div_clz_en                    ),

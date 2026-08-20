@@ -168,14 +168,16 @@ module vreg_shift_register
                 unique case (ctrl_q.eew)
                         VSEW_32: begin
                             unique case (ctrl_q.shift_rate) 
-                                SHIFT_FULL_WIDTH:       shift_reg_d = {(VREG_PORT_W/32){xval_i[31:0]}};
+                                SHIFT_FULL_WIDTH,
+                                SHIFT_ELEMWISE:         shift_reg_d = {(VREG_PORT_W/32){xval_i[31:0]}};
                                 SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
                                 SHIFT_QUARTER_WIDTH:    shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}}; //TODO: Is elemwise case necessary here?
                             endcase
                         end 
                         VSEW_16: begin
                             unique case (ctrl_q.shift_rate) 
-                                SHIFT_FULL_WIDTH:       shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
+                                SHIFT_FULL_WIDTH,
+                                SHIFT_ELEMWISE:         shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
                                 SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}}; //TODO: is elemwise case necessary here?
                             endcase
                         end 

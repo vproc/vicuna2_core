@@ -2077,6 +2077,10 @@ module vproc_decoder #(
                             mode_o.div.op         = DIV_DIVU;
                             mode_o.div.masked     = instr_masked;
                             widenarrow_o          = OP_SINGLEWIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b100001, 3'b010},        // vdiv VV
                         {6'b100001, 3'b110}: begin  // vdiv VX
@@ -2084,6 +2088,10 @@ module vproc_decoder #(
                             mode_o.div.op         = DIV_DIV;
                             mode_o.div.masked     = instr_masked;
                             widenarrow_o          = OP_SINGLEWIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b100010, 3'b010},        // vremu VV
                         {6'b100010, 3'b110}: begin  // vremu VX
@@ -2091,6 +2099,10 @@ module vproc_decoder #(
                             mode_o.div.op         = DIV_REMU;
                             mode_o.div.masked     = instr_masked;
                             widenarrow_o          = OP_SINGLEWIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b100011, 3'b010},        // vrem VV
                         {6'b100011, 3'b110}: begin  // vrem VX
@@ -2098,6 +2110,10 @@ module vproc_decoder #(
                             mode_o.div.op         = DIV_REM;
                             mode_o.div.masked     = instr_masked;
                             widenarrow_o          = OP_SINGLEWIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
 
                         `ifdef RISCV_ZVE32F  
