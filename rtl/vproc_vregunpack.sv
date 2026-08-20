@@ -258,6 +258,7 @@ module mask_reg_shift_register
     output logic                               shift_reg_ready_o,
     input  vproc_pkg::cfg_vsew                     operand_eew_i,
     input  vproc_pkg::cfg_emul                    operand_emul_i,
+    input  logic [3:0]                                 repeats_i,
     input  vproc_pkg::op_shift_rate         operand_shift_rate_i,
     input  logic [CFG_VL_W-1:0]                             vl_i,
     input  logic                                          vl_0_i,
@@ -277,18 +278,22 @@ module mask_reg_shift_register
 
 );
 
-    //Control signals for operand shift register
+    //Control signals for mask shift register
     typedef struct packed {
     cfg_vsew                    eew;
+    cfg_emul                    emul;
     logic [$clog2(VREG_PORT_W/8 * 8)-1:0] shifts_remaining; //maximum shift count for elemwise LMUL=8
     logic                       valid_data;
     logic                       masked;
     vproc_pkg::op_shift_rate    shift_rate;
+    logic [3:0]                 repeats_remaining; //Some operations will need the contents of the mask register multiple times
+    logic [CFG_VL_W-1:0]        vl;
+    logic                       vl_0;
     } shift_reg_ctrl;
 
     shift_reg_ctrl ctrl_d, ctrl_q;
 
-    // State machine for the operand shift register
+    // State machine for the mask shift register
     typedef enum logic {
         IDLE            = 1'b0,
         VREG_SHIFT      = 1'b1
@@ -316,35 +321,14 @@ module mask_reg_shift_register
                 if (pipe_in_valid_i) begin
                     state_d = VREG_SHIFT;
                     ctrl_d.eew = operand_eew_i;
+                    ctrl_d.emul = operand_emul_i;
                     ctrl_d.valid_data = 1'b0;
                     ctrl_d.masked     = masked_i;
                     ctrl_d.shift_rate = operand_shift_rate_i;
-                    unique case (operand_shift_rate_i)
-                        SHIFT_ELEMWISE: begin
-                            unique case ({operand_emul_i, operand_eew_i}) //Set # of remaining shifts based on destination emul
-                                        {EMUL_1, VSEW_8}: ctrl_d.shifts_remaining      = (    VREG_PORT_W)/8 - 1;
-                                        {EMUL_1, VSEW_16}: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/16 - 1;
-                                        {EMUL_1, VSEW_32}: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/32 - 1;
-                                        {EMUL_2, VSEW_8}: ctrl_d.shifts_remaining      = ( 2 * VREG_PORT_W)/8 - 1;
-                                        {EMUL_2, VSEW_16}: ctrl_d.shifts_remaining     = ( 2 * VREG_PORT_W)/16 - 1;
-                                        {EMUL_2, VSEW_32}: ctrl_d.shifts_remaining     = ( 2 * VREG_PORT_W)/32 - 1;
-                                        {EMUL_4, VSEW_8}: ctrl_d.shifts_remaining      = ( 4 * VREG_PORT_W)/8 - 1;
-                                        {EMUL_4, VSEW_16}: ctrl_d.shifts_remaining     = ( 4 * VREG_PORT_W)/16 - 1;
-                                        {EMUL_4, VSEW_32}: ctrl_d.shifts_remaining     = ( 4 * VREG_PORT_W)/32 - 1;
-                                        {EMUL_8, VSEW_8}: ctrl_d.shifts_remaining      = ( 8 * VREG_PORT_W)/8 - 1;
-                                        {EMUL_8, VSEW_16}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/16 - 1;
-                                        {EMUL_8, VSEW_32}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/32 - 1;
-                            endcase
-                        end
-                        default: begin //All other cases only depend on LMUL
-                                    unique case (operand_emul_i) //Set # of remaining shifts based on destination emul
-                                        EMUL_1: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
-                                        EMUL_2: ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
-                                        EMUL_4: ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
-                                        EMUL_8: ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
-                                    endcase
-                        end
-                    endcase
+                    ctrl_d.repeats_remaining = repeats_i;
+                    ctrl_d.vl = vl_i;
+                    ctrl_d.vl_0 = vl_0_i;
+                    ctrl_d.shifts_remaining = '0;
                 end
             end
 
@@ -352,14 +336,41 @@ module mask_reg_shift_register
                 if (vfu_ready_i & ctrl_q.valid_data) begin
                     ctrl_d.shifts_remaining = ctrl_q.shifts_remaining - 1; //Only shift if vector functional unit is ready
                 end
-                if (ctrl_q.shifts_remaining == 0 & vfu_ready_i) begin //Only 1 register needs to be read/shifted, exit when no shifts remain
+                if (ctrl_q.shifts_remaining == 0 && vfu_ready_i && ctrl_q.repeats_remaining == 0) begin
                     state_d = IDLE;
                     finished_o = 1'b1;
                     ctrl_d.valid_data = 1'b0; 
                 end else begin
-                    if (vreg_rd_gnt_i | !ctrl_q.masked) begin
+                    if ((vreg_rd_gnt_i | !ctrl_q.masked) & ctrl_q.shifts_remaining == 0 & (!ctrl_q.valid_data | vfu_ready_i)) begin
+                        unique case (ctrl_q.shift_rate)
+                            SHIFT_ELEMWISE: begin
+                                unique case ({ctrl_q.emul, ctrl_q.eew}) //Set # of remaining shifts based on destination emul
+                                            {EMUL_1, VSEW_8}: ctrl_d.shifts_remaining      = (    VREG_PORT_W)/8 - 1;
+                                            {EMUL_1, VSEW_16}: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/16 - 1;
+                                            {EMUL_1, VSEW_32}: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/32 - 1;
+                                            {EMUL_2, VSEW_8}: ctrl_d.shifts_remaining      = ( 2 * VREG_PORT_W)/8 - 1;
+                                            {EMUL_2, VSEW_16}: ctrl_d.shifts_remaining     = ( 2 * VREG_PORT_W)/16 - 1;
+                                            {EMUL_2, VSEW_32}: ctrl_d.shifts_remaining     = ( 2 * VREG_PORT_W)/32 - 1;
+                                            {EMUL_4, VSEW_8}: ctrl_d.shifts_remaining      = ( 4 * VREG_PORT_W)/8 - 1;
+                                            {EMUL_4, VSEW_16}: ctrl_d.shifts_remaining     = ( 4 * VREG_PORT_W)/16 - 1;
+                                            {EMUL_4, VSEW_32}: ctrl_d.shifts_remaining     = ( 4 * VREG_PORT_W)/32 - 1;
+                                            {EMUL_8, VSEW_8}: ctrl_d.shifts_remaining      = ( 8 * VREG_PORT_W)/8 - 1;
+                                            {EMUL_8, VSEW_16}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/16 - 1;
+                                            {EMUL_8, VSEW_32}: ctrl_d.shifts_remaining     = ( 8 * VREG_PORT_W)/32 - 1;
+                                endcase
+                            end
+                            default: begin //All other cases only depend on LMUL
+                                        unique case (ctrl_q.emul) //Set # of remaining shifts based on destination emul
+                                            EMUL_1: ctrl_d.shifts_remaining     = (    VREG_PORT_W)/PIPE_OP_W - 1;
+                                            EMUL_2: ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
+                                            EMUL_4: ctrl_d.shifts_remaining     = (4 * VREG_PORT_W)/PIPE_OP_W - 1;
+                                            EMUL_8: ctrl_d.shifts_remaining     = (8 * VREG_PORT_W)/PIPE_OP_W - 1;
+                                        endcase
+                            end
+                        endcase
                         ctrl_d.valid_data = 1'b1;
-                    end else begin
+                        ctrl_d.repeats_remaining = ctrl_q.repeats_remaining - 1;
+                    end else if (!(vreg_rd_gnt_i | !ctrl_q.masked) & ctrl_q.shifts_remaining == 0) begin
                         ctrl_d.valid_data = 1'b0; //On failed read, set data valid to 0
                     end
                 end
@@ -369,6 +380,8 @@ module mask_reg_shift_register
 
     //VREG Shift register
     logic [VREG_PORT_W-1:0] shift_reg_d, shift_reg_q; //Entire mask register loaded
+
+    logic [VREG_PORT_W-1:0] vl_mask;
 
     logic [VREG_PORT_W-1:0] mask_reg_bytes; //translate mask register to byte register based on SEW
 
@@ -381,16 +394,20 @@ module mask_reg_shift_register
     end
 
     always_comb begin
-        shift_reg_d = shift_reg_q;
-        if (state_q == IDLE) begin //generate initial state based on vl
-            shift_reg_d = '0;
-            if (!vl_0_i) begin
-                for (int i = 0; i <= vl_i; i++) begin //vl is passed as # bytes -1, so <= here + guard for vl=0.
-                    shift_reg_d[i] = 1'b1;
-                end
+        vl_mask = '0;
+        if (!ctrl_q.vl_0) begin
+            for (int i = 0; i <= ctrl_q.vl; i++) begin //vl is passed as # bytes -1, so <= here + guard for vl=0.
+                vl_mask[i] = 1'b1;
             end
-        end else if(state_q == VREG_SHIFT && !ctrl_q.valid_data) begin
-            shift_reg_d = ctrl_q.masked ? mask_reg_bytes & shift_reg_q : shift_reg_q; //If mask register needed, & with VL mask
+        end
+    end
+
+    always_comb begin
+        shift_reg_d = shift_reg_q;
+        if (state_q == IDLE) begin
+            shift_reg_d = '0;
+        end else if(state_q == VREG_SHIFT && !ctrl_q.valid_data || state_q == VREG_SHIFT && (ctrl_q.shifts_remaining == 0 && !(ctrl_q.repeats_remaining == 0) && vfu_ready_i)) begin  //reset mask register if data not valid or a repeat is beginning
+            shift_reg_d = ctrl_q.masked ? mask_reg_bytes & vl_mask : vl_mask; //If mask register needed, & with VL mask
         end else if (state_q == VREG_SHIFT) begin
             if (vfu_ready_i) begin
                 unique case (ctrl_q.shift_rate)
@@ -699,6 +716,7 @@ module vproc_vregunpack
         .shift_reg_ready_o(mask_reg_ready),
         .operand_eew_i(metadata_q.eew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
         .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
+        .repeats_i(metadata_q.ctrl.decode_metadata.mask_operand.regs),
         .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[1].shift_rate), //TODO: Currently based off of OP1 shift rate
         
         .vl_i(metadata_q.ctrl.vl),

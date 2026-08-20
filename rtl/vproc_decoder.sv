@@ -177,6 +177,7 @@ module vproc_decoder #(
         endcase
 
         decode_metadata_o.dest_emul = emul_o;
+        decode_metadata_o.mask_operand.regs = 1; //most operations only need to read the mask register once
 
         unique case (instr_i[6:0])
 
