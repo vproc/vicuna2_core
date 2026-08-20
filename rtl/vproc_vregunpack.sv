@@ -19,6 +19,7 @@ module vreg_shift_register
     input  logic                                 pipe_in_valid_i,
     output logic                               shift_reg_ready_o,
     input  vproc_pkg::cfg_vsew                     operand_eew_i,
+    input  logic [3:0]                            operand_regs_i,
     input  vproc_pkg::cfg_emul                    operand_emul_i,
     input  logic [VADDR_W-1:0]              operand_vaddr_base_i,
     input  vproc_pkg::op_shift_rate         operand_shift_rate_i,
@@ -51,7 +52,7 @@ module vreg_shift_register
     logic                   valid_data;
     vproc_pkg::op_shift_rate shift_rate;
     logic                    sign;
-    vproc_pkg::cfg_emul    dest_emul;                  
+    vproc_pkg::cfg_emul    dest_emul;
     } shift_reg_ctrl;
 
     shift_reg_ctrl ctrl_d, ctrl_q;
@@ -92,27 +93,7 @@ module vreg_shift_register
                     ctrl_d.shift_rate = operand_shift_rate_i;
                     ctrl_d.sign = operand_sign_i;
                     ctrl_d.dest_emul = operand_emul_i;
-                    unique case ({operand_emul_i, operand_shift_rate_i}) //Destination EMUL is given to unpack.  Select number of source registers to read based on destination emul and shift rate
-                        {EMUL_1, SHIFT_QUARTER_WIDTH},  // Read one register minimum for fractional emuls
-                        {EMUL_1, SHIFT_HALF_WIDTH}, 
-                        {EMUL_1, SHIFT_FULL_WIDTH},
-                        {EMUL_2, SHIFT_HALF_WIDTH},
-                        {EMUL_2, SHIFT_QUARTER_WIDTH},
-                        {EMUL_1, SHIFT_ELEMWISE},
-                        {EMUL_4, SHIFT_QUARTER_WIDTH}: ctrl_d.vreg_reads_remaining = 1;
-
-                        {EMUL_2, SHIFT_FULL_WIDTH},
-                        {EMUL_4, SHIFT_HALF_WIDTH},
-                        {EMUL_2, SHIFT_ELEMWISE},
-                        {EMUL_8, SHIFT_QUARTER_WIDTH}: ctrl_d.vreg_reads_remaining = 2;
-
-                        {EMUL_4, SHIFT_FULL_WIDTH},
-                        {EMUL_4, SHIFT_ELEMWISE},
-                        {EMUL_8, SHIFT_HALF_WIDTH}: ctrl_d.vreg_reads_remaining = 4;
-
-                        {EMUL_8, SHIFT_ELEMWISE},
-                        {EMUL_8, SHIFT_FULL_WIDTH}: ctrl_d.vreg_reads_remaining = 8;
-                    endcase
+                    ctrl_d.vreg_reads_remaining = operand_regs_i;
                 end
             end
 
@@ -672,7 +653,8 @@ module vproc_vregunpack
                 .pipe_in_valid_i(shift_reg_in_valid_q & (metadata_q.ctrl.decode_metadata.operands[i].vreg | metadata_q.ctrl.decode_metadata.operands[i].xreg)),
                 .shift_reg_ready_o(shift_regs_ready[i]),
                 .operand_eew_i(metadata_q.eew),                                          //TODO: Mixed precision operations will need an EEW/operand
-                .operand_emul_i(metadata_q.ctrl.decode_metadata.operands[i].emul),
+                .operand_regs_i(metadata_q.ctrl.decode_metadata.operands[i].regs),
+                .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
                 .operand_vaddr_base_i(metadata_q.ctrl.decode_metadata.operands[i].r.vaddr),
                 .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[i].shift_rate),
                 .operand_sign_i(metadata_q.ctrl.decode_metadata.operands[i].sign), 
@@ -716,7 +698,7 @@ module vproc_vregunpack
         .pipe_in_valid_i(shift_reg_in_valid_q), //Mask shift reg triggered for every instruction
         .shift_reg_ready_o(mask_reg_ready),
         .operand_eew_i(metadata_q.eew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
-        .operand_emul_i(metadata_q.ctrl.decode_metadata.mask_operand.emul),
+        .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
         .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[1].shift_rate), //TODO: Currently based off of OP1 shift rate
         
         .vl_i(metadata_q.ctrl.vl),

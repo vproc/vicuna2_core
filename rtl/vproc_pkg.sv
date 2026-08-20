@@ -437,12 +437,12 @@ typedef enum logic [1:0] {
 
 // source register type:
 typedef struct packed {
-    logic vreg;
-    logic xreg;
-    op_shift_rate   shift_rate;
-    logic           sign;
-    cfg_vsew        sew;
-    cfg_emul        emul;
+    logic            vreg;
+    logic            xreg;
+    op_shift_rate    shift_rate;
+    logic            sign;
+    cfg_vsew         sew;
+    logic [3:0]      regs;  //how many registers does this operand require? (normally related to emul).  Maximum currently 15 (intentionally higher than necessary)
 `ifdef VPROC_OP_REGS_UNION
     union {
 `else
@@ -528,6 +528,7 @@ typedef struct packed {
     op_regs [2:0] operands;     //TODO: Dynamically select # operands based on # read ports, currently fixed to 3
     op_regs       mask_operand; //Todo: many signals in the op_regs datatype are unncessesary for the mask operand.  Should probably have its own, smaller version of the struct
     logic         masked;
+    cfg_emul      dest_emul;
 } decode_metadata;
 
 endpackage
