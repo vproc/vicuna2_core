@@ -716,11 +716,11 @@ module vproc_vregunpack
 
         .pipe_in_valid_i(shift_reg_in_valid_q), //Mask shift reg triggered for every instruction
         .shift_reg_ready_o(mask_reg_ready),
-        .operand_eew_i(metadata_q.ctrl.decode_metadata.operands[1].sew),         //TODO: For mixed width ops, always ensure the destination sew is passed here
+        .operand_eew_i(metadata_q.ctrl.decode_metadata.mask_operand.sew),
         .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
         .repeats_i(metadata_q.ctrl.decode_metadata.mask_operand.regs),
-        .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[1].shift_rate), //TODO: Currently based off of OP1 shift rate
-        
+        .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.mask_operand.shift_rate),
+
         .vl_i(metadata_q.ctrl.vl),
         .vl_0_i(metadata_q.ctrl.vl_0),
         .masked_i(metadata_q.ctrl.decode_metadata.masked),

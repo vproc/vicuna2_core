@@ -36,6 +36,7 @@ module vproc_mem_port #(
     //////////
     //TODO: Combine these into a metadata struct
     logic[31:0] req_addr_d, req_addr_q;
+    logic[31:0] base_addr_d, base_addr_q;
     logic       valid_d, valid_q;
     logic[PORT_WIDTH/8-1:0] mask_d, mask_q;
     logic       store_d, store_q;
@@ -52,6 +53,7 @@ module vproc_mem_port #(
             data_q <= '0;
             stride_q <= LSU_UNITSTRIDE;
             stride_val_q <= '0;
+            base_addr_q <= '0;
         end else begin
             req_addr_q <= req_addr_d;
             valid_q <= valid_d;
@@ -60,6 +62,7 @@ module vproc_mem_port #(
             data_q <= data_d;
             stride_q <= stride_d;
             stride_val_q <= stride_val_d;
+            base_addr_q <= base_addr_d;
         end
     end
 
@@ -70,12 +73,14 @@ module vproc_mem_port #(
         data_d = data_q;
         stride_d = stride_q;
         stride_val_d = stride_val_q;
+        base_addr_d = base_addr_q;
 
         if (valid_i & ready_o) begin
             mask_d = mask_i;
             data_d = data_i;
             if (first_cycle_i) begin
-                req_addr_d = base_addr_i;
+                req_addr_d = (stride_i == LSU_INDEXED) ? base_addr_i + stride_val_i: base_addr_i;
+                base_addr_d = base_addr_i;
                 store_d = store_i;
                 stride_d = stride_i;
                 stride_val_d = stride_val_i;
@@ -83,6 +88,7 @@ module vproc_mem_port #(
                 unique case (stride_q)
                     LSU_UNITSTRIDE: req_addr_d = req_addr_q + PORT_WIDTH/8 * NUM_PORTS; //Stride between requests split between number of ports
                     LSU_STRIDED:    req_addr_d = req_addr_q + stride_val_q * NUM_PORTS;
+                    LSU_INDEXED:    req_addr_d = base_addr_q + stride_val_i;                //Indexed ops use stride input as an offset
                 endcase
             end
         end
@@ -205,6 +211,8 @@ module vproc_lsu #(
         input  logic [MAX_OP_W-1:0]   pipe_in_op1_i,
         input  logic [MAX_OP_W-1:0]   pipe_in_op2_i,
         input  logic [MAX_OP_W-1:0]   pipe_in_op3_i,
+        input logic                   pipe_in_op3_valid_i,
+        output logic                  pipe_in_op3_ready_o,
         input  logic [MAX_OP_W/8  -1:0] pipe_in_mask_i,
 
         output logic [MEM_PORTS-1:0]  pipe_out_valid_o,
@@ -247,6 +255,7 @@ module vproc_lsu #(
     logic [2:0]             nfields_remaining;
     logic [$clog2(VLEN*8/8) :0] vl_remaining;  //maximum value is LMUL8 SEW8 elements
     cfg_vsew                eew;
+    logic                   indexed_op_clear;
     } vlsu_ctrl;
 
     vlsu_ctrl lsu_ctrl_d, lsu_ctrl_q;
@@ -279,17 +288,38 @@ module vproc_lsu #(
     end
 
     /////////
+    //  op3 handling for indexed ops
+    //  index might have extra data that is not processed, needs to be cleared
+    //  this signal is in parallel to the main ready signal handled in unit_wrapper
+    ////////
+
+    assign pipe_in_op3_ready_o = lsu_ctrl_q.indexed_op_clear;
+
+    /////////
     // Top level signal control for ports
     // These signals are only relevant for segmented operation, so input operands are assumed to be elemwise
     /////////
 
-    //stride value calculation
+    //stride value calculation //TODO: Will need to scale for multiple ports in indexed case
     logic [31:0] stride_val_i;
-    assign stride_val_i = pipe_in_ctrl_i.op_xval[0];
+    always_comb begin
+        stride_val_i = pipe_in_ctrl_i.op_xval[0];
+        if (pipe_in_ctrl_i.mode.lsu.stride == LSU_INDEXED) begin //indexed takes stride values from vreg op3
+            case (pipe_in_ctrl_i.decode_metadata.operands[2].sew)
+                VSEW_32: stride_val_i = pipe_in_op3_i[31:0];
+                VSEW_16: stride_val_i = {{(16){1'b0}}, pipe_in_op3_i[15:0]};
+                VSEW_8:  stride_val_i = {{(24){1'b0}}, pipe_in_op3_i[7:0]};
+            endcase
+        end
+    end
+
+    logic test_stride_cond;
+    assign test_stride_cond = pipe_in_ctrl_i.mode.lsu.stride == LSU_INDEXED;
 
 
     always_comb begin
         lsu_ctrl_d = lsu_ctrl_q;
+        lsu_ctrl_d.indexed_op_clear = (pipe_in_ctrl_i.last_cycle & pipe_in_ctrl_i.mode.lsu.stride == LSU_INDEXED) | lsu_ctrl_q.indexed_op_clear & pipe_in_op3_valid_i;
         if (pipe_in_ctrl_i.first_cycle & !(pipe_in_ctrl_i.mode.lsu.nfields == '0)) begin //Latch values on first cycle for segmented operation
             lsu_ctrl_d.nfields_remaining = pipe_in_ctrl_i.mode.lsu.nfields;
             lsu_ctrl_d.eew = pipe_in_ctrl_i.decode_metadata.operands[1].sew; //take eew of one of the data operands (all are the same)
@@ -401,7 +431,6 @@ module vproc_lsu #(
     // Instantiation of memory ports
     ////////
 
-
     logic port_first_cycle;
     assign port_first_cycle = pipe_in_ctrl_i.first_cycle | !(pipe_in_ctrl_i.mode.lsu.nfields == '0) & (lsu_ctrl_q.vl_remaining == '0);
 
@@ -409,7 +438,7 @@ module vproc_lsu #(
     logic [31:0] base_addr, stride_val;
 
     assign base_addr = pipe_in_ctrl_i.first_cycle ? pipe_in_ctrl_i.op_xval[1] : lsu_ctrl_q.next_base_addr;
-    assign stride_val = pipe_in_ctrl_i.first_cycle ? stride_val_i : lsu_ctrl_q.stride;
+    assign stride_val = (pipe_in_ctrl_i.first_cycle | pipe_in_ctrl_i.mode.lsu.stride == LSU_INDEXED) ? stride_val_i : lsu_ctrl_q.stride;
 
     generate
         for (genvar i = 0; i < MEM_PORTS; i++) begin //TODO: Definitely issues with signalling with multiple ports, untested

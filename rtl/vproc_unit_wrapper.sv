@@ -82,6 +82,7 @@ module vproc_unit_wrapper
       logic  [MAX_OP_W  -1:0] unit_out_res;
       logic  [MAX_OP_W/8-1:0] unit_out_mask;
       logic  [ MEM_PORTS-1:0] unit_out_valid;
+      logic                   indexed_op_clear_ready;
 
       //For LSU, only signal ready when all necessary operands are valid
       logic  [    OP_CNT-1:0] necessary_ops;
@@ -93,9 +94,10 @@ module vproc_unit_wrapper
       assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & (|pipe_in_valid_i | pipe_in_mask_valid_i); //Input valid only if all necessary ops are valid (including mask)
 
       logic unit_ready_in_o;
-      for (genvar i = 0; i < OP_CNT; i++) begin
+      for (genvar i = 0; i < 2; i++) begin
         assign pipe_in_ready_o[i] = unit_ready_in_o & unit_in_valid_i; //Unit ready only if all necessary ops are valid
       end
+      assign pipe_in_ready_o[2] = unit_ready_in_o & unit_in_valid_i | indexed_op_clear_ready;
       assign pipe_in_mask_ready_o = unit_ready_in_o & unit_in_valid_i; //Mask ready synchronized with other arguments
 
       vproc_lsu #(
@@ -121,6 +123,8 @@ module vproc_unit_wrapper
           .pipe_in_op2_i           (pipe_in_op_data_i[1]),
           .pipe_in_op3_i           (pipe_in_op_data_i[2]),
           .pipe_in_mask_i          (pipe_in_mask_data_i),
+          .pipe_in_op3_valid_i     (pipe_in_valid_i[2]),
+          .pipe_in_op3_ready_o     (indexed_op_clear_ready),
           .pipe_out_valid_o        (unit_out_valid),
           .pipe_out_ready_i        (pipe_out_ready_i),
           .pipe_out_ctrl_o         (unit_out_ctrl),
@@ -140,7 +144,7 @@ module vproc_unit_wrapper
       );
       always_comb begin
         pipe_out_instr_id_o  = unit_out_ctrl.id;
-        pipe_out_eew_o       = unit_out_ctrl.eew;
+        pipe_out_eew_o       = unit_out_ctrl.decode_metadata.operands[1].sew;
         pipe_out_vaddr_o     = unit_out_ctrl.res_vaddr;
         pipe_out_res_flags_o = '{default: pack_flags'('0)};
         pipe_out_res_mask_o  = '0;

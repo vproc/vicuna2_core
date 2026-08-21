@@ -178,6 +178,7 @@ module vproc_decoder #(
 
         decode_metadata_o.dest_emul = emul_o;
         decode_metadata_o.mask_operand.regs = 1; //most operations only need to read the mask register once
+        decode_metadata_o.mask_operand.sew = vsew_o;  //mask operand should take the sew of the destination
         decode_metadata_o.operands[0].sew = vsew_o;
         decode_metadata_o.operands[1].sew = vsew_o;
         decode_metadata_o.operands[2].sew = vsew_o;
@@ -266,10 +267,10 @@ module vproc_decoder #(
                 rd_o.vreg = 1'b1; // vd/vs3 is a vreg
                 rd_o.addr = instr_vd;
 
-                //Redefine operands in order expected by current VLSU pipeline
+                //Redefine operands in order expected by reworked VLSU pipeline
                 decode_metadata_o.operands[1].vreg = (instr_i[6:0] == 7'h27); //Vreg active only for stores
                 decode_metadata_o.operands[1].xreg = 1'b0;
-                decode_metadata_o.operands[1].r.vaddr = instr_vd; //There is an inversion of arguments 1-2 between decode + pipeline wrapper
+                decode_metadata_o.operands[1].r.vaddr = instr_vd;
 
                 decode_metadata_o.operands[0].vreg = 1'b0;
                 decode_metadata_o.operands[0].xreg = 1'b0;
@@ -285,9 +286,18 @@ module vproc_decoder #(
                 endcase
 
                 unique case ({instr_i[28], instr_i[14:12]})
-                    4'b0000: decode_metadata_o.operands[1].sew = VSEW_8;
-                    4'b0101: decode_metadata_o.operands[1].sew = VSEW_16;
-                    4'b0110: decode_metadata_o.operands[1].sew = VSEW_32;
+                    4'b0000: begin
+                            decode_metadata_o.operands[1].sew = VSEW_8;
+                            decode_metadata_o.mask_operand.sew = VSEW_8;
+                    end
+                    4'b0101: begin
+                            decode_metadata_o.operands[1].sew = VSEW_16;
+                            decode_metadata_o.mask_operand.sew = VSEW_16;
+                    end
+                    4'b0110: begin
+                            decode_metadata_o.operands[1].sew = VSEW_32;
+                            decode_metadata_o.mask_operand.sew = VSEW_32;
+                    end
                     default: instr_illegal = 1'b1;
                 endcase
 
@@ -321,6 +331,7 @@ module vproc_decoder #(
                                     // Unit-strided segment loads/stores result in strided stores
 
                                     decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                                    decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
                                     mode_o.lsu.stride = LSU_STRIDED;
                                     unique case ({emul_o, instr_i[31:29]})  //change number of registers to read based on emul and nfields
                                         {EMUL_1, 3'b001} : decode_metadata_o.operands[1].regs = 2;
@@ -397,6 +408,7 @@ module vproc_decoder #(
                                     mode_o.lsu.stride = LSU_STRIDED;
 
                                     decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                                    decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
                                     mode_o.lsu.stride = LSU_STRIDED;
                                     unique case ({emul_o, instr_i[31:29]})  //change number of registers to read based on emul and nfields
                                         {EMUL_1, 3'b001} : decode_metadata_o.operands[1].regs = 2;
@@ -474,7 +486,7 @@ module vproc_decoder #(
                         rs2_o.r.xval      = x_rs2_i;
                         rd_o.shift_rate   = SHIFT_ELEMWISE;
                         decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
-                        decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                        decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
                         mode_o.lsu.stride = LSU_STRIDED;
                         unique case ({emul_o, instr_i[31:29]})  //change number of registers to read based on emul and nfields
                             {EMUL_1, 3'b001} : decode_metadata_o.operands[1].regs = 2;
@@ -494,6 +506,87 @@ module vproc_decoder #(
                     end
                     2'b01,
                     2'b11: begin // indexed load/store
+
+                        decode_metadata_o.operands[2].vreg = 1'b1; //Indexed case takes indices from a register with configured sew
+                        decode_metadata_o.operands[2].xreg = 1'b0;
+                        decode_metadata_o.operands[2].r.vaddr = instr_vs2;
+                         
+                        unique case ({instr_i[28], instr_i[14:12]}) //sew of indexes is the statically configured sew, encoded in the instruction
+                            4'b0000: decode_metadata_o.operands[2].sew = VSEW_8;
+                            4'b0101: decode_metadata_o.operands[2].sew = VSEW_16;
+                            4'b0110: decode_metadata_o.operands[2].sew = VSEW_32;
+                            default: instr_illegal = 1'b1;
+                        endcase
+                        //select number of registers to read for index based on input sew, encoded sew, and emul
+                        decode_metadata_o.operands[1].sew = vsew_i;  //sew of data is value configured in csr
+                        decode_metadata_o.mask_operand.sew  = vsew_i;
+                        decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                        decode_metadata_o.operands[2].shift_rate = SHIFT_ELEMWISE;
+                        decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                        unique case (lmul_i)
+                            LMUL_F8,
+                            LMUL_F4,
+                            LMUL_F2,
+                            LMUL_1: begin
+                                decode_metadata_o.operands[1].regs = 1;
+                                decode_metadata_o.dest_emul = EMUL_1;
+                            end
+                            LMUL_2: begin
+                                decode_metadata_o.operands[1].regs = 2;
+                                decode_metadata_o.dest_emul = EMUL_2;
+                            end
+                            LMUL_4: begin
+                                decode_metadata_o.operands[1].regs = 4;
+                                decode_metadata_o.dest_emul = EMUL_4;
+                            end
+                            LMUL_8: begin
+                                decode_metadata_o.operands[1].regs = 8;
+                                decode_metadata_o.dest_emul = EMUL_8;
+                            end
+                        endcase
+                        //select number of registers to read for index.  Current emul_o calculation gives the total number to read
+                        //For depending on ratio of EEWs of index and operand, may need to increase for fractional lmul and can reduce for large lmul
+                        unique case ({emul_o, {instr_i[28], instr_i[14:12]},vsew_i} )           //emul_o is already scaled for the destination emul.  determine number of regs to read based on this
+                            //ei8 cases
+                            {EMUL_1, 4'b0000, VSEW_8}: decode_metadata_o.operands[2].regs = 1;
+                            {EMUL_2, 4'b0000, VSEW_8}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_4, 4'b0000, VSEW_8}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0000, VSEW_8}: decode_metadata_o.operands[2].regs = 8;
+                            {EMUL_1, 4'b0000, VSEW_16}: decode_metadata_o.operands[2].regs = 1;
+                            {EMUL_2, 4'b0000, VSEW_16}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_4, 4'b0000, VSEW_16}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0000, VSEW_16}: decode_metadata_o.operands[2].regs = 8;
+                            {EMUL_1, 4'b0000, VSEW_32}: decode_metadata_o.operands[2].regs = 1;
+                            {EMUL_2, 4'b0000, VSEW_32}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_4, 4'b0000, VSEW_32}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0000, VSEW_32}: decode_metadata_o.operands[2].regs = 8; //TODO: should be able to reduce these based on ratio?
+                            //ei16 cases
+                            {EMUL_1, 4'b0101, VSEW_8}: decode_metadata_o.operands[2].regs = 2; //NEED TO INCREASE FOR SYNCHRONIZATION
+                            {EMUL_2, 4'b0101, VSEW_8}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_4, 4'b0101, VSEW_8}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0101, VSEW_8}: decode_metadata_o.operands[2].regs = 8;
+                            {EMUL_1, 4'b0101, VSEW_16}: decode_metadata_o.operands[2].regs = 1;
+                            {EMUL_2, 4'b0101, VSEW_16}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_4, 4'b0101, VSEW_16}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0101, VSEW_16}: decode_metadata_o.operands[2].regs = 8;
+                            {EMUL_1, 4'b0101, VSEW_32}: decode_metadata_o.operands[2].regs = 1;
+                            {EMUL_2, 4'b0101, VSEW_32}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_4, 4'b0101, VSEW_32}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0101, VSEW_32}: decode_metadata_o.operands[2].regs = 8;
+                            //ei32 cases
+                            {EMUL_1, 4'b0110, VSEW_8}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_2, 4'b0110, VSEW_8}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_4, 4'b0110, VSEW_8}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0110, VSEW_8}: decode_metadata_o.operands[2].regs = 8;
+                            {EMUL_1, 4'b0110, VSEW_16}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_2, 4'b0110, VSEW_16}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_4, 4'b0110, VSEW_16}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0110, VSEW_16}: decode_metadata_o.operands[2].regs = 8;
+                            {EMUL_1, 4'b0110, VSEW_32}: decode_metadata_o.operands[2].regs = 1;
+                            {EMUL_2, 4'b0110, VSEW_32}: decode_metadata_o.operands[2].regs = 2;
+                            {EMUL_4, 4'b0110, VSEW_32}: decode_metadata_o.operands[2].regs = 4;
+                            {EMUL_8, 4'b0110, VSEW_32}: decode_metadata_o.operands[2].regs = 8;
+                        endcase
 
                         // store data sew and lmul in alt signal
                         // index sew and lmul are stored in eew and emul
@@ -822,6 +915,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -847,6 +941,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -871,6 +966,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -901,6 +997,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -931,6 +1028,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -961,6 +1059,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -991,6 +1090,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1015,6 +1115,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1039,6 +1140,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1063,6 +1165,7 @@ module vproc_decoder #(
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1652,6 +1755,7 @@ module vproc_decoder #(
                             vxrm_o                = vxrm_i;
                             widenarrow_o          = OP_NARROWING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1678,6 +1782,7 @@ module vproc_decoder #(
                             vxrm_o                = vxrm_i;
                             widenarrow_o          = OP_NARROWING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1854,6 +1959,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1882,6 +1988,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1910,6 +2017,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1938,6 +2046,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -1971,6 +2080,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -2004,6 +2114,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -2037,6 +2148,7 @@ module vproc_decoder #(
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
                             unique case (emul_o)
                                 EMUL_1,
                                 EMUL_2: decode_metadata_o.operands[1].regs = 1;
@@ -2079,6 +2191,7 @@ module vproc_decoder #(
                             widenarrow_o          = OP_SINGLEWIDTH;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
                             decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
                             decode_metadata_o.operands[1].sign = 1'b0;
                             decode_metadata_o.operands[0].sign = 1'b0;
                         end
@@ -2090,6 +2203,7 @@ module vproc_decoder #(
                             widenarrow_o          = OP_SINGLEWIDTH;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
                             decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
                             decode_metadata_o.operands[1].sign = 1'b1;
                             decode_metadata_o.operands[0].sign = 1'b1;
                         end
@@ -2101,6 +2215,7 @@ module vproc_decoder #(
                             widenarrow_o          = OP_SINGLEWIDTH;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
                             decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
                             decode_metadata_o.operands[1].sign = 1'b0;
                             decode_metadata_o.operands[0].sign = 1'b0;
                         end
@@ -2112,6 +2227,7 @@ module vproc_decoder #(
                             widenarrow_o          = OP_SINGLEWIDTH;
                             decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
                             decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
                             decode_metadata_o.operands[1].sign = 1'b1;
                             decode_metadata_o.operands[0].sign = 1'b1;
                         end
@@ -3128,12 +3244,11 @@ module vproc_decoder #(
                 end
                 default: ;
             endcase
-            //vl_o = vl_i;
-            // if(mode_o.lsu.stride == LSU_INDEXED) begin
-            //     // vl does not need to be scaled since for indexed stride
-            //     // we use default sew and lmul
-            // 	vl_o = vl_i;
-            // end
+            if(mode_o.lsu.stride == LSU_INDEXED) begin
+                // vl does not need to be scaled since for indexed stride
+                // we use default sew and lmul
+            	vl_o = vl_i;
+            end
             
         `ifdef RISCV_ZVE32F
 
