@@ -24,6 +24,7 @@ module vreg_shift_register
     input  logic [VADDR_W-1:0]              operand_vaddr_base_i,
     input  vproc_pkg::op_shift_rate         operand_shift_rate_i,
     input  logic                                  operand_sign_i,
+    input  logic [3:0]                                 repeats_i,
 
     input  logic                                      use_xval_i,
     input  logic [31:0]                                   xval_i,
@@ -46,9 +47,11 @@ module vreg_shift_register
     //Control signals for operand shift register
     typedef struct packed {
     logic [VADDR_W-1:0] current_vreg;
-    logic [3:0]             vreg_reads_remaining;//up to 8 vregs need to be read (LMUL8)
+    logic [VADDR_W-1:0] base_vreg;
+    logic [3:0]             vreg_reads_remaining;          //up to 8 vregs need to be read (LMUL8)
     cfg_vsew                eew;
     logic [$clog2(VREG_PORT_W / 8 )-1:0] shifts_remaining; //Maximum counter value is elewise SEW 8
+    logic [3:0]                 repeats_remaining;         //Some operations will need the contents of the register operand (group) multiple times
     logic                   valid_data;
     vproc_pkg::op_shift_rate shift_rate;
     logic                    sign;
@@ -88,12 +91,14 @@ module vreg_shift_register
                     state_d = VREG_SHIFT;
                     ctrl_d.shifts_remaining = '0;
                     ctrl_d.current_vreg = operand_vaddr_base_i;
+                    ctrl_d.base_vreg = operand_vaddr_base_i;
                     ctrl_d.eew = operand_eew_i;
                     ctrl_d.valid_data = 1'b0;
                     ctrl_d.shift_rate = operand_shift_rate_i;
                     ctrl_d.sign = operand_sign_i;
                     ctrl_d.dest_emul = operand_emul_i;
                     ctrl_d.vreg_reads_remaining = operand_regs_i;
+                    ctrl_d.repeats_remaining = repeats_i;
                 end
             end
 
@@ -101,7 +106,7 @@ module vreg_shift_register
                 if (vfu_ready_i & ctrl_q.valid_data & !(ctrl_q.shifts_remaining == 0)) begin
                     ctrl_d.shifts_remaining = ctrl_q.shifts_remaining - 1; //Only shift if vector functional unit is ready
                 end else if (ctrl_q.shifts_remaining == 0 & (vfu_ready_i | !ctrl_q.valid_data)) begin
-                    if (ctrl_q.vreg_reads_remaining == 0) begin //if all reads complete, return to idle
+                    if ((ctrl_q.vreg_reads_remaining == 0) & (ctrl_q.repeats_remaining == 0)) begin //if all reads complete, return to idle
                         state_d = IDLE;
                         finished_o = 1'b1;
                         ctrl_d.valid_data = 1'b0; 
@@ -139,7 +144,8 @@ module vreg_shift_register
                                                                 endcase
                                 end
                             endcase
-                            ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
+                            ctrl_d.current_vreg = ctrl_q.vreg_reads_remaining == 1 ? ctrl_q.base_vreg  : ctrl_q.current_vreg + 1; // if on last read, reset to original address for possible repeat read of the register group
+                            ctrl_d.repeats_remaining =  ctrl_q.vreg_reads_remaining == 1 ? ctrl_q.repeats_remaining - 1 : ctrl_q.repeats_remaining;
                             ctrl_d.valid_data = 1'b1;
                         end else begin
                             ctrl_d.valid_data = 1'b0; //On failed read, set data valid to 0
@@ -171,14 +177,14 @@ module vreg_shift_register
                                 SHIFT_FULL_WIDTH,
                                 SHIFT_ELEMWISE:         shift_reg_d = {(VREG_PORT_W/32){xval_i[31:0]}};
                                 SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
-                                SHIFT_QUARTER_WIDTH:    shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}}; //TODO: Is elemwise case necessary here?
+                                SHIFT_QUARTER_WIDTH:    shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
                             endcase
                         end 
                         VSEW_16: begin
                             unique case (ctrl_q.shift_rate) 
                                 SHIFT_FULL_WIDTH,
                                 SHIFT_ELEMWISE:         shift_reg_d = {(VREG_PORT_W/16){xval_i[15:0]}};
-                                SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}}; //TODO: is elemwise case necessary here?
+                                SHIFT_HALF_WIDTH:       shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
                             endcase
                         end 
                         VSEW_8:  shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
@@ -234,7 +240,6 @@ module vreg_shift_register
                                         end
                                     endcase
             end
-            
         endcase
         vfu_data_valid_o = ctrl_q.valid_data; //ouput valid when valid data in the shift register
         shift_reg_ready_o = (state_q == IDLE);
@@ -673,6 +678,7 @@ module vproc_vregunpack
                 .shift_reg_ready_o(shift_regs_ready[i]),
                 .operand_eew_i(metadata_q.ctrl.decode_metadata.operands[i].sew),                                          //TODO: Mixed precision operations will need an EEW/operand
                 .operand_regs_i(metadata_q.ctrl.decode_metadata.operands[i].regs),
+                .repeats_i(metadata_q.ctrl.decode_metadata.operands[i].repeats),
                 .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
                 .operand_vaddr_base_i(metadata_q.ctrl.decode_metadata.operands[i].r.vaddr),
                 .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[i].shift_rate),
@@ -718,7 +724,7 @@ module vproc_vregunpack
         .shift_reg_ready_o(mask_reg_ready),
         .operand_eew_i(metadata_q.ctrl.decode_metadata.mask_operand.sew),
         .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
-        .repeats_i(metadata_q.ctrl.decode_metadata.mask_operand.regs),
+        .repeats_i(metadata_q.ctrl.decode_metadata.mask_operand.repeats),
         .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.mask_operand.shift_rate),
 
         .vl_i(metadata_q.ctrl.vl),

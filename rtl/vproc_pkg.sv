@@ -443,7 +443,8 @@ typedef struct packed {
     op_shift_rate    shift_rate;
     logic            sign;
     cfg_vsew         sew;
-    logic [3:0]      regs;  //how many registers does this operand require? (normally related to emul).  Maximum currently 15 (intentionally higher than necessary)
+    logic [3:0]      repeats;   //how many times should the register group be read and passed to the pipeline
+    logic [3:0]      regs;      //how many registers does this operand require? (normally related to emul).  Maximum currently 15 (intentionally higher than necessary)
 `ifdef VPROC_OP_REGS_UNION
     union {
 `else
