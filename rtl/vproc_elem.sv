@@ -17,12 +17,12 @@ module vproc_elem #(
     input logic sync_rst_ni,
 
     // --- Inputs ---
-    input logic           pipe_in_valid_i,
-    input CTRL_T          pipe_in_ctrl_i,
-    input logic  [31 : 0] pipe_in_op1_i,
-    input logic  [31 : 0] pipe_in_op2_i,
-    input logic           pipe_out_ready_i,
-    input logic           pipe_out_xreg_ready_i,
+    input logic                 pipe_in_valid_i,
+    input CTRL_T                pipe_in_ctrl_i,
+    input logic  [OP_W - 1 : 0] pipe_in_op1_i,
+    input logic  [OP_W - 1 : 0] pipe_in_op2_i,
+    input logic                 pipe_out_ready_i,
+    input logic                 pipe_out_xreg_ready_i,
 
     // --- Outputs ---
     output logic                    pipe_in_ready_o,

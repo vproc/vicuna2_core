@@ -2943,13 +2943,24 @@ module vproc_decoder #(
                         end
                         {6'b010100, 3'b010}: begin  // VMUNARY0
                             if (instr_vs1[4]) begin
-                                unit_o             = UNIT_ELEM;
-                                mode_o.elem.op     = instr_vs1[0] ? ELEM_VID : ELEM_VIOTA;
-                                mode_o.elem.xreg   = 1'b0;
-                                mode_o.elem.masked = instr_masked;
-                                instr_illegal      = instr_vs1[3:1] != 3'b000; //Potential issue
-                                rs1_o.vreg         = 1'b0;
-                                rs2_o.vreg         = ~instr_vs1[0]; // vid has no source reg
+                                unit_o             = UNIT_INDEX;
+                                if (instr_vs1[0]) begin
+                                    mode_o.elem.op     = ELEM_VID;
+                                    mode_o.elem.xreg   = 1'b0;
+                                    mode_o.elem.masked = instr_masked;
+                                    // Potential issue
+                                    instr_illegal      = instr_vs1[3:1] != 3'b000;
+                                    // decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[0].vreg = 1'b0;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b0;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                    rs1_o.vreg         = 1'b0;
+                                    rs2_o.vreg         = 1'b0;
+                                end else begin
+                                    mode_o.elem.op     = ELEM_VIOTA;
+                                end
+                                // rs2_o.vreg         = ~instr_vs1[0]; // vid has no source reg
                             end
                         end
 
