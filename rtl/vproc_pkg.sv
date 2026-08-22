@@ -436,6 +436,14 @@ typedef enum logic [1:0] {
     SHIFT_ELEMWISE        // Operand Shifts a Single Element out Every Cycle
 } op_shift_rate;
 
+//Operands which do not occupy entire registers (fractional lmul) are called out explictly
+typedef enum logic [1:0] {
+    FULL_REG,
+    MF2,
+    MF4,
+    MF8
+} op_fractional;
+
 // source register type:
 typedef struct packed {
     logic            vreg;
@@ -443,6 +451,7 @@ typedef struct packed {
     op_shift_rate    shift_rate;
     logic            sign;
     cfg_vsew         sew;
+    op_fractional    frac;      //Separate from number of registers to allow for fractional segmented operations
     logic [3:0]      repeats;   //how many times should the register group be read and passed to the pipeline
     logic [3:0]      regs;      //how many registers does this operand require? (normally related to emul).  Maximum currently 15 (intentionally higher than necessary)
 `ifdef VPROC_OP_REGS_UNION
@@ -531,6 +540,7 @@ typedef struct packed {
     op_regs       mask_operand; //Todo: many signals in the op_regs datatype are unncessesary for the mask operand.  Should probably have its own, smaller version of the struct
     logic         masked;
     cfg_emul      dest_emul;
+    op_fractional dest_frac;  
 } decode_metadata;
 
 endpackage
