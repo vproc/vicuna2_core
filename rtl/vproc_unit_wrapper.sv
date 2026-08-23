@@ -958,6 +958,7 @@ module vproc_unit_wrapper
         //Single cycle valid, so both first and last cycle are high
         pipe_out_res_flags_o.first_cycle    = pipe_out_valid_o;
         pipe_out_res_flags_o.last_cycle     = pipe_out_valid_o;
+        pipe_out_res_flags_o.single_elem_res = pipe_out_valid_o;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;

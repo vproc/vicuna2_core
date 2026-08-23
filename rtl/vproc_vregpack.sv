@@ -107,9 +107,8 @@ module vproc_vregpack #(
     assign narrowing = ctrl_q.last_cycle & !(ctrl_q.shifts_remaining == '0);
 
     // In case of ops which write a single element, bypass shifting logic and attempt write directly.
-    // In this case, functional units should signal first and last cycle together to complete transaction in one cycle
     logic single_element_res;
-    assign single_element_res = pipe_in_res_flags_i[0].first_cycle & pipe_in_res_flags_i[0].last_cycle;
+    assign single_element_res = pipe_in_res_flags_i[0].single_elem_res;
 
     always_comb begin
         ctrl_d = ctrl_q;
@@ -282,16 +281,31 @@ module vproc_vregpack #(
                                                         shift_reg_mask_d = {pipe_in_res_mask_i[0][VPORT_W/8-1:0], shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/8]};
                                                     end
                                                     MF2: begin
-                                                        shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/2-1 : MAX_RES_W]};
-                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/2)/8-1:0], shift_reg_mask_q[(VPORT_W/2)/8-1 : MAX_RES_W/8]};
+                                                        if (VPORT_W/2 <= MAX_RES_W) begin
+                                                            shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0]};
+                                                            shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/2)/8-1:0]};
+                                                        end else begin
+                                                            shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/2-1 : MAX_RES_W]};
+                                                            shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/2)/8-1:0], shift_reg_mask_q[(VPORT_W/2)/8-1 : MAX_RES_W/8]};
+                                                        end
                                                     end
                                                     MF4: begin
-                                                        shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/4-1 : MAX_RES_W]};
-                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/4)/8-1:0], shift_reg_mask_q[(VPORT_W/4)/8-1 : MAX_RES_W/8]};
+                                                        if (VPORT_W/4 <= MAX_RES_W) begin
+                                                            shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0]};
+                                                            shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/4)/8-1:0]};
+                                                        end else begin
+                                                            shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/4-1 : MAX_RES_W]};
+                                                            shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/4)/8-1:0], shift_reg_mask_q[(VPORT_W/4)/8-1 : MAX_RES_W/8]};
+                                                        end
                                                     end
                                                     MF8: begin
-                                                        shift_reg_d = {{(VPORT_W*7/8){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/8-1 : MAX_RES_W]};
-                                                        shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/8)/8-1:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : MAX_RES_W/8]};
+                                                        if (VPORT_W/8 <= MAX_RES_W) begin
+                                                            shift_reg_d = {{(VPORT_W*7/8){1'b0}}, pipe_in_res_data_i[0]};
+                                                            shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/8)/8-1:0]};
+                                                        end else begin
+                                                            shift_reg_d = {{(VPORT_W*7/8){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/8-1 : MAX_RES_W]};
+                                                            shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/8)/8-1:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : MAX_RES_W/8]};
+                                                        end
                                                     end
                                                 endcase                               
                 end
@@ -321,20 +335,35 @@ module vproc_vregpack #(
                                                         shift_reg_mask_d = {pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[VPORT_W/8-1 : 4]};
                                                     end
                                                     MF2: begin
-                                                        shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/2-1 : 32]};
-                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[VPORT_W/8-1 : 4]};
+                                                        if (VPORT_W/2 <= 32) begin
+                                                            shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0][31:0]};
+                                                            shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][3:0]};                     
+                                                        end else begin
+                                                            shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/2-1 : 32]};
+                                                            shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[(VPORT_W/2)/8-1 : 4]};
+                                                        end
                                                     end
                                                     MF4: begin
-                                                        shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/4-1 : 32]};
-                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[VPORT_W/8-1 : 4]};
+                                                        if (VPORT_W/4 <= 32) begin
+                                                            shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0][31:0]};
+                                                            shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][3:0]};
+                                                        end else begin
+                                                            shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/4-1 : 32]};
+                                                            shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[(VPORT_W/4)/8-1 : 4]};
+                                                        end
                                                     end
                                                     MF8: begin
-                                                        shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/8-1 : 32]};
-                                                        shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : 4]};
+                                                        if (VPORT_W/8 <= 32) begin
+                                                            shift_reg_d = {{(VPORT_W*7/8){1'b0}}, pipe_in_res_data_i[0][31:0]};
+                                                            shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][3:0]};
+                                                        end else begin
+                                                            shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/8-1 : 32]};
+                                                            shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : 4]};
+                                                        end
                                                     end
                                                 endcase
                                             end
-                {RES_ELEMWISE_WIDTH,VSEW_16}:
+                {RES_ELEMWISE_WIDTH,VSEW_16}:  //Since minimum pipe width is 32, impossible for special condition with single cycle completion here
                                             begin
                                                 unique case (cur_frac)
                                                     FULL_REG: begin
@@ -343,11 +372,11 @@ module vproc_vregpack #(
                                                     end
                                                     MF2: begin
                                                         shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W/2-1 : 16]};
-                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[VPORT_W/8-1 : 2]};
+                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[(VPORT_W/2)/8-1 : 2]};
                                                     end
                                                     MF4: begin
                                                         shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W/4-1 : 16]};
-                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[VPORT_W/8-1 : 2]};
+                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[(VPORT_W/4)/8-1 : 2]};
                                                     end
                                                     MF8: begin
                                                         shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W/8-1 : 16]};
@@ -355,7 +384,7 @@ module vproc_vregpack #(
                                                     end
                                                 endcase
                                             end
-                {RES_ELEMWISE_WIDTH,VSEW_8}:
+                {RES_ELEMWISE_WIDTH,VSEW_8}: //Since minimum pipe width is 32, impossible for special condition with single cycle completion here
                                             begin
                                                 unique case (cur_frac)
                                                     FULL_REG: begin
@@ -364,11 +393,11 @@ module vproc_vregpack #(
                                                     end
                                                     MF2: begin
                                                         shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W/2-1 : 8]};
-                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][0], shift_reg_mask_q[VPORT_W/8-1 : 1]};
+                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][0], shift_reg_mask_q[(VPORT_W/2)/8-1 : 1]};
                                                     end
                                                     MF4: begin
                                                         shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W/4-1 : 8]};
-                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][0], shift_reg_mask_q[VPORT_W/8-1 : 1]};
+                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][0], shift_reg_mask_q[(VPORT_W/4)/8-1 : 1]};
                                                     end
                                                     MF8: begin
                                                         shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W/8-1 : 8]};

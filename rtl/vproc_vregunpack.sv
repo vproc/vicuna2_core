@@ -730,6 +730,7 @@ module vproc_vregunpack
                 .operand_regs_i(metadata_q.ctrl.decode_metadata.operands[i].regs),
                 .repeats_i(metadata_q.ctrl.decode_metadata.operands[i].repeats),
                 .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
+                .operand_frac_i(metadata_q.ctrl.decode_metadata.operands[i].frac),
                 .operand_vaddr_base_i(metadata_q.ctrl.decode_metadata.operands[i].r.vaddr),
                 .operand_shift_rate_i(metadata_q.ctrl.decode_metadata.operands[i].shift_rate),
                 .operand_sign_i(metadata_q.ctrl.decode_metadata.operands[i].sign), 
