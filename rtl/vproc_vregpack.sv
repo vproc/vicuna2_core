@@ -88,6 +88,7 @@ module vproc_vregpack #(
     logic [$clog2(VPORT_W/(MAX_RES_W/32))-1:0]  mask_reg_idx;
     logic                                       mask_valid;
     logic                                       mask_complete;
+    op_fractional                               frac;
     } repack_reg_ctrl;
 
     repack_reg_ctrl ctrl_d, ctrl_q;
@@ -101,9 +102,9 @@ module vproc_vregpack #(
     end
 
     // In case of narrowing ops, check if last cycle has been signalled, but total number of shifts is not complete. 
-    // In this case, keep shifting until completion and fill rf be bits with 0
+    // In this case, keep shifting until completion and fill rf be bits with 0  //TODO: this should be unnecessary with fractional register handling
     logic narrowing;
-    assign narrowing = ctrl_q.last_cycle & !(ctrl_q.shifts_remaining == '0) & (ctrl_q.shift_rate == RES_NARROW_WIDTH);
+    assign narrowing = ctrl_q.last_cycle & !(ctrl_q.shifts_remaining == '0);
 
     // In case of ops which write a single element, bypass shifting logic and attempt write directly.
     // In this case, functional units should signal first and last cycle together to complete transaction in one cycle
@@ -122,16 +123,43 @@ module vproc_vregpack #(
                 ctrl_d.eew = pipe_in_eew_i;
                 ctrl_d.instr_id = pipe_in_instr_id_i;
                 ctrl_d.shift_rate = pipe_in_res_flags_i[0].shift_rate;
-                unique case(pipe_in_res_flags_i[0].shift_rate)
-                    RES_FULL_WIDTH: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1;      //Standard case when functional units produce full datapath per cycle
-                    RES_NARROW_WIDTH: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
-                    RES_ELEMWISE_WIDTH: begin                                                     //Elemwise result shifts depends on SEW of result
+                ctrl_d.frac       = pipe_in_res_flags_i[0].dest_frac;
+                unique case({pipe_in_res_flags_i[0].shift_rate, pipe_in_res_flags_i[0].dest_frac})
+                    {RES_FULL_WIDTH, FULL_REG}: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1;      //Standard case when functional units produce full datapath per cycle
+                    {RES_FULL_WIDTH, MF2}:      ctrl_d.shifts_remaining = (VPORT_W / 2) / MAX_RES_W - 1;
+                    {RES_FULL_WIDTH, MF4}:      ctrl_d.shifts_remaining = (VPORT_W / 4) / MAX_RES_W - 1;
+                    {RES_FULL_WIDTH, MF8}:      ctrl_d.shifts_remaining = (VPORT_W / 8) / MAX_RES_W - 1;
+                    {RES_NARROW_WIDTH, FULL_REG}: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
+                    {RES_NARROW_WIDTH, MF2}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/2) / MAX_RES_W - 1;
+                    {RES_NARROW_WIDTH, MF4}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/4) / MAX_RES_W - 1; 
+                    {RES_NARROW_WIDTH, MF8}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/8) / MAX_RES_W - 1; 
+                    {RES_ELEMWISE_WIDTH, FULL_REG}: begin                                                     //Elemwise result shifts depends on SEW of result
                                         unique case(cur_sew)
                                             VSEW_32: ctrl_d.shifts_remaining = (VPORT_W/32)-1;
                                             VSEW_16: ctrl_d.shifts_remaining = (VPORT_W/16)-1;
                                             VSEW_8:  ctrl_d.shifts_remaining = (VPORT_W/8)-1;
                                         endcase
-
+                    end
+                    {RES_ELEMWISE_WIDTH, MF2}: begin
+                                        unique case(cur_sew)
+                                            VSEW_32: ctrl_d.shifts_remaining = ((VPORT_W/32)/2)-1;
+                                            VSEW_16: ctrl_d.shifts_remaining = ((VPORT_W/16)/2)-1;
+                                            VSEW_8:  ctrl_d.shifts_remaining = ((VPORT_W/8)/2)-1;
+                                        endcase
+                    end
+                    {RES_ELEMWISE_WIDTH, MF4}: begin
+                                        unique case(cur_sew)
+                                            VSEW_32: ctrl_d.shifts_remaining = ((VPORT_W/32)/4)-1;
+                                            VSEW_16: ctrl_d.shifts_remaining = ((VPORT_W/16)/4)-1;
+                                            VSEW_8:  ctrl_d.shifts_remaining = ((VPORT_W/8)/4)-1;
+                                        endcase
+                    end
+                    {RES_ELEMWISE_WIDTH, MF8}: begin
+                                        unique case(cur_sew)
+                                            VSEW_32: ctrl_d.shifts_remaining = ((VPORT_W/32)/8)-1;
+                                            VSEW_16: ctrl_d.shifts_remaining = ((VPORT_W/16)/8)-1;
+                                            VSEW_8:  ctrl_d.shifts_remaining = ((VPORT_W/8)/8)-1;
+                                        endcase
                     end
                 endcase
             end
@@ -140,15 +168,42 @@ module vproc_vregpack #(
                 if (vreg_wr_gnt_i | ctrl_q.store) begin
                     ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
                     // only reset counter here if write can be performed this cycle
-                    unique case(ctrl_q.shift_rate)
-                        RES_FULL_WIDTH: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1; //Standard case when functional units produce full datapath per cycle
-                        RES_NARROW_WIDTH: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
-                        RES_ELEMWISE_WIDTH: begin                                                     //Elemwise result shifts depends on SEW of result
-                                        unique case(ctrl_q.eew)
-                                            VSEW_32: ctrl_d.shifts_remaining = (VPORT_W/32)-1;
-                                            VSEW_16: ctrl_d.shifts_remaining = (VPORT_W/16)-1;
-                                            VSEW_8:  ctrl_d.shifts_remaining = (VPORT_W/8)-1;
-                                        endcase
+                    unique case({ctrl_q.shift_rate, ctrl_q.frac})
+                        {RES_FULL_WIDTH, FULL_REG}: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1;      //Standard case when functional units produce full datapath per cycle
+                        {RES_FULL_WIDTH, MF2}:      ctrl_d.shifts_remaining = (VPORT_W / 2) / MAX_RES_W - 1;
+                        {RES_FULL_WIDTH, MF4}:      ctrl_d.shifts_remaining = (VPORT_W / 4) / MAX_RES_W - 1;
+                        {RES_FULL_WIDTH, MF8}:      ctrl_d.shifts_remaining = (VPORT_W / 8) / MAX_RES_W - 1;
+                        {RES_NARROW_WIDTH, FULL_REG}: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
+                        {RES_NARROW_WIDTH, MF2}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/2) / MAX_RES_W - 1;
+                        {RES_NARROW_WIDTH, MF4}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/4) / MAX_RES_W - 1; 
+                        {RES_NARROW_WIDTH, MF8}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/8) / MAX_RES_W - 1; 
+                        {RES_ELEMWISE_WIDTH, FULL_REG}: begin                                                     //Elemwise result shifts depends on SEW of result
+                                            unique case(cur_sew)
+                                                VSEW_32: ctrl_d.shifts_remaining = (VPORT_W/32)-1;
+                                                VSEW_16: ctrl_d.shifts_remaining = (VPORT_W/16)-1;
+                                                VSEW_8:  ctrl_d.shifts_remaining = (VPORT_W/8)-1;
+                                            endcase
+                        end
+                        {RES_ELEMWISE_WIDTH, MF2}: begin
+                                            unique case(cur_sew)
+                                                VSEW_32: ctrl_d.shifts_remaining = ((VPORT_W/32)/2)-1;
+                                                VSEW_16: ctrl_d.shifts_remaining = ((VPORT_W/16)/2)-1;
+                                                VSEW_8:  ctrl_d.shifts_remaining = ((VPORT_W/8)/2)-1;
+                                            endcase
+                        end
+                        {RES_ELEMWISE_WIDTH, MF4}: begin
+                                            unique case(cur_sew)
+                                                VSEW_32: ctrl_d.shifts_remaining = ((VPORT_W/32)/4)-1;
+                                                VSEW_16: ctrl_d.shifts_remaining = ((VPORT_W/16)/4)-1;
+                                                VSEW_8:  ctrl_d.shifts_remaining = ((VPORT_W/8)/4)-1;
+                                            endcase
+                        end
+                        {RES_ELEMWISE_WIDTH, MF8}: begin
+                                            unique case(cur_sew)
+                                                VSEW_32: ctrl_d.shifts_remaining = ((VPORT_W/32)/8)-1;
+                                                VSEW_16: ctrl_d.shifts_remaining = ((VPORT_W/16)/8)-1;
+                                                VSEW_8:  ctrl_d.shifts_remaining = ((VPORT_W/8)/8)-1;
+                                            endcase
                         end
                     endcase
                 end
@@ -206,11 +261,13 @@ module vproc_vregpack #(
         end
     end
 
-    //On first cycle, take control bits from the pipeline
+    //On first cycle, take control bits from the pipeline  //TODO: should be able to always take these from pipeline?
     result_shift_rate cur_shift_mode;
     assign cur_shift_mode = pipe_in_res_flags_i[0].first_cycle ? pipe_in_res_flags_i[0].shift_rate : ctrl_q.shift_rate;
     cfg_vsew          cur_sew;
     assign cur_sew = pipe_in_res_flags_i[0].first_cycle ? pipe_in_eew_i : ctrl_q.eew;
+    op_fractional     cur_frac;
+    assign cur_frac = pipe_in_res_flags_i[0].first_cycle ? pipe_in_res_flags_i[0].dest_frac : ctrl_q.frac;
 
     always_comb begin
         if ((pipe_in_valid_i | narrowing) & !pipe_in_res_flags_i[0].mask_res) begin //Continue shifting if narrowing op
@@ -219,10 +276,26 @@ module vproc_vregpack #(
                 {RES_FULL_WIDTH,VSEW_32},
                 {RES_FULL_WIDTH,VSEW_16},
                 {RES_FULL_WIDTH,VSEW_8}:    begin //Standard Case
-                                                shift_reg_d = {pipe_in_res_data_i[0], shift_reg_q[VPORT_W-1 : MAX_RES_W]};
-                                                shift_reg_mask_d = {pipe_in_res_mask_i[0][VPORT_W/8-1:0], shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/8]};
-                                            end
-                {RES_NARROW_WIDTH,VSEW_32}: //Decode increases EEW of narrowing ops
+                                                unique case (cur_frac)
+                                                    FULL_REG: begin
+                                                        shift_reg_d = {pipe_in_res_data_i[0], shift_reg_q[VPORT_W-1 : MAX_RES_W]};
+                                                        shift_reg_mask_d = {pipe_in_res_mask_i[0][VPORT_W/8-1:0], shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/8]};
+                                                    end
+                                                    MF2: begin
+                                                        shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/2-1 : MAX_RES_W]};
+                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/2)/8-1:0], shift_reg_mask_q[(VPORT_W/2)/8-1 : MAX_RES_W/8]};
+                                                    end
+                                                    MF4: begin
+                                                        shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/4-1 : MAX_RES_W]};
+                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/4)/8-1:0], shift_reg_mask_q[(VPORT_W/4)/8-1 : MAX_RES_W/8]};
+                                                    end
+                                                    MF8: begin
+                                                        shift_reg_d = {{(VPORT_W*7/8){1'b0}}, pipe_in_res_data_i[0], shift_reg_q[VPORT_W/8-1 : MAX_RES_W]};
+                                                        shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/8)/8-1:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : MAX_RES_W/8]};
+                                                    end
+                                                endcase                               
+                end
+                {RES_NARROW_WIDTH,VSEW_32}: //Decode increases EEW of narrowing ops  //TODO: Port narrowing to fractional setup
                                             begin //Input is 16 bit elements with padding
                                                     for (integer i = 0; i < MAX_RES_W/32; i++) begin
                                                         shift_reg_d[VPORT_W-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];                          //Each result is 16 bits, 32 bits apart
@@ -242,18 +315,66 @@ module vproc_vregpack #(
                                             end
                 {RES_ELEMWISE_WIDTH,VSEW_32}:
                                             begin
-                                                shift_reg_d = {pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W-1 : 32]};
-                                                shift_reg_mask_d = {pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[VPORT_W/8-1 : 4]};
+                                                unique case (cur_frac)
+                                                    FULL_REG: begin
+                                                        shift_reg_d = {pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W-1 : 32]};
+                                                        shift_reg_mask_d = {pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[VPORT_W/8-1 : 4]};
+                                                    end
+                                                    MF2: begin
+                                                        shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/2-1 : 32]};
+                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[VPORT_W/8-1 : 4]};
+                                                    end
+                                                    MF4: begin
+                                                        shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/4-1 : 32]};
+                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[VPORT_W/8-1 : 4]};
+                                                    end
+                                                    MF8: begin
+                                                        shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][31:0], shift_reg_q[VPORT_W/8-1 : 32]};
+                                                        shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][3:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : 4]};
+                                                    end
+                                                endcase
                                             end
                 {RES_ELEMWISE_WIDTH,VSEW_16}:
                                             begin
-                                                shift_reg_d = {pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W-1 : 16]};
-                                                shift_reg_mask_d = {pipe_in_res_mask_i[0][2:0], shift_reg_mask_q[VPORT_W/8-1 : 2]};
+                                                unique case (cur_frac)
+                                                    FULL_REG: begin
+                                                        shift_reg_d = {pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W-1 : 16]};
+                                                        shift_reg_mask_d = {pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[VPORT_W/8-1 : 2]};
+                                                    end
+                                                    MF2: begin
+                                                        shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W/2-1 : 16]};
+                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[VPORT_W/8-1 : 2]};
+                                                    end
+                                                    MF4: begin
+                                                        shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W/4-1 : 16]};
+                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[VPORT_W/8-1 : 2]};
+                                                    end
+                                                    MF8: begin
+                                                        shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W/8-1 : 16]};
+                                                        shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : 2]};
+                                                    end
+                                                endcase
                                             end
                 {RES_ELEMWISE_WIDTH,VSEW_8}:
                                             begin
-                                                shift_reg_d = {pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W-1 : 8]};
-                                                shift_reg_mask_d = {pipe_in_res_mask_i[0][0], shift_reg_mask_q[VPORT_W/8-1 : 1]};
+                                                unique case (cur_frac)
+                                                    FULL_REG: begin
+                                                        shift_reg_d = {pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W-1 : 8]};
+                                                        shift_reg_mask_d = {pipe_in_res_mask_i[0][0], shift_reg_mask_q[VPORT_W/8-1 : 1]};
+                                                    end
+                                                    MF2: begin
+                                                        shift_reg_d = {{(VPORT_W/2){1'b0}}, pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W/2-1 : 8]};
+                                                        shift_reg_mask_d = {{((VPORT_W/2)/8){1'b0}}, pipe_in_res_mask_i[0][0], shift_reg_mask_q[VPORT_W/8-1 : 1]};
+                                                    end
+                                                    MF4: begin
+                                                        shift_reg_d = {{(VPORT_W*3/4){1'b0}}, pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W/4-1 : 8]};
+                                                        shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][0], shift_reg_mask_q[VPORT_W/8-1 : 1]};
+                                                    end
+                                                    MF8: begin
+                                                        shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][7:0], shift_reg_q[VPORT_W/8-1 : 8]};
+                                                        shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][0], shift_reg_mask_q[(VPORT_W/8)/8-1 : 1]};
+                                                    end
+                                                endcase
                                             end
                 endcase
             end

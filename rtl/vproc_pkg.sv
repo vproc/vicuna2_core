@@ -515,6 +515,7 @@ typedef struct packed {
     logic       store;
     logic       field_instr;
     logic       mask_res;
+    op_fractional dest_frac;
 } pack_flags;
 
 
