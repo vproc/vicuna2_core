@@ -327,15 +327,16 @@ module vproc_lsu #(
             //VLMAX given in number of elements, fractional lmuls need to be raised to one whole register
             unique case (pipe_in_ctrl_i.decode_metadata.operands[1].sew)
                     VSEW_32: begin
-                            lsu_ctrl_d.vl_remaining = (pipe_in_ctrl_i.vlmax > VLEN/32) ? pipe_in_ctrl_i.vlmax - (MEM_PORTS) : VLEN/32 - (MEM_PORTS); //TODO: Allow VREGUNPACK to scale amount of data per port
+                            lsu_ctrl_d.vl_remaining = pipe_in_ctrl_i.vlmax - (MEM_PORTS); //TODO: Allow VREGUNPACK to scale amount of data per port
                             lsu_ctrl_d.next_base_addr = pipe_in_ctrl_i.op_xval[1] + 4;
                     end
                     VSEW_16: begin
-                            lsu_ctrl_d.vl_remaining = (pipe_in_ctrl_i.vlmax > VLEN/16) ? pipe_in_ctrl_i.vlmax - (MEM_PORTS) : VLEN/16 - (MEM_PORTS);
+                            lsu_ctrl_d.vl_remaining = pipe_in_ctrl_i.vlmax - (MEM_PORTS);
                             lsu_ctrl_d.next_base_addr = pipe_in_ctrl_i.op_xval[1] + 2;
                     end
                     VSEW_8:  begin
-                        lsu_ctrl_d.vl_remaining = (pipe_in_ctrl_i.vlmax > VLEN/8)  ? pipe_in_ctrl_i.vlmax - (MEM_PORTS) : VLEN/8  - (MEM_PORTS);
+                        //lsu_ctrl_d.vl_remaining = (pipe_in_ctrl_i.vlmax > VLEN/8)  ? pipe_in_ctrl_i.vlmax - (MEM_PORTS) : VLEN/8  - (MEM_PORTS);
+                        lsu_ctrl_d.vl_remaining = pipe_in_ctrl_i.vlmax - (MEM_PORTS);
                         lsu_ctrl_d.next_base_addr = pipe_in_ctrl_i.op_xval[1] + 1;
                     end
             endcase
@@ -343,15 +344,15 @@ module vproc_lsu #(
             if (lsu_ctrl_q.vl_remaining == 0) begin
                 unique case (pipe_in_ctrl_i.decode_metadata.operands[1].sew)
                     VSEW_32: begin
-                            lsu_ctrl_d.vl_remaining = (metadata_q.vlmax > VLEN/32) ? metadata_q.vlmax - (MEM_PORTS) : VLEN/32 - (MEM_PORTS); //TODO: Allow VREGUNPACK to scale amount of data per port
+                            lsu_ctrl_d.vl_remaining = metadata_q.vlmax - (MEM_PORTS); //TODO: Allow VREGUNPACK to scale amount of data per port
                             lsu_ctrl_d.next_base_addr = lsu_ctrl_q.next_base_addr + 4;
                     end
                     VSEW_16: begin
-                            lsu_ctrl_d.vl_remaining = (metadata_q.vlmax > VLEN/16) ? metadata_q.vlmax - (MEM_PORTS) : VLEN/16 - (MEM_PORTS);
+                            lsu_ctrl_d.vl_remaining = metadata_q.vlmax - (MEM_PORTS);
                             lsu_ctrl_d.next_base_addr = lsu_ctrl_q.next_base_addr + 2;
                     end
                     VSEW_8:  begin
-                            lsu_ctrl_d.vl_remaining = (metadata_q.vlmax > VLEN/8)  ? metadata_q.vlmax - (MEM_PORTS) : VLEN/8  - (MEM_PORTS);
+                            lsu_ctrl_d.vl_remaining = metadata_q.vlmax - (MEM_PORTS);
                             lsu_ctrl_d.next_base_addr = lsu_ctrl_q.next_base_addr + 1;
                     end
                 endcase
