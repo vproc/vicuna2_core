@@ -50,6 +50,7 @@ module vreg_shift_register
     logic [VADDR_W-1:0]         current_vreg;
     logic [VADDR_W-1:0]         base_vreg;
     logic [3:0]                 vreg_reads_remaining;          //up to 8 vregs need to be read (LMUL8)
+    logic [3:0]                 total_reads;                   //Some operations will need the contents of the register operand (group) multiple times
     cfg_vsew                    eew;
     logic [$clog2(VREG_PORT_W / 8 )-1:0] shifts_remaining; //Maximum counter value is elewise SEW 8
     logic [3:0]                 repeats_remaining;         //Some operations will need the contents of the register operand (group) multiple times
@@ -81,7 +82,6 @@ module vreg_shift_register
     end
 
     //state transitions and control signal assignments
-
     always_comb begin
         state_d = state_q;
         ctrl_d = ctrl_q;
@@ -100,6 +100,7 @@ module vreg_shift_register
                     ctrl_d.sign = operand_sign_i;
                     ctrl_d.dest_emul = operand_emul_i;
                     ctrl_d.vreg_reads_remaining = operand_regs_i;
+                    ctrl_d.total_reads = operand_regs_i;
                     ctrl_d.repeats_remaining = repeats_i;
                     ctrl_d.frac = operand_frac_i;
                 end
@@ -116,7 +117,6 @@ module vreg_shift_register
                     end else begin
                         vreg_rd_req_o = !use_xval_i; //only issue read if using vector arg
                         if (vreg_rd_gnt_i | use_xval_i) begin //On successful load, set shift counter
-                            ctrl_d.vreg_reads_remaining = ctrl_q.vreg_reads_remaining - 1;
                             unique case ({ctrl_q.frac, ctrl_q.shift_rate})  //Set number of shifts per register based on rate and fractional settings
                                 {FULL_REG, SHIFT_FULL_WIDTH}: ctrl_d.shifts_remaining = VREG_PORT_W/PIPE_OP_W-1;// standard shift case
                                 {MF2, SHIFT_FULL_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W/2)/PIPE_OP_W-1;// half register
@@ -162,6 +162,7 @@ module vreg_shift_register
                                                                 endcase  
                                 end
                             endcase
+                            ctrl_d.vreg_reads_remaining = (ctrl_q.vreg_reads_remaining == 1) & !(ctrl_q.repeats_remaining == 1) ? ctrl_q.total_reads : ctrl_q.vreg_reads_remaining - 1;
                             ctrl_d.current_vreg = ctrl_q.vreg_reads_remaining == 1 ? ctrl_q.base_vreg  : ctrl_q.current_vreg + 1; // if on last read, reset to original address for possible repeat read of the register group
                             ctrl_d.repeats_remaining =  ctrl_q.vreg_reads_remaining == 1 ? ctrl_q.repeats_remaining - 1 : ctrl_q.repeats_remaining;
                             ctrl_d.valid_data = 1'b1;
