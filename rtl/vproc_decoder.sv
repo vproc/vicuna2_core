@@ -4027,6 +4027,14 @@ module vproc_decoder #(
                                     rs2_o.vreg         = 1'b0;
                                 end else begin
                                     mode_o.elem.op     = ELEM_VIOTA;
+                                    decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[1].r.vaddr = '0;
+                                    decode_metadata_o.operands[0].vreg = 1'b1;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b1;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[1].regs = 1;
                                 end
                                 // rs2_o.vreg         = ~instr_vs1[0]; // vid has no source reg
                             end
