@@ -168,6 +168,7 @@ module vproc_unit_wrapper
         pipe_out_res_flags_o.field_instr    = unit_out_ctrl.field_init_count > 0;
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
         pipe_out_instr_id_o                 = unit_out_ctrl.id;
         //     end
         // end
@@ -245,11 +246,18 @@ module vproc_unit_wrapper
         pipe_out_res_data_o = unit_out_res_alu;
         pipe_out_res_flags_o.first_cycle = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle = unit_out_ctrl.last_cycle;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
         pipe_out_res_flags_o.vreg_idx = unit_out_ctrl.vreg_idx;
 
         if (unit_out_ctrl.res_narrow[0]) begin
           pipe_out_res_flags_o.shift_rate = RES_NARROW_WIDTH;
+          unique case ({unit_out_ctrl.decode_metadata.dest_emul, unit_out_ctrl.decode_metadata.dest_frac})
+                {EMUL_1, FULL_REG}: pipe_out_res_flags_o.dest_frac = MF2;
+                {EMUL_1, MF2}: pipe_out_res_flags_o.dest_frac = MF4;
+                {EMUL_1, MF4}: pipe_out_res_flags_o.dest_frac = MF8;
+                default: pipe_out_res_flags_o.dest_frac = FULL_REG;
+          endcase
         end else if (unit_out_ctrl.mode.alu.cmp) begin
           //put bitwise results in the format expected by pack  TODO: Ideally, just do this inside ALU when generating output
           pipe_out_res_data_o = '0;
@@ -338,6 +346,7 @@ module vproc_unit_wrapper
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
         pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
       end
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
@@ -385,6 +394,7 @@ module vproc_unit_wrapper
         pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
@@ -454,6 +464,7 @@ module vproc_unit_wrapper
         pipe_out_res_flags_o.first_cycle    = xreg_valid_o;
         pipe_out_res_flags_o.last_cycle     = xreg_valid_o;
         pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
 
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
@@ -522,6 +533,7 @@ module vproc_unit_wrapper
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
         pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
 
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
@@ -583,6 +595,7 @@ module vproc_unit_wrapper
           pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
           pipe_out_res_flags_o.first_cycle     = unit_out_ctrl.first_cycle;
           pipe_out_res_flags_o.last_cycle      = unit_out_ctrl.last_cycle;
+          pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
       
       assign pipe_out_pend_clear_o                = unit_out_ctrl.res_store;
@@ -951,6 +964,8 @@ module vproc_unit_wrapper
         //Single cycle valid, so both first and last cycle are high
         pipe_out_res_flags_o.first_cycle    = pipe_out_valid_o;
         pipe_out_res_flags_o.last_cycle     = pipe_out_valid_o;
+        pipe_out_res_flags_o.single_elem_res = pipe_out_valid_o;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
