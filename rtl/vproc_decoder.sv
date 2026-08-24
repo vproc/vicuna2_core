@@ -335,6 +335,291 @@ module vproc_decoder #(
                     default: instr_illegal = 1'b1;
                 endcase
 
+                //Scale registers based on sew/encoded EEW ratio  VL is scaled below
+                unique case ({lmul_i, vsew_i, {instr_i[28], instr_i[14:12]}})
+                    //VSEW_8
+                    {LMUL_F8, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F8, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F8, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_1, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_1, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_2, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_2, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_2, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    {LMUL_4, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_4, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    {LMUL_8, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    //VSEW_16
+                    {LMUL_F8, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F8, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_2, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_2, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_2, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_4, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_4, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_4, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    {LMUL_8, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_8, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    //VSEW_32
+                    {LMUL_F8, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_2, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_2, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_2, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_4, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_4, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_4, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_8, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_8, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_8, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    default: begin
+                        instr_illegal = 1'b1;
+                    end
+                endcase
+
                 // mop field
                 unique case (instr_i[27:26])
                     2'b00: begin // unit-strided load/store
