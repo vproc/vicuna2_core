@@ -102,7 +102,8 @@ module vproc_vregpack #(
     end
 
     // In case of narrowing ops, check if last cycle has been signalled, but total number of shifts is not complete. 
-    // In this case, keep shifting until completion and fill rf be bits with 0  //TODO: this should be unnecessary with fractional register handling
+    // In this case, keep shifting until completion and fill rf be bits with 0
+    //TODO: this should be unnecessary with fractional register handling
     logic narrowing;
     assign narrowing = ctrl_q.last_cycle & !(ctrl_q.shifts_remaining == '0);
 
@@ -307,25 +308,87 @@ module vproc_vregpack #(
                                                             shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][(VPORT_W/8)/8-1:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : MAX_RES_W/8]};
                                                         end
                                                     end
-                                                endcase                               
+                                                endcase
                 end
-                {RES_NARROW_WIDTH,VSEW_32}: //Decode increases EEW of narrowing ops  //TODO: Port narrowing to fractional setup
+                {RES_NARROW_WIDTH,VSEW_32}: //Decode increases EEW of narrowing ops
                                             begin //Input is 16 bit elements with padding
-                                                    for (integer i = 0; i < MAX_RES_W/32; i++) begin
-                                                        shift_reg_d[VPORT_W-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];                          //Each result is 16 bits, 32 bits apart
-                                                        shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16+i*2 +: 2] = !narrowing ? pipe_in_res_mask_i[0][i*4 +: 2] : 2'b00; //Each result takes 2 bytes from the mask
+                                                    unique case (cur_frac)
+                                                    FULL_REG: begin  //TODO: All other shifts should be rewritten in the same style as the narrowing ones.  This should remove the need for the check for port_w <= max_res_w
+                                                        shift_reg_mask_d[(VPORT_W/8) - (MAX_RES_W/8)/2 -1 : 0] = shift_reg_mask_q[(VPORT_W/8) -1: (MAX_RES_W/8)/2];
+                                                        shift_reg_d[(VPORT_W) -1 - MAX_RES_W/2 : 0] = shift_reg_q[(VPORT_W) -1: (MAX_RES_W)/2];
+                                                        for (integer i = 0; i < MAX_RES_W/32; i++) begin
+                                                            shift_reg_d[(VPORT_W)-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];
+                                                            shift_reg_mask_d[(VPORT_W)/8-MAX_RES_W/16+i*2 +: 2] = pipe_in_res_mask_i[0][i*4 +: 2];
+                                                        end
                                                     end
-                                                    shift_reg_d[VPORT_W-MAX_RES_W/2-1:0] = shift_reg_q[VPORT_W-1 : MAX_RES_W/2];
-                                                    shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16-1:0] = shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/16];
-                                            end
+                                                    MF2: begin
+                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/2] = '0; //upper 3/4s 0 for mf4 result
+                                                        shift_reg_mask_d[(VPORT_W/8)/2 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/2 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
+                                                        shift_reg_d[(VPORT_W)/2 -1 : 0] = shift_reg_q[(VPORT_W)/2 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
+                                                        for (integer i = 0; i < MAX_RES_W/32; i++) begin
+                                                            shift_reg_d[(VPORT_W/2)-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];
+                                                            shift_reg_mask_d[(VPORT_W/2)/8-MAX_RES_W/16+i*2 +: 2] = pipe_in_res_mask_i[0][i*4 +: 2];
+                                                        end
+                                                    end
+                                                    MF4: begin
+                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/4] = '0; //upper 3/4s 0 for mf4 result
+                                                        shift_reg_mask_d[(VPORT_W/8)/4 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/4 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
+                                                        shift_reg_d[(VPORT_W)/4 -1 : 0] = shift_reg_q[(VPORT_W)/4 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
+                                                        for (integer i = 0; i < MAX_RES_W/32; i++) begin
+                                                            shift_reg_d[(VPORT_W/4)-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];
+                                                            shift_reg_mask_d[(VPORT_W/4)/8-MAX_RES_W/16+i*2 +: 2] = pipe_in_res_mask_i[0][i*4 +: 2];
+                                                        end
+                                                    end
+                                                    MF8: begin
+                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/8] = '0; //upper 3/4s 0 for mf4 result
+                                                        shift_reg_mask_d[(VPORT_W/8)/8 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/8 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
+                                                        shift_reg_d[(VPORT_W)/8 -1 : 0] = shift_reg_q[(VPORT_W)/8 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
+                                                        for (integer i = 0; i < MAX_RES_W/32; i++) begin
+                                                            shift_reg_d[(VPORT_W/8)-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];
+                                                            shift_reg_mask_d[(VPORT_W/8)/8-MAX_RES_W/16+i*2 +: 2] = pipe_in_res_mask_i[0][i*4 +: 2];
+                                                        end
+                                                    end
+                                                endcase
+                end
                 {RES_NARROW_WIDTH,VSEW_16}: //Decode increases EEW of narrowing ops
                                             begin //Input is 8 bit elements with padding
-                                                    for (integer i = 0; i < MAX_RES_W/16; i++) begin
-                                                        shift_reg_d[VPORT_W-MAX_RES_W/2+i*8 +: 8] = pipe_in_res_data_i[0][i*16 +: 8];                        //Each result is 8 bits, 32 bits apart
-                                                        shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16+i] = !narrowing ? pipe_in_res_mask_i[0][i*2] : 1'b0;    //Each result takes 1 bytes from the mask
+                                                    unique case (cur_frac)
+                                                    FULL_REG: begin
+                                                        shift_reg_mask_d[(VPORT_W/8) -(MAX_RES_W/8)/2 -1 : 0] = shift_reg_mask_q[(VPORT_W/8) -1: (MAX_RES_W/8)/2];
+                                                        shift_reg_d[(VPORT_W) - MAX_RES_W/2 -1 : 0] = shift_reg_q[(VPORT_W) -1: (MAX_RES_W)/2];
+                                                        for (integer i = 0; i < MAX_RES_W/16; i++) begin
+                                                            shift_reg_d[(VPORT_W)-MAX_RES_W/2+i*8 +: 8] = pipe_in_res_data_i[0][i*16 +: 8];
+                                                            shift_reg_mask_d[(VPORT_W)/8-MAX_RES_W/16+i] = pipe_in_res_mask_i[0][i*2];
+                                                        end
                                                     end
-                                                    shift_reg_d[VPORT_W-MAX_RES_W/2-1:0] = shift_reg_q[VPORT_W-1 : MAX_RES_W/2];
-                                                    shift_reg_mask_d[VPORT_W/8-MAX_RES_W/16-1:0] = shift_reg_mask_q[VPORT_W/8-1 : MAX_RES_W/16];
+                                                    MF2: begin
+                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/2] = '0; //upper 3/4s 0 for mf4 result
+                                                        shift_reg_mask_d[(VPORT_W/8)/2 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/2 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
+                                                        shift_reg_d[(VPORT_W)/2 -1 : 0] = shift_reg_q[(VPORT_W)/2 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
+                                                        for (integer i = 0; i < MAX_RES_W/16; i++) begin
+                                                            shift_reg_d[(VPORT_W/2)-MAX_RES_W/2+i*8 +: 8] = pipe_in_res_data_i[0][i*16 +: 8];
+                                                            shift_reg_mask_d[(VPORT_W/2)/8-MAX_RES_W/16+i] = pipe_in_res_mask_i[0][i*2];
+                                                        end
+                                                    end
+                                                    MF4: begin
+                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/4] = '0; //upper 3/4s 0 for mf4 result
+                                                        shift_reg_mask_d[(VPORT_W/8)/4 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/4 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
+                                                        shift_reg_d[(VPORT_W)/4 -1 : 0] = shift_reg_q[(VPORT_W)/4 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
+                                                        for (integer i = 0; i < MAX_RES_W/16; i++) begin
+                                                            shift_reg_d[(VPORT_W/4)-MAX_RES_W/2+i*8 +: 8] = pipe_in_res_data_i[0][i*16 +: 8];
+                                                            shift_reg_mask_d[(VPORT_W/4)/8-MAX_RES_W/16+i] = pipe_in_res_mask_i[0][i*2];
+                                                        end
+                                                    end
+                                                    MF8: begin
+                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/8] = '0; //upper 3/4s 0 for mf4 result
+                                                        shift_reg_mask_d[(VPORT_W/8)/8 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/8 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
+                                                        shift_reg_d[(VPORT_W)/8 -1 : 0] = shift_reg_q[(VPORT_W)/8 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
+                                                        for (integer i = 0; i < MAX_RES_W/16; i++) begin
+                                                            shift_reg_d[(VPORT_W/8)-MAX_RES_W/2+i*8 +: 8] = pipe_in_res_data_i[0][i*16 +: 8];
+                                                            shift_reg_mask_d[(VPORT_W/8)/8-MAX_RES_W/16+i] = pipe_in_res_mask_i[0][i*2];
+                                                        end
+                                                    end
+                                                    endcase
                                             end
                 {RES_ELEMWISE_WIDTH,VSEW_32}:
                                             begin

@@ -252,6 +252,12 @@ module vproc_unit_wrapper
 
         if (unit_out_ctrl.res_narrow[0]) begin
           pipe_out_res_flags_o.shift_rate = RES_NARROW_WIDTH;
+          unique case ({unit_out_ctrl.decode_metadata.dest_emul, unit_out_ctrl.decode_metadata.dest_frac})
+                {EMUL_1, FULL_REG}: pipe_out_res_flags_o.dest_frac = MF2;
+                {EMUL_1, MF2}: pipe_out_res_flags_o.dest_frac = MF4;
+                {EMUL_1, MF4}: pipe_out_res_flags_o.dest_frac = MF8;
+                default: pipe_out_res_flags_o.dest_frac = FULL_REG;
+          endcase
         end else if (unit_out_ctrl.mode.alu.cmp) begin
           //put bitwise results in the format expected by pack  TODO: Ideally, just do this inside ALU when generating output
           pipe_out_res_data_o = '0;
