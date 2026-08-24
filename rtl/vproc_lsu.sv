@@ -313,10 +313,6 @@ module vproc_lsu #(
         end
     end
 
-    logic test_stride_cond;
-    assign test_stride_cond = pipe_in_ctrl_i.mode.lsu.stride == LSU_INDEXED;
-
-
     always_comb begin
         lsu_ctrl_d = lsu_ctrl_q;
         lsu_ctrl_d.indexed_op_clear = (pipe_in_ctrl_i.last_cycle & pipe_in_ctrl_i.mode.lsu.stride == LSU_INDEXED) | lsu_ctrl_q.indexed_op_clear & pipe_in_op3_valid_i;

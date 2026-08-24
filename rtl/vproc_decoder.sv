@@ -372,8 +372,8 @@ module vproc_decoder #(
                                         LMUL_F4: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
                                         LMUL_F2: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
                                         LMUL_1:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
-                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) < 1;
-                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) < 2;
+                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 1;
+                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 2;
                                         LMUL_8:  decode_metadata_o.operands[1].regs = 8; //case should not occur for segmented
                                         default: instr_illegal = 1'b1;
                                     endcase
@@ -445,8 +445,8 @@ module vproc_decoder #(
                                         LMUL_F4: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
                                         LMUL_F2: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
                                         LMUL_1:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
-                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) < 1;
-                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) < 2;
+                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 1;
+                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 2;
                                         LMUL_8:  decode_metadata_o.operands[1].regs = 8; //case should not occur for segmented
                                         default: instr_illegal = 1'b1;
                                     endcase
@@ -520,12 +520,21 @@ module vproc_decoder #(
                                         LMUL_F4: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
                                         LMUL_F2: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
                                         LMUL_1:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
-                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) < 1;
-                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) < 2;
+                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 1;
+                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 2;
                                         LMUL_8:  decode_metadata_o.operands[1].regs = 8; //case should not occur for segmented
                                         default: instr_illegal = 1'b1;
                         endcase
                         decode_metadata_o.mask_operand.repeats = (instr_i[31:29] + 1); //repeat mask reg for nfields
+                        //Scale stride by number segments
+                        // if (!(instr_i[31:29] == '0)) begin
+                        //     unique case (instr_i[14:12]) // width field
+                        //         3'b000: rs2_o.r.xval = (instr_i[31:29] + 1) + x_rs2_i; // EEW 8
+                        //         3'b101: rs2_o.r.xval = ((instr_i[31:29] + 1) << 1) + x_rs2_i; // EEW 16
+                        //         3'b110: rs2_o.r.xval = ((instr_i[31:29] + 1) << 2) + x_rs2_i; // EEW 32
+                        //         default: ;
+                        //     endcase
+                        // end
                     end
                     2'b01,
                     2'b11: begin // indexed load/store
@@ -885,8 +894,6 @@ module vproc_decoder #(
 
                             decode_metadata_o.mask_operand.repeats = (instr_i[31:29] + 1); //repeat mask reg for nfields
                             decode_metadata_o.operands[2].repeats = (instr_i[31:29] + 1); //repeat index regs for nfields
-
-
                     end
                     default: ;
                 endcase
