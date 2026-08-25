@@ -582,6 +582,12 @@ module vproc_vregunpack
         input  logic   [31:0]                            pend_wr_map_i,        //Pending writes (as of the instruction being issued)
         input  logic   [31:0]                            pend_wr_clear_i,      //Writes that have been completed
 
+        //Some vector functional units can access the V0 port, so access must be arbitrated (always give preference to vfu access)
+        input  logic                                     vfu_vreg_rd_req_i,
+        output logic                                     vfu_vreg_rd_gnt_o,
+        input  [4:0]                                     vfu_vreg_rd_addr_i,
+        input  [ID_W-1 : 0]                              vfu_vreg_rd_id_i,
+
         // pipeline out
         output logic   [VPORT_CNT-1:0]                   pipe_out_valid_o,
         input  logic   [VPORT_CNT-1:0]                   pipe_out_ready_i,
@@ -701,17 +707,29 @@ module vproc_vregunpack
 
     /////////////////
     //Operand Shift registers 
-    //Maximum 3 Ports, rs1, rs2, rd
+    //Currently, Maximum 3 Ports, rs1, rs2, rd
     /////////////////
     logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0]  shift_reg_outputs;
     logic   [VPORT_CNT-1:0]                   shift_reg_done;
+
     logic   [VPORT_CNT-1:0]                   shift_reg_req;
+    logic   [VPORT_CNT-1:0]                   shift_reg_gnt;
+    logic   [VPORT_CNT-1:0][MAX_VADDR_W-1:0]  shift_reg_addr;
     generate
-        for (genvar i = 0; i < VPORT_CNT; i++) begin
-            assign vreg_rd_req_o[i] = shift_reg_req[i] & ~metadata_q.pend_wr_map[vreg_rd_addr_o[i]]; //Request signal from shift reg valid if not marked as pending write (not a data hazard)
+        //op0 port can be accessed by GATHER unit, so arbitration necessary.  Always give preference to vfu
+        assign vreg_rd_req_o[0] = vfu_vreg_rd_req_i ? vfu_vreg_rd_req_i & ~metadata_q.pend_wr_map[vfu_vreg_rd_addr_i] : shift_reg_req[0] & ~metadata_q.pend_wr_map[shift_reg_addr[i]]; //Request signal from shift reg valid if not marked as pending write (not a data hazard)
+        assign shift_reg_gnt[0] = vreg_rd_gnt_i[0] & !vfu_vreg_rd_req_i;
+        assign vfu_vreg_rd_gnt_o = vreg_rd_gnt_i[0] & vfu_vreg_rd_req_i;
+        assign vreg_rd_addr_o[0] = vfu_vreg_rd_req_i ? vfu_vreg_rd_addr_i : shift_reg_addr[0];
+
+        //Standard accesses for other ports, and only allowed when vfu not accessing op 0 due to potentially conflicting IDs
+        for (genvar i = 1; i < VPORT_CNT; i++) begin
+            assign vreg_rd_req_o[i] = shift_reg_req[i] & ~metadata_q.pend_wr_map[vreg_rd_addr_o[i]] & (!vfu_vreg_rd_req_i | metadata_q.ctrl.id == vfu_vreg_rd_id_i); //Request signal from shift reg valid if not marked as pending write (not a data hazard) or blocked by access from previous instruction in vfu
+            assign shift_reg_gnt[i] = vreg_rd_gnt_i[i];
+            assign vreg_rd_addr_o[i] = shift_reg_addr[i];
         end
     endgenerate
-    assign vreg_rd_id_o     = metadata_q.ctrl.id;
+    assign vreg_rd_id_o     = vfu_vreg_rd_req_i ? vfu_vreg_rd_id_i : metadata_q.ctrl.id;
 
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin
@@ -741,9 +759,9 @@ module vproc_vregunpack
 
                 .finished_o(shift_reg_done[i]),
 
-                .vreg_rd_gnt_i(vreg_rd_gnt_i[i]),
+                .vreg_rd_gnt_i(shift_reg_gnt[i]),
                 .vreg_rd_req_o(shift_reg_req[i]),
-                .vreg_rd_addr_o(vreg_rd_addr_o[i]),
+                .vreg_rd_addr_o(shift_reg_addr[i]),
                 .vreg_rd_data_i(vreg_rd_data_i[i]),
 
                 .vfu_ready_i(pipe_out_ready_i[i]),                                          //TODO: For desynced operands, will need a ready signal per operand

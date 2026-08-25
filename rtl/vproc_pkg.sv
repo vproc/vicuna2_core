@@ -111,13 +111,14 @@ typedef enum logic [3:0] {
     UNIT_ZVBB,
     UNIT_ZVBC,
     UNIT_REDSUM,
+    UNIT_GATHER,
     UNIT_CUSTOM, //Used for arbitrary custom functional units
     // pseudo-units (used for instructions that require no unit):
     UNIT_CFG
 } op_unit;
 
 // The number of different types of execution units (excludes pseudo-units)
-parameter int unsigned UNIT_CNT = 11;
+parameter int unsigned UNIT_CNT = 12;
 
 typedef enum logic [1:0] {
     COUNT_INC_1 = 2'b00,
@@ -409,6 +410,11 @@ typedef struct packed { //Meant to be reinterpreted by the custom functional uni
     logic [17:0] unused;
 } op_mode_custom;
 
+typedef struct packed {
+    logic scalar_rs1; 
+    logic [16:0] unused;
+} op_mode_gather;
+
 `ifdef VPROC_OP_MODE_UNION
 typedef union packed {
     logic [17:0]  unused;
@@ -427,6 +433,7 @@ typedef struct packed {
     op_mode_zvbc zvbc;
     op_mode_custom custom;
     op_mode_reduction reduction;
+    op_mode_gather gather;
 } op_mode;
 
 typedef enum logic [1:0] {

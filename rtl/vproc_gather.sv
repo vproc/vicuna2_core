@@ -23,7 +23,7 @@ module vproc_gather #(
 
     input METADATA_T                pipe_in_ctrl_i,
     
-    input logic [OP_W - 1 : 0]      pipe_in_op2_i,
+    input logic [OP_W - 1 : 0]      pipe_in_op_i,
     input logic [(OP_W/8) - 1 : 0]  pipe_in_mask_i,
 
 
@@ -54,7 +54,7 @@ module vproc_gather #(
     READY = 2'b00,
     INVALID_DATA = 2'b01,
     VALID_DATA = 2'b10
-  } gather_state_t;
+  } gather_state;
 
   typedef struct packed {
     logic [$clog2(VLEN/8)-1:0] byte_index;
@@ -77,40 +77,45 @@ module vproc_gather #(
     end
 
   // Index/address calculation
-  // Operand[0] contains the indexes
-  // Operand[1] contains the data
+  // Operand[0] contains the data
+  // Operand[1] contains the indexes
   logic [$clog2(VLEN/8)-1:0] byte_index;
   logic [4:0]                vreg_addr;
   logic                      over_vlmax;
 
   logic[31:0]                index;
   always_comb begin
-    unique case (pipe_in_ctrl_i.decode_metadata.operands[0].sew)
-      VSEW_32: index = pipe_in_op2_i[31:0];
-      VSEW_16: index = {{(16){1'b0}}, pipe_in_op2_i[15:0]};
-      VSEW_8:  index = {{(24){1'b0}}, pipe_in_op2_i[7:0]};
-    endcase
-  end                
+    if (!pipe_in_ctrl_i.mode.gather.scalar_rs1) begin
+      unique case (pipe_in_ctrl_i.decode_metadata.operands[1].sew)
+        VSEW_32: index = pipe_in_op_i[31:0];
+        VSEW_16: index = {{(16){1'b0}}, pipe_in_op_i[15:0]};
+        VSEW_8:  index = {{(24){1'b0}}, pipe_in_op_i[7:0]};
+        default;
+      endcase
+    end else begin
+      index = pipe_in_ctrl_i.decode_metadata.operands[1].r.xval; //If x/i, use full, non-truncated value
+    end
+  end
 
-  //TODO: FORMULAS
   always_comb begin
     over_vlmax = 0;
     byte_index = '0;
     vreg_addr  = '0;
     if (index < pipe_in_ctrl_i.vlmax) begin
-      unique case (pipe_in_ctrl_i.decode_metadata.operands[1].sew)
+      unique case (pipe_in_ctrl_i.decode_metadata.operands[0].sew)
         VSEW_32: begin
-          byte_index = (index & {{(32 - ($clog2(VLEN/32)-1)){1'b0}}, {($clog2(VLEN/32)-1){1'b1}}});
-          vreg_addr = (index >> $clog2(VLEN/32)) + pipe_in_ctrl_i.decode_metadata.operands[1].r.vaddr;
+          byte_index = (index & {{(32 - ($clog2(VLEN/32))){1'b0}}, {($clog2(VLEN/32)){1'b1}}}) << 2;
+          vreg_addr = (index >> $clog2(VLEN/32)) + pipe_in_ctrl_i.decode_metadata.operands[0].r.vaddr;
         end
         VSEW_16: begin
-          byte_index = (index & {{(32 - ($clog2(VLEN/16)-1)){1'b0}}, {($clog2(VLEN/16)-1){1'b1}}});
-          vreg_addr = (index >> $clog2(VLEN/16)) + pipe_in_ctrl_i.decode_metadata.operands[1].r.vaddr;
+          byte_index = (index & {{(32 - ($clog2(VLEN/16))){1'b0}}, {($clog2(VLEN/16)){1'b1}}}) << 1;
+          vreg_addr = (index >> $clog2(VLEN/16)) + pipe_in_ctrl_i.decode_metadata.operands[0].r.vaddr;
         end
         VSEW_8:  begin
-          byte_index = (index & {{(32 - ($clog2(VLEN/8)-1)){1'b0}}, {($clog2(VLEN/8)-1){1'b1}}});
-          vreg_addr = (index >> $clog2(VLEN/8)) + pipe_in_ctrl_i.decode_metadata.operands[1].r.vaddr;
+          byte_index = (index & {{(32 - ($clog2(VLEN/8))){1'b0}}, {($clog2(VLEN/8)){1'b1}}});
+          vreg_addr = (index >> $clog2(VLEN/8)) + pipe_in_ctrl_i.decode_metadata.operands[0].r.vaddr;
         end
+        default:;
       endcase
     end else begin
       over_vlmax = 1'b1;
@@ -125,11 +130,11 @@ module vproc_gather #(
     unique case (state_q)
         READY: begin
           if (pipe_in_valid_i & pipe_in_ctrl_i.first_cycle) begin
+             ctrl_d.complete = pipe_in_ctrl_i.last_cycle; //in case vlmax == 1 (VLEN 128, MF4, SEW32)
+             ctrl_d.over_vlmax = over_vlmax;
+             ctrl_d.byte_index = byte_index;
              if (vreg_rd_gnt_i | over_vlmax) begin
                 state_d = VALID_DATA;
-                ctrl_d.over_vlmax = over_vlmax;
-                ctrl_d.byte_index = byte_index;
-                ctrl_d.complete = pipe_in_ctrl_i.last_cycle; //in case vlmax == 1 (VLEN 128, MF4, SEW32)
              end else begin
                 state_d = INVALID_DATA;
              end
@@ -141,13 +146,16 @@ module vproc_gather #(
           end
         end
         VALID_DATA: begin
-          if (complete) begin
+          if (pipe_out_ready_i) begin
+            ctrl_d.over_vlmax = over_vlmax;
+            ctrl_d.byte_index = byte_index;
+            ctrl_d.complete = pipe_in_ctrl_i.last_cycle;
+          end
+
+          if (ctrl_q.complete) begin
             state_d = READY;
           end else if ((vreg_rd_gnt_i | over_vlmax) & pipe_out_ready_i) begin
             state_d = VALID_DATA;
-            ctrl_d.over_vlmax = over_vlmax;
-            ctrl_d = byte_index;
-            ctrl_d.complete = pipe_in_ctrl_i.last_cycle;
           end else if (pipe_out_ready_i) begin
             state_d = INVALID_DATA;
           end
@@ -166,7 +174,8 @@ module vproc_gather #(
           register_data_q <= vreg_rd_data_i;
       end
   end
-   //TODO: This generates a vector register load for EVERY VALID INDEX (idx < VLMAX).  TODO: add check for idx in currently loaded register
+  //TODO: This generates a vector register load for EVERY VALID INDEX (idx < VLMAX).  TODO: add check for idx in currently loaded register
+  //TODO: Can also skip any data that is masked out
   assign vreg_rd_req_o = ((state_q == READY) & pipe_in_ctrl_i.first_cycle & !over_vlmax & pipe_in_valid_i & pipe_in_mask_valid_i) | (state_q == INVALID_DATA) | ((state_q == VALID_DATA) & pipe_out_ready_i & !over_vlmax);
   assign vreg_rd_id_o = pipe_in_ctrl_i.id;
   assign vreg_rd_addr_o = vreg_addr;
@@ -184,8 +193,10 @@ module vproc_gather #(
           mask_q <= '0;
           metadata_q <= '0;
       end else begin
+        if (pipe_in_ready_o | (pipe_out_ctrl_o.last_cycle & pipe_out_valid_o)) begin //only advance these buffers on accepted input data (both ready signals are synchronized)
           mask_q <= mask_d;
           metadata_q <= metadata_d;
+        end
       end
   end
 
@@ -201,13 +212,13 @@ module vproc_gather #(
     if (ctrl_q.over_vlmax) begin
       pipe_out_res_o = '0; //If over vlmax, set output to 0;
     end else begin
-      unique case (metadata_q.decode_metadata.operands[1].sew)
-        VSEW_32: pipe_out_res_o = register_data_q[ctrl_q.byte_index +: 4];
-        VSEW_16: pipe_out_res_o = {{(16){1'b0}}, register_data_q[ctrl_q.byte_index +: 2]};
-        VSEW_8:  pipe_out_res_o = {{(24){1'b0}}, register_data_q[ctrl_q.byte_index]};
+      unique case (metadata_q.decode_metadata.operands[0].sew)
+        VSEW_32: pipe_out_res_o = register_data_q[ctrl_q.byte_index*8 +: 32];
+        VSEW_16: pipe_out_res_o = {{(16){1'b0}}, register_data_q[ctrl_q.byte_index*8 +: 16]};
+        VSEW_8:  pipe_out_res_o = {{(24){1'b0}}, register_data_q[ctrl_q.byte_index*8 +: 8]};
+        default:;
       endcase
     end
-  end
-  assign 
+  end 
 
 endmodule

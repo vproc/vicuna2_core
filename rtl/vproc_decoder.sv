@@ -4079,10 +4079,80 @@ module vproc_decoder #(
                         {6'b001100, 3'b000},        // vrgather VV
                         {6'b001100, 3'b011},        // vrgather VI
                         {6'b001100, 3'b100}: begin  // vrgather VX
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VRGATHER;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_GATHER;
+                            mode_o.gather.scalar_rs1 = !(instr_i[14:12] == 3'b000);
+                            decode_metadata_o.operands[0].vreg = 1'b0; //This op is read directly in gather unit
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].vreg = instr_i[14:12] == 3'b000;
+                            decode_metadata_o.operands[1].r.xval = rs1_o.r.xval;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                        end
+                        {6'b001110, 3'b000}: begin  //vrgatherei16 vv
+                            unit_o             = UNIT_GATHER;
+                            mode_o.gather.scalar_rs1 = 1'b0;
+                            decode_metadata_o.operands[0].vreg = 1'b0; //This op is read directly in gather unit
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].sew = VSEW_16; //indexes with ei16
+                            decode_metadata_o.operands[1].r.xval = rs1_o.r.xval;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+
+
+                            //Configure OP1 based on lmul_i and vsew_i
+                            //Default settings are fine if vsew_i == VSEW_16
+                            case ({lmul_i, vsew_i})
+                                {LMUL_F8, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = MF4;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_F4, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = MF2;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_F2, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_1, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 2;
+                                end
+                                {LMUL_2, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 4;
+                                end
+                                {LMUL_4, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 8;
+                                end
+                                {LMUL_F4, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = MF8;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_F2, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = MF4;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_1, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = MF2;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_2, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_4, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 2;
+                                end
+                                {LMUL_8, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 4;
+                                end
+                            endcase
+
                         end
                         {6'b010111, 3'b010}: begin  // vcompress VV
                             unit_o             = UNIT_ELEM;

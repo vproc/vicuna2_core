@@ -74,7 +74,13 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         input  logic                                 xreg_ready_i,
         output logic    [XIF_ID_W              -1:0] xreg_id_o,
         output logic    [4:0]                        xreg_addr_o,
-        output logic    [31:0]                       xreg_data_o
+        output logic    [31:0]                       xreg_data_o,
+
+        output logic                                 vreg_rd_req_o,
+        input  logic                                 vreg_rd_gnt_i,
+        output [4:0]                                 vreg_rd_addr_o,
+        output [XIF_ID_W-1 : 0]                      vreg_rd_id_o,
+        input  [VREG_W-1:0]                          vreg_rd_data_i
     );
 
     // Ready signal
@@ -140,6 +146,13 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                 logic [4:0]          xreg_addr;
                 logic [31:0]         xreg_data;
 
+                //VREG Port related signals (for GATHER)
+                logic                vreg_rd_req;
+                logic                vreg_rd_gnt;
+                logic [XIF_ID_W-1:0] vreg_rd_id;
+                logic [4:0]          vreg_rd_addr;
+                logic [VREG_W-1:0]   vreg_rd_data;
+
                 vproc_unit_wrapper #(
                     .UNIT                      ( op_unit'(i)                ),
                     .XIF_ID_W                  ( XIF_ID_W                   ),
@@ -200,7 +213,13 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                     .xreg_ready_i              ( xreg_ready                 ),
                     .xreg_id_o                 ( xreg_id                    ),
                     .xreg_addr_o               ( xreg_addr                  ),
-                    .xreg_data_o               ( xreg_data                  )
+                    .xreg_data_o               ( xreg_data                  ),
+
+                    .vreg_rd_req_o              (vreg_rd_req),
+                    .vreg_rd_gnt_i              (vreg_rd_gnt),
+                    .vreg_rd_addr_o             (vreg_rd_addr),
+                    .vreg_rd_id_o               (vreg_rd_id),
+                    .vreg_rd_data_i             (vreg_rd_data)
                 );
 
                 if (op_unit'(i) == UNIT_LSU) begin
@@ -240,6 +259,14 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                     assign xreg_id_o    = xreg_id;
                     assign xreg_addr_o  = xreg_addr;
                     assign xreg_data_o  = xreg_data;
+                end
+
+                if (op_unit'(i) == UNIT_GATHER) begin
+                    assign vreg_rd_req_o    = vreg_rd_req;
+                    assign vreg_rd_gnt      = vreg_rd_gnt_i;
+                    assign vreg_rd_addr_o   = vreg_rd_addr;
+                    assign vreg_rd_id_o     = vreg_rd_id;
+                    assign vreg_rd_data     = vreg_rd_data_i;
                 end
             end
         end

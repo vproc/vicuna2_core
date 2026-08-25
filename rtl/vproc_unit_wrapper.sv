@@ -73,7 +73,13 @@ module vproc_unit_wrapper
     input  logic                              xreg_ready_i,
     output logic [XIF_ID_W              -1:0] xreg_id_o,
     output logic [                       4:0] xreg_addr_o,
-    output logic [                      31:0] xreg_data_o
+    output logic [                      31:0] xreg_data_o,
+
+    output logic                              vreg_rd_req_o,
+    input  logic                              vreg_rd_gnt_i,
+    output [4:0]                              vreg_rd_addr_o,
+    output [XIF_ID_W-1 : 0]                   vreg_rd_id_o,
+    input  [VREG_W-1:0]                       vreg_rd_data_i
 );
 
   generate
@@ -972,6 +978,66 @@ module vproc_unit_wrapper
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
+    end else if (UNIT == UNIT_GATHER) begin
+      CTRL_T                  unit_out_ctrl;
+      logic  [MAX_OP_W  -1:0] unit_out_res;
+      logic  [MAX_OP_W/8-1:0] unit_out_mask;
+
+      //For GATHER, only mask and op2 are required, synchronized inside of the functional unit
+
+      vproc_gather #(
+          .OP_W          (MAX_OP_W),
+          .METADATA_T        (CTRL_T),
+          .DONT_CARE_ZERO(DONT_CARE_ZERO)
+      ) vproc_gather (
+          .clk_i       (clk_i),
+          .async_rst_ni(async_rst_ni),
+          .sync_rst_ni (sync_rst_ni),
+
+          .pipe_in_valid_i(pipe_in_valid_i[1]),
+          .pipe_in_ready_o(pipe_in_ready_o[1]),
+          .pipe_in_ctrl_i (pipe_in_ctrl_i),
+          .pipe_in_op_i  (pipe_in_op_data_i[1]),
+          .pipe_in_mask_valid_i(pipe_in_mask_valid_i),
+          .pipe_in_mask_ready_o(pipe_in_mask_ready_o),
+          .pipe_in_mask_i (pipe_in_mask_data_i),
+
+          .vreg_rd_req_o(vreg_rd_req_o),
+          .vreg_rd_gnt_i(vreg_rd_gnt_i),
+          .vreg_rd_addr_o(vreg_rd_addr_o),
+          .vreg_rd_id_o(vreg_rd_id_o),
+          .vreg_rd_data_i(vreg_rd_data_i),
+
+          .pipe_out_valid_o(pipe_out_valid_o),
+          .pipe_out_ready_i(pipe_out_ready_i),
+          .pipe_out_ctrl_o (unit_out_ctrl),
+          .pipe_out_res_o  (unit_out_res),
+          .pipe_out_mask_o (unit_out_mask)
+      );
+      always_comb begin
+        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_eew_o                      = unit_out_ctrl.eew;
+        pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
+        pipe_out_res_store_o                = '0;
+        pipe_out_res_valid_o                = '0;
+        pipe_out_res_flags_o                = '{default: pack_flags'('0)};
+        pipe_out_res_data_o                 = '0;
+        pipe_out_res_mask_o                 = '0;
+        pipe_out_res_flags_o.shift          = 1'b1;
+        pipe_out_res_store_o                = unit_out_ctrl.res_store;
+        pipe_out_res_valid_o                = pipe_out_valid_o;
+        pipe_out_res_data_o                 = unit_out_res;
+        pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask[MAX_OP_W/8-1:0];
+        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
+        //Single cycle valid, so both first and last cycle are high
+        pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
+        pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
+        pipe_out_res_flags_o.dest_frac       = unit_out_ctrl.decode_metadata.dest_frac;
+        pipe_out_res_flags_o.shift_rate      = RES_ELEMWISE_WIDTH;
+      end
+      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
+      assign pipe_out_pend_clear_cnt_o = '0;
+      assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
     end else if (UNIT == UNIT_CUSTOM) begin
       CTRL_T                  unit_out_ctrl;

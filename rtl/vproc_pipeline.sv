@@ -221,6 +221,10 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
     logic                               unpack_out_mask_ready;
     logic              [MAX_OP_W/8-1:0] unpack_out_mask;
 
+    logic                vfu_vreg_rd_req;
+    logic                vfu_vreg_rd_gnt;
+    logic [XIF_ID_W-1:0] vfu_vreg_rd_id;
+    logic [4:0]          vfu_vreg_rd_addr;
 
   vproc_vregunpack #(
         .MAX_VPORT_W          ( MAX_VPORT_W                  ),
@@ -259,6 +263,11 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .vreg_rd_req_o              ( vreg_rd_req_o                ),
         .vreg_rd_v0_i               ( vreg_rd_v0_i                 ),
         .vreg_rd_id_o               ( vreg_rd_id_o                 ),
+
+        .vfu_vreg_rd_req_i          (vfu_vreg_rd_req               ),
+        .vfu_vreg_rd_gnt_o          (vfu_vreg_rd_gnt               ),
+        .vfu_vreg_rd_addr_i         (vfu_vreg_rd_addr              ),
+        .vfu_vreg_rd_id_i           (vfu_vreg_rd_id                ),
 
         .pipe_in_valid_i            ( pipe_in_valid_i              ),
         .pipe_in_ready_o            ( pipe_in_ready_o              ),
@@ -375,7 +384,13 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .xreg_ready_i              ( xreg_ready_i             ),
         .xreg_id_o                 ( xreg_id_o                ),
         .xreg_addr_o               ( xreg_addr_o              ),
-        .xreg_data_o               ( xreg_data_o              )
+        .xreg_data_o               ( xreg_data_o              ),
+        
+        .vreg_rd_req_o             (vfu_vreg_rd_req           ),
+        .vreg_rd_gnt_i             (vfu_vreg_rd_gnt           ),
+        .vreg_rd_addr_o            (vfu_vreg_rd_addr          ),
+        .vreg_rd_id_o              (vfu_vreg_rd_id            ),
+        .vreg_rd_data_i            (vreg_rd_data_i[0]         )
     );
 
     ////////////
