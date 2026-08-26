@@ -630,16 +630,16 @@ module vproc_decoder #(
                         // convert to strided load/store if the VLSU requires that the base address
                         // of unit-strided loads/stores is aligned to the width of the memory
                         // interface, but the base address in rs1 is not //TODO: Eliminate this
-                        if (ALIGNED_UNITSTRIDE & (x_rs1_i[$clog2(XIF_MEM_W/8)-1:0] != '0)) begin
-                            misaligned_ls = 1'b1;
-                            mode_o.lsu.stride = LSU_STRIDED;
-                            unique case (instr_i[14:12]) // width field
-                                3'b000: rs2_o.r.xval = 32'h1; // EEW 8
-                                3'b101: rs2_o.r.xval = 32'h2; // EEW 16
-                                3'b110: rs2_o.r.xval = 32'h4; // EEW 32
-                                default: ;
-                            endcase
-                        end
+                        // if (ALIGNED_UNITSTRIDE & (x_rs1_i[$clog2(XIF_MEM_W/8)-1:0] != '0)) begin
+                        //     misaligned_ls = 1'b1;
+                        //     mode_o.lsu.stride = LSU_STRIDED;
+                        //     unique case (instr_i[14:12]) // width field
+                        //         3'b000: rs2_o.r.xval = 32'h1; // EEW 8
+                        //         3'b101: rs2_o.r.xval = 32'h2; // EEW 16
+                        //         3'b110: rs2_o.r.xval = 32'h4; // EEW 32
+                        //         default: ;
+                        //     endcase
+                        // end
 
                         // lumop/sumop field
                         unique case (instr_i[24:20])
