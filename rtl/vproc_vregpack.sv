@@ -101,20 +101,14 @@ module vproc_vregpack #(
         end
     end
 
-    // In case of narrowing ops, check if last cycle has been signalled, but total number of shifts is not complete. 
-    // In this case, keep shifting until completion and fill rf be bits with 0
-    //TODO: this should be unnecessary with fractional register handling
-    logic narrowing;
-    assign narrowing = ctrl_q.last_cycle & !(ctrl_q.shifts_remaining == '0);
-
     // In case of ops which write a single element, bypass shifting logic and attempt write directly.
     logic single_element_res;
     assign single_element_res = pipe_in_res_flags_i[0].single_elem_res;
 
     always_comb begin
         ctrl_d = ctrl_q;
-        ctrl_d.valid = (pipe_in_valid_i | (ctrl_q.valid & !(vreg_wr_gnt_i | ctrl_q.store) | (ctrl_q.last_cycle & narrowing & !vreg_wr_gnt_i))) & !single_element_res & !pipe_in_res_flags_i[0].mask_res; //Hold valid signal if write port is blocked on last write
-        ctrl_d.last_cycle = ((pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store) | (ctrl_q.last_cycle & narrowing))) & !single_element_res;
+        ctrl_d.valid = (pipe_in_valid_i | (ctrl_q.valid & !(vreg_wr_gnt_i | ctrl_q.store))) & !single_element_res & !pipe_in_res_flags_i[0].mask_res; //Hold valid signal if write port is blocked on last write
+        ctrl_d.last_cycle = ((pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store))) & !single_element_res;
         ctrl_d.store = pipe_in_res_flags_i[0].store;
         if (pipe_in_valid_i & pipe_in_res_flags_i[0].first_cycle & !pipe_in_res_flags_i[0].mask_res ) begin
             if (!single_element_res) begin
@@ -163,7 +157,7 @@ module vproc_vregpack #(
                     end
                 endcase
             end
-        end else if (ctrl_q.valid | narrowing) begin
+        end else if (ctrl_q.valid) begin
             if (ctrl_q.shifts_remaining == '0) begin //Full register data ready to write
                 if (vreg_wr_gnt_i | ctrl_q.store) begin
                     ctrl_d.current_vreg = ctrl_q.current_vreg + 1;
@@ -208,7 +202,7 @@ module vproc_vregpack #(
                     endcase
                 end
             end else begin
-                ctrl_d.shifts_remaining = (pipe_in_valid_i | narrowing) ? ctrl_q.shifts_remaining-1 : ctrl_q.shifts_remaining;
+                ctrl_d.shifts_remaining = (pipe_in_valid_i) ? ctrl_q.shifts_remaining-1 : ctrl_q.shifts_remaining;
             end
         end else if (pipe_in_res_valid_i & pipe_in_res_flags_i[0].first_cycle & pipe_in_res_flags_i[0].mask_res) begin //If input is a mask  //TODO: Break this state machine out
                 unique case (pipe_in_eew_i) //Set starting write index, first write at idx has already occurred
@@ -252,7 +246,7 @@ module vproc_vregpack #(
             shift_reg_mask_result_q <= '0;
             shift_reg_mask_result_mask_q <= '0;
         end else begin
-            if (pipe_in_valid_i | narrowing) begin
+            if (pipe_in_valid_i) begin
                 shift_reg_q <= shift_reg_d;
                 shift_reg_mask_q <= shift_reg_mask_d;
                 shift_reg_mask_result_q <= shift_reg_mask_result_d;
@@ -270,7 +264,7 @@ module vproc_vregpack #(
     assign cur_frac = pipe_in_res_flags_i[0].first_cycle ? pipe_in_res_flags_i[0].dest_frac : ctrl_q.frac;
 
     always_comb begin
-        if ((pipe_in_valid_i | narrowing) & !pipe_in_res_flags_i[0].mask_res) begin //Continue shifting if narrowing op
+        if ((pipe_in_valid_i) & !pipe_in_res_flags_i[0].mask_res) begin
             if (!(ctrl_q.shifts_remaining == '0) || ( vreg_wr_gnt_i | ctrl_q.store ) || pipe_in_res_flags_i[0].first_cycle) begin
                 unique case ({cur_shift_mode, cur_sew})
                 {RES_FULL_WIDTH,VSEW_32},
@@ -500,7 +494,7 @@ module vproc_vregpack #(
     // register write port logic
     //////
     always_comb begin
-        vreg_wr_req_o = ((ctrl_q.shifts_remaining == '0) & ((ctrl_q.valid & !ctrl_q.store) | narrowing) | single_element_res) | ctrl_q.mask_complete;  //Only write on last cycle and when the instruction is valid
+        vreg_wr_req_o = ((ctrl_q.shifts_remaining == '0) & ((ctrl_q.valid & !ctrl_q.store)) | single_element_res) | ctrl_q.mask_complete;  //Only write on last cycle and when the instruction is valid
         vreg_wr_addr_o  = single_element_res ? pipe_in_vaddr_i : ctrl_q.current_vreg;
         vreg_wr_be_o    = ctrl_q.mask_complete ? shift_reg_mask_result_mask_q : single_element_res ? pipe_in_res_mask_i[0] : shift_reg_mask_q;
         vreg_wr_data_o  = ctrl_q.mask_complete ? shift_reg_mask_result_q : single_element_res ? pipe_in_res_data_i[0] : shift_reg_q;
@@ -517,7 +511,7 @@ module vproc_vregpack #(
     // Handshake logic with unit mux
     //////
     //Unit ready when writes are successful, not narrowing, and successful single element writes occur //TODO: Confirm stall condition for failed write is correct?
-    assign pipe_in_ready_o = !(!vreg_wr_gnt_i & vreg_wr_req_o) & !narrowing & !(single_element_res & !vreg_wr_gnt_i) & !(ctrl_q.mask_complete & !vreg_wr_gnt_i); //TODO: Allow single cycle "writes" to signal completion and not actually write back (xreg results)
+    assign pipe_in_ready_o = !(!vreg_wr_gnt_i & vreg_wr_req_o) & !(single_element_res & !vreg_wr_gnt_i) & !(ctrl_q.mask_complete & !vreg_wr_gnt_i); //TODO: Allow single cycle "writes" to signal completion and not actually write back (xreg results)
 
     // // width of the pending write vreg clear counter (choosen such that it can span up to 1/4 of the
     // // vector register addresses)

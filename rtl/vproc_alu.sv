@@ -159,7 +159,7 @@ module vproc_alu #(
                     result_mask_q <= result_mask_d;
                 end
             end
-            assign state_res_ready = ~state_res_valid_q | pipe_out_ready_i;
+            assign state_res_ready = ~state_res_valid_q | pipe_out_ready_i | flush_op3_d;
         end else begin
             always_comb begin
                 state_res_valid_q = state_ex2_valid_q;
@@ -657,7 +657,7 @@ module vproc_alu #(
 
     //Special condition for LMUL1 SEW32 to extend operation
     always_comb begin
-        lmul1_cond_d = lmul1_cond_q ? pipe_in_mask_valid_i : lmul1_cond_q;
+        lmul1_cond_d = lmul1_cond_q ? pipe_in_mask_valid_i & !pipe_in_ctrl_i.last_cycle : lmul1_cond_q;
         if (pipe_in_ctrl_i.mode.alu.cmp & pipe_in_valid_i & pipe_in_ctrl_i.first_cycle & (VLEN==128) & (pipe_in_ctrl_i.eew == VSEW_32) & (pipe_in_ctrl_i.emul == EMUL_1)) begin
             lmul1_cond_d = 1'b1; //only need if EMUL1 and SEW32
         end
