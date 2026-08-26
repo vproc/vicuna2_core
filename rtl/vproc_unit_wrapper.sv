@@ -471,6 +471,7 @@ module vproc_unit_wrapper
         pipe_out_res_flags_o.last_cycle     = xreg_valid_o;
         pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
+        pipe_out_res_flags_o.store          = 1'b1;  //All instructions in this unit do not write back to register file
       end
 
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
