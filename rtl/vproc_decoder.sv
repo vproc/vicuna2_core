@@ -2286,8 +2286,6 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_SEL : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
-                            
-                        
                         end
                         {6'b011000, 3'b000},        // vmseq VV
                         {6'b011000, 3'b011},        // vmseq VI
@@ -2800,7 +2798,7 @@ module vproc_decoder #(
                             decode_metadata_o.operands[1].sign = 1'b1;
                             decode_metadata_o.operands[0].sign = 1'b1;
                         end
-                        {6'b100111, 3'b011}: begin  // vmv<nr>r VI
+                        {6'b100111, 3'b011}: begin  // vmv<nr>r V
                             unit_o              = UNIT_ALU;
                             mode_o.alu.opx2.res = ALU_VSEL;
                             mode_o.alu.opx1.sel = ALU_SEL_MASK;
@@ -2810,23 +2808,45 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
-                            //Changes to control flow to improve performance.  Introduces timing anomalies
-                            //Need to now specific the actual vector length of these instructions, as they are now used to determine when to stop
                             evl_pol             = EVL_MAX;
                             emul_override       = 1'b1;
                             vl_override_o   = 1'b1;
                             unique case (instr_vs1)
                                 5'b00000: begin
                                             emul = EMUL_1;
+                                            decode_metadata_o.operands[0].regs = 1;
+                                            decode_metadata_o.operands[0].frac = FULL_REG;
+                                            decode_metadata_o.operands[1].regs = 1;
+                                            decode_metadata_o.operands[1].frac = FULL_REG;
+                                            decode_metadata_o.dest_frac = FULL_REG;
+                                            decode_metadata_o.dest_emul = EMUL_1;
                                           end
                                 5'b00001: begin
                                             emul = EMUL_2;
+                                            decode_metadata_o.operands[0].regs = 2;
+                                            decode_metadata_o.operands[0].frac = FULL_REG;
+                                            decode_metadata_o.operands[1].regs = 2;
+                                            decode_metadata_o.operands[1].frac = FULL_REG;
+                                            decode_metadata_o.dest_frac = FULL_REG;
+                                            decode_metadata_o.dest_emul = EMUL_2;
                                           end
                                 5'b00011: begin
                                             emul = EMUL_4;
+                                            decode_metadata_o.operands[0].regs = 4;
+                                            decode_metadata_o.operands[0].frac = FULL_REG;
+                                            decode_metadata_o.operands[1].regs = 2;
+                                            decode_metadata_o.operands[1].frac = FULL_REG;
+                                            decode_metadata_o.dest_frac = FULL_REG;
+                                            decode_metadata_o.dest_emul = EMUL_4;
                                           end
                                 5'b00111: begin
                                             emul = EMUL_8;
+                                            decode_metadata_o.operands[0].regs = 8;
+                                            decode_metadata_o.operands[0].frac = FULL_REG;
+                                            decode_metadata_o.operands[1].regs = 2;
+                                            decode_metadata_o.operands[1].frac = FULL_REG;
+                                            decode_metadata_o.dest_frac = FULL_REG;
+                                            decode_metadata_o.dest_emul = EMUL_8;
                                           end
                                 default: instr_illegal = 1'b1;
                             endcase
@@ -4628,9 +4648,6 @@ module vproc_decoder #(
                     default: ;
                 endcase
                 vl_o = vl_i;
-                
-                
-
             end else if (widenarrow_o == OP_WIDENING_EXT2) begin
                 // unlike other widening ops, for [s/z]ext.vf2, eew, emul, and vl are already set correctly     
                 vsew_o = vsew_i;
@@ -4645,8 +4662,6 @@ module vproc_decoder #(
                     default: ;
                 endcase
                 vl_o = vl_i;
-                
-                
              end else if (widenarrow_o == OP_WIDENING_EXT4) begin
                 // unlike other widening ops, for [s/z]ext.vf4, eew, emul, and vl are already set correctly     
                 vsew_o = vsew_i;
