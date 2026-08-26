@@ -180,7 +180,7 @@ module vproc_unit_wrapper
         // end
       end
       assign pipe_out_pend_clear_cnt_o = '0;
-      assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
+      assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle & pipe_out_valid_o;
 
     end else if (UNIT == UNIT_ALU) gen_alu_wrapper: begin
       CTRL_T                  unit_out_ctrl;
@@ -405,7 +405,7 @@ module vproc_unit_wrapper
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
-    end else if (UNIT == UNIT_XRESULT) gen_elem_wrapper: begin
+    end else if (UNIT == UNIT_XRESULT) gen_xresult_wrapper: begin
       CTRL_T                  unit_out_ctrl;
       // TODO: res and mask not connected to ELEM, but also not needed
       logic  [MAX_OP_W  -1:0] unit_out_res;
@@ -434,7 +434,7 @@ module vproc_unit_wrapper
           .CTRL_T        (CTRL_T),
           .XIF_ID_W      (XIF_ID_W),
           .DONT_CARE_ZERO(DONT_CARE_ZERO)
-      ) elem (
+      ) xresult (
           .clk_i                (clk_i),
           .async_rst_ni         (async_rst_ni),
           .sync_rst_ni          (sync_rst_ni),
