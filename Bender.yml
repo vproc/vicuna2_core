@@ -28,7 +28,8 @@ sources:
   - rtl/vproc_dispatcher.sv
   - rtl/vproc_div.sv
   - rtl/vproc_div_shift_clz.sv
-  - rtl/vproc_elem.sv
+  - rtl/vproc_xresult.sv
+  - rtl/vproc_index.sv
   - rtl/vproc_fpu.sv
   - rtl/vproc_lsu.sv
   - rtl/vproc_lsu_extension.sv

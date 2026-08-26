@@ -106,7 +106,7 @@ typedef enum logic [3:0] {
     UNIT_DIV,
     UNIT_FPU,
     UNIT_SLD,
-    UNIT_ELEM,
+    UNIT_XRESULT,
     UNIT_INDEX,
     UNIT_ZVBB,
     UNIT_ZVBC,

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
 
-module vproc_elem #(
+module vproc_xresult #(
     parameter int unsigned VLEN           = 128,    // Width in bits of vector registers
     parameter int unsigned XLEN           = 32,     // Width in bits of scalar registers
     parameter int unsigned OP_W           = 32,     // Operand width for vfirst.m
@@ -61,7 +61,7 @@ module vproc_elem #(
   logic [XLEN-1:0] xresult_d, xresult_q;
   logic last_cycle_d, last_cycle_q, last_cycle;
 
-  always_ff @(posedge clk_i or negedge async_rst_ni) begin : vproc_elem_stage_res_valid
+  always_ff @(posedge clk_i or negedge async_rst_ni) begin : vproc_xresult_stage_res_valid
     if (~async_rst_ni) begin
       state_res_valid_q <= 1'b0;
       state_res_q       <= '0;

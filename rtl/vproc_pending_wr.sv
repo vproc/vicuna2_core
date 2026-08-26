@@ -106,7 +106,7 @@ module vproc_pending_wr #(
                     pending_wr_o = rd_i.vreg ? (32'h1 << rd_i.addr) : 32'b0;
                 end
             end
-            UNIT_ELEM: begin
+            UNIT_XRESULT: begin
                 if (mode_i.elem.xreg) begin
                     pending_wr_o = '0;
                 end

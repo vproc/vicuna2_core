@@ -253,7 +253,7 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                     assign trans_complete_exc_o      = trans_complete_exc;
                     assign trans_complete_exccode_o  = trans_complete_exccode;
                 end
-                if (op_unit'(i) == UNIT_ELEM) begin
+                if (op_unit'(i) == UNIT_XRESULT) begin
                     assign xreg_valid_o = xreg_valid;
                     assign xreg_ready   = xreg_ready_i;
                     assign xreg_id_o    = xreg_id;

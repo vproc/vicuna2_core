@@ -15,7 +15,7 @@
 #  - VPROC_PIPELINES: Defines the vector pipelines. Each pipeline is defined by
 #    a string of the form "WIDTH:UNIT[,UNIT]*" where WIDTH is the width in bits
 #    of the pipeline's datapath and each occurence of UNIT selects one of the
-#    vector execution units (either VLSU, VALU, VMUL, VSLD, or VELEM).
+#    vector execution units (either VLSU, VALU, VMUL, VSLD, or VXRESULT).
 #  - VPROC_CONFIG: Sets default values for the other parameters (that can be
 #    individually overriden) depending on the desired number of vector
 #    pipelines (choose 1, 2, 3, or 5 pipelines by setting this variable to
@@ -28,38 +28,38 @@ ifeq ($(VPROC_CONFIG), compact)
   VPORT_POLICY    ?= some
   VMEM_W          ?= 32
   VREG_W          ?= $(VREG_W)
-  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VALU,VMUL,VSLD,VELEM
+  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VALU,VMUL,VSLD,VXRESULT
 else
 ifeq ($(VPROC_CONFIG), dual)
   VPORT_POLICY    ?= some
   VMEM_W          ?= 32
   VREG_W          ?= $(VREG_W)
-  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VALU,VELEM $(VLANE_W):VMUL,VSLD
+  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VALU,VXRESULT $(VLANE_W):VMUL,VSLD
 else
 ifeq ($(VPROC_CONFIG), dual-zve32x)
   VPORT_POLICY    ?= some
   VMEM_W          ?= 32
   VREG_W          ?= $(VREG_W)
-  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VELEM $(VLANE_W):VMUL,VSLD,VDIV,VALU
+  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VXRESULT $(VLANE_W):VMUL,VSLD,VDIV,VALU
 else
 ifeq ($(VPROC_CONFIG), dual-zve32f)
   VPORT_POLICY    ?= some
   VMEM_W          ?= 32
   VREG_W          ?= $(VREG_W)
-  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VELEM $(VLANE_W):VMUL,VALU,VSLD,VDIV,VFPU
+  VPROC_PIPELINES ?= $(VMEM_W):VLSU,VXRESULT $(VLANE_W):VMUL,VALU,VSLD,VDIV,VFPU
 else
 ifeq ($(VPROC_CONFIG), triple)
   VPORT_POLICY    ?= some
   VMEM_W          ?= 32
   VREG_W          ?= $(VREG_W)
-  VPROC_PIPELINES ?= $(VMEM_W):VLSU $(VPIPE_W_DFLT):VALU,VELEM $(VPIPE_W_VMUL):VMUL,VSLD
+  VPROC_PIPELINES ?= $(VMEM_W):VLSU $(VPIPE_W_DFLT):VALU,VXRESULT $(VPIPE_W_VMUL):VMUL,VSLD
 else
 ifeq ($(VPROC_CONFIG), legacy)
   VPORT_POLICY    ?= some
   VMEM_W          ?= 32
   VREG_W          ?= $(VREG_W)
   VPROC_PIPELINES ?= $(VMEM_W):VLSU $(VPIPE_W_DFLT):VALU $(VPIPE_W_VMUL):VMUL                     \
-                                    $(VPIPE_W_DFLT):VSLD 32:VELEM
+                                    $(VPIPE_W_DFLT):VSLD 32:VXRESULT
 else
 $(error Unknown vector coprocessor configuration $(VPROC_CONFIG))
 endif
@@ -116,7 +116,7 @@ $(VPROC_CONFIG_PKG):
 	    width=`echo $$pipe | cut -d ":" -f 1`;                                                    \
 	    unit_str=`echo $$pipe | cut -d ":" -f 2 | sed 's/,/, /g'`;                                \
 	    unit_mask=`echo $$pipe | cut -d ":" -f 2 | sed 's/,/ | /g' |                              \
-	               sed "s/V\(LSU\|ALU\|MUL\|SLD\|ELEM\|DIV\|FPU\|ZVBB\|ZVBC\|CUSTOM\|REDSUM\|INDEX\|GATHER\)/(UNIT_CNT'(1) << UNIT_\1)/g"`;  \
+	               sed "s/V\(LSU\|ALU\|MUL\|SLD\|XRESULT\|DIV\|FPU\|ZVBB\|ZVBC\|CUSTOM\|REDSUM\|INDEX\|GATHER\)/(UNIT_CNT'(1) << UNIT_\1)/g"`;  \
 	    vport_cnt=1;                                                                              \
 	    if echo "$$pipe" | grep -q "VMUL" && [ $$(($$width * 4)) -gt "$(VREG_W)" ]; then          \
 	        vport_cnt=2;                                                                          \

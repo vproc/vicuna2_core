@@ -134,7 +134,7 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_dispatcher.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_div.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_div_shift_clz.sv
-                    ${DESIGN_RTL_DIR_VICUNA}/vproc_elem.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_xresult.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_index.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_fpu.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_lsu.sv

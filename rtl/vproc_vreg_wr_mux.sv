@@ -152,7 +152,7 @@ module vproc_vreg_wr_mux import vproc_pkg::*; #(
     logic [PIPE_CNT-1:0][31:0] pipe_pend_vreg_wr_clr;
     generate
         for (genvar i = 0; i < PIPE_CNT; i++) begin
-            localparam bit VPORT_PEND_CLR_BULK = PIPE_UNITS[i][UNIT_ELEM] | PIPE_UNITS[i][UNIT_FPU];
+            localparam bit VPORT_PEND_CLR_BULK = PIPE_UNITS[i][UNIT_XRESULT] | PIPE_UNITS[i][UNIT_FPU];
 
             logic                        pend_clr;
             logic [PEND_CLEAR_CNT_W-1:0] pend_clr_cnt;

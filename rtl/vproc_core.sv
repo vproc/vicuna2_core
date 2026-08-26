@@ -374,7 +374,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     assign xif_issue_if.issue_ready          = dec_ready & ~issue_id_used & source_xreg_valid & !result_fifo_full_stall;
 
     assign xif_issue_if.issue_resp.accept    = dec_valid;
-    assign xif_issue_if.issue_resp.writeback = dec_valid & (((instr_unit == UNIT_ELEM) & instr_mode.elem.xreg) | (instr_unit == UNIT_CFG));
+    assign xif_issue_if.issue_resp.writeback = dec_valid & (((instr_unit == UNIT_XRESULT) & instr_mode.elem.xreg) | (instr_unit == UNIT_CFG));
     assign xif_issue_if.issue_resp.dualwrite = '0;
     assign xif_issue_if.issue_resp.dualread  = '0;
     assign xif_issue_if.issue_resp.loadstore = dec_valid & (instr_unit == UNIT_LSU);
@@ -1146,7 +1146,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 assign lsu_trans_complete_exc     = trans_complete_exc;
                 assign lsu_trans_complete_exccode = trans_complete_exccode;
             end
-            if (PIPE_UNITS[i][UNIT_ELEM]) begin
+            if (PIPE_UNITS[i][UNIT_XRESULT]) begin
                 assign elem_xreg_valid = xreg_valid;
                 assign xreg_ready      = elem_xreg_ready;
                 assign elem_xreg_id    = xreg_id;

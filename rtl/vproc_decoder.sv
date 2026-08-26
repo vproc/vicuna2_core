@@ -3824,7 +3824,7 @@ module vproc_decoder #(
                         end
 
                         {6'b010000, 3'b001}: begin  // VWFUNARY0
-                            unit_o = UNIT_ELEM;
+                            unit_o = UNIT_XRESULT;
                             unique case (instr_i[19:15])
                                 5'b00000: begin
                                             mode_o.elem.op = ELEM_XMV;    // vfmv.f.s
@@ -4155,7 +4155,7 @@ module vproc_decoder #(
 
                         end
                         {6'b010111, 3'b010}: begin  // vcompress VV
-                            unit_o             = UNIT_ELEM;
+                            unit_o             = UNIT_XRESULT;
                             mode_o.elem.op     = ELEM_VCOMPRESS;
                             mode_o.elem.xreg   = 1'b0;
                             mode_o.elem.masked = instr_masked;
@@ -4176,26 +4176,27 @@ module vproc_decoder #(
                             unit_o             = UNIT_REDSUM;
                             mode_o.reduction.op = OP_REDXOR;
                         end
+                        // TODO: these go into a new unit
                         {6'b000100, 3'b010}: begin  // vredminu VV
-                            unit_o             = UNIT_ELEM;
+                            unit_o             = UNIT_XRESULT;
                             mode_o.elem.op     = ELEM_VREDMINU;
                             mode_o.elem.xreg   = 1'b0;
                             mode_o.elem.masked = instr_masked;
                         end
                         {6'b000101, 3'b010}: begin  // vredmin VV
-                            unit_o             = UNIT_ELEM;
+                            unit_o             = UNIT_XRESULT;
                             mode_o.elem.op     = ELEM_VREDMIN;
                             mode_o.elem.xreg   = 1'b0;
                             mode_o.elem.masked = instr_masked;
                         end
                         {6'b000110, 3'b010}: begin  // vredmaxu VV
-                            unit_o             = UNIT_ELEM;
+                            unit_o             = UNIT_XRESULT;
                             mode_o.elem.op     = ELEM_VREDMAXU;
                             mode_o.elem.xreg   = 1'b0;
                             mode_o.elem.masked = instr_masked;
                         end
                         {6'b000111, 3'b010}: begin  // vredmax VV
-                            unit_o             = UNIT_ELEM;
+                            unit_o             = UNIT_XRESULT;
                             mode_o.elem.op     = ELEM_VREDMAX;
                             mode_o.elem.xreg   = 1'b0;
                             mode_o.elem.masked = instr_masked;
@@ -4302,7 +4303,7 @@ module vproc_decoder #(
 
                         // Unary arithmetic:
                         {6'b010000, 3'b010}: begin  // VWXUNARY0
-                            unit_o = UNIT_ELEM;
+                            unit_o = UNIT_XRESULT;
                             unique case (instr_i[19:15])
                                 5'b00000: begin // vmv.x.s
                                     mode_o.elem.op = ELEM_XMV;
@@ -4825,7 +4826,7 @@ module vproc_decoder #(
             vd_invalid  = 1'b0;
         end
 
-        if (unit_o == UNIT_ELEM) begin
+        if (unit_o == UNIT_XRESULT) begin
             unique case (mode_o.elem.op)
                 ELEM_VREDSUM,
                 ELEM_VREDAND,

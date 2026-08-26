@@ -405,7 +405,7 @@ module vproc_unit_wrapper
       assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
-    end else if (UNIT == UNIT_ELEM) gen_elem_wrapper: begin
+    end else if (UNIT == UNIT_XRESULT) gen_elem_wrapper: begin
       CTRL_T                  unit_out_ctrl;
       // TODO: res and mask not connected to ELEM, but also not needed
       logic  [MAX_OP_W  -1:0] unit_out_res;
@@ -427,7 +427,7 @@ module vproc_unit_wrapper
       end
       // Mask is just ready when the rest is ready
       assign pipe_in_mask_ready_o = unit_ready_in_o & unit_in_valid_i;
-      vproc_elem #(
+      vproc_xresult #(
           .VLEN          (VREG_W),
           .XLEN          (32),
           .OP_W          (MAX_OP_W),
