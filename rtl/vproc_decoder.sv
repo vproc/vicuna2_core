@@ -2834,7 +2834,7 @@ module vproc_decoder #(
                                             emul = EMUL_4;
                                             decode_metadata_o.operands[0].regs = 4;
                                             decode_metadata_o.operands[0].frac = FULL_REG;
-                                            decode_metadata_o.operands[1].regs = 2;
+                                            decode_metadata_o.operands[1].regs = 4;
                                             decode_metadata_o.operands[1].frac = FULL_REG;
                                             decode_metadata_o.dest_frac = FULL_REG;
                                             decode_metadata_o.dest_emul = EMUL_4;
@@ -2843,7 +2843,7 @@ module vproc_decoder #(
                                             emul = EMUL_8;
                                             decode_metadata_o.operands[0].regs = 8;
                                             decode_metadata_o.operands[0].frac = FULL_REG;
-                                            decode_metadata_o.operands[1].regs = 2;
+                                            decode_metadata_o.operands[1].regs = 8;
                                             decode_metadata_o.operands[1].frac = FULL_REG;
                                             decode_metadata_o.dest_frac = FULL_REG;
                                             decode_metadata_o.dest_emul = EMUL_8;
