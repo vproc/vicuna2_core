@@ -266,11 +266,25 @@ module vproc_mul #(
         accumulator2_d = DONT_CARE_ZERO ? '0 : 'x;
         unique case (state_ex1_q.mode.mul.op)
             MUL_VSMUL: begin
-                unique case (state_ex1_q.eew)
-                    VSEW_8:  accumulator2_d = {MUL_OP_W/32{32'h40404040}};
-                    VSEW_16: accumulator2_d = {MUL_OP_W/32{32'h40004000}};
-                    VSEW_32: accumulator2_d = {MUL_OP_W/32{32'h40000000}};
-                    default: ;
+                unique case (state_ex1_q.vxrm)
+                    VXRM_RNU: begin
+                        unique case (state_ex1_q.eew)
+                            VSEW_8:  accumulator2_d = {MUL_OP_W/32{32'h40404040}};
+                            VSEW_16: accumulator2_d = {MUL_OP_W/32{32'h40004000}};
+                            VSEW_32: accumulator2_d = {MUL_OP_W/32{32'h40000000}};
+                            default: ;
+                        endcase
+                    end
+                    VXRM_RNE,
+                    VXRM_RDN,
+                    VXRM_ROD:  begin
+                        unique case (state_ex1_q.eew)
+                            VSEW_8:  accumulator2_d = {MUL_OP_W/32{32'h00000000}};
+                            VSEW_16: accumulator2_d = {MUL_OP_W/32{32'h00000000}};
+                            VSEW_32: accumulator2_d = {MUL_OP_W/32{32'h00000000}};
+                            default: ;
+                        endcase
+                    end
                 endcase
             end
             MUL_VMACC: accumulator2_d = accumulator1_q;
@@ -371,6 +385,27 @@ module vproc_mul #(
         end
     end
 
+    // Apply rounding bits for RNE mode before checking for overflow
+    logic [(MUL_OP_W/8)*9-1:0] mul_res_rounded;
+    always_comb begin
+        mul_res_rounded = '0;
+        unique case (state_ex3_q.eew)
+            VSEW_8 : begin
+                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                    mul_res_rounded[9*i +: 9 ] = mul_res[33*i+7  +: 9 ] + (mul_res[33*i + 6] && (|mul_res[33*i +: 6] | mul_res[33*i + 7]));
+            end
+            VSEW_16 : begin
+                for (int i = 0; i < (MUL_OP_W / 16); i++)
+                    mul_res_rounded[17*i +: 17] = mul_res[66*i+15 +: 17] + (mul_res[66*i + 14] && (|mul_res[66*i +: 14]) | mul_res[66*i + 15]);
+            end
+            VSEW_32 : begin
+                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                    mul_res_rounded[33*i +: 33] = res32  [64*i+31 +: 33] + (res32[64*i + 30] && (|res32[64*i +: 30] | res32[64*i + 31]));
+            end
+            default;
+        endcase
+    end
+
     // compose result
     always_comb begin
         result_d = DONT_CARE_ZERO ? '0 : 'x;
@@ -415,20 +450,56 @@ module vproc_mul #(
                 endcase
             end
 
-            // multiplication with rounding and saturation
+            // multiplication with rounding and saturation //TODO: Currently not connected to the vxsat csr value
             MUL_VSMUL: begin
                 unique case (state_ex3_q.eew)
                     VSEW_8: begin
-                        for (int i = 0; i < (MUL_OP_W / 8 ); i++)
-                            result_d[8 *i +: 8 ] = (mul_res[33*i+15] ^ mul_res[33*i+14]) ?  8'h7f       : mul_res[33*i+7  +: 8 ];
+                        unique case (state_ex3_q.vxrm)
+                            VXRM_RNE : begin
+                                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                                    result_d[8 *i +: 8 ] = (mul_res_rounded[9*i+8] ^ mul_res_rounded[9*i+7]) ?  8'h7f       : mul_res_rounded[9*i  +: 8 ];
+                            end
+                            VXRM_ROD : begin
+                                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                                    result_d[8 *i +: 8 ] = (mul_res[33*i+15] ^ mul_res[33*i+14]) ?  8'h7f       : mul_res[33*i+7  +: 8 ] + (!mul_res[33*i + 7] & |mul_res[33*i +: 7]);
+                        end
+                            default: begin
+                                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                                    result_d[8 *i +: 8 ] = (mul_res[33*i+15] ^ mul_res[33*i+14]) ?  8'h7f       : mul_res[33*i+7  +: 8 ];
+                        end
+                        endcase
                     end
                     VSEW_16: begin
-                        for (int i = 0; i < (MUL_OP_W / 16); i++)
-                            result_d[16*i +: 16] = (mul_res[66*i+31] ^ mul_res[66*i+30]) ? 16'h7fff     : mul_res[66*i+15 +: 16];
+                        unique case (state_ex3_q.vxrm)
+                            VXRM_RNE : begin
+                                for (int i = 0; i < (MUL_OP_W / 16); i++)
+                                    result_d[16*i +: 16] = (mul_res_rounded[17*i+16] ^ mul_res_rounded[17*i+15]) ? 16'h7fff     : mul_res_rounded[17*i  +: 16 ];
+                            end
+                            VXRM_ROD : begin
+                                for (int i = 0; i < (MUL_OP_W / 16); i++)
+                                    result_d[16*i +: 16] = (mul_res[66*i+31] ^ mul_res[66*i+30]) ? 16'h7fff     : mul_res[66*i+15 +: 16] + (!mul_res[66*i + 15] & |mul_res[66*i +: 15]);
+                            end
+                            default: begin
+                                for (int i = 0; i < (MUL_OP_W / 16); i++)
+                                    result_d[16*i +: 16] = (mul_res[66*i+31] ^ mul_res[66*i+30]) ? 16'h7fff     : mul_res[66*i+15 +: 16];
+                            end
+                        endcase
                     end
                     VSEW_32: begin
-                        for (int i = 0; i < (MUL_OP_W / 32); i++)
-                            result_d[32*i +: 32] = (res32  [64*i+63] ^ res32  [64*i+62]) ? 32'h7fffffff : res32  [64*i+31 +: 32];
+                        unique case (state_ex3_q.vxrm)
+                            VXRM_RNE : begin
+                                    for (int i = 0; i < (MUL_OP_W / 32); i++)
+                                        result_d[32*i +: 32] = (mul_res_rounded  [33*i+32] ^ mul_res_rounded  [33*i+31]) ? 32'h7fffffff : mul_res_rounded[33*i  +: 32 ];
+                                end
+                            VXRM_ROD : begin
+                                    for (int i = 0; i < (MUL_OP_W / 32); i++)
+                                        result_d[32*i +: 32] = (res32  [64*i+63] ^ res32  [64*i+62]) ? 32'h7fffffff : res32  [64*i+31 +: 32] + (!res32[64*i + 31] & |res32[64*i +: 31]);
+                                end
+                            default: begin
+                                    for (int i = 0; i < (MUL_OP_W / 32); i++)
+                                        result_d[32*i +: 32] = (res32  [64*i+63] ^ res32  [64*i+62]) ? 32'h7fffffff : res32  [64*i+31 +: 32];
+                            end
+                        endcase
                     end
                     default: ;
                 endcase
