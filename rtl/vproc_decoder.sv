@@ -4175,10 +4175,27 @@ module vproc_decoder #(
 
                         end
                         {6'b010111, 3'b010}: begin  // vcompress VV
-                            unit_o             = UNIT_XRESULT;
+                            unit_o             = UNIT_ELEM;
                             mode_o.elem.op     = ELEM_VCOMPRESS;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            // mode_o.elem.xreg   = 1'b0;
+                            // mode_o.elem.masked = instr_masked;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].xreg = 1'b0;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            // decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            // decode_metadata_o.operands[2].regs = 1;
+                            // vs2 and vd are element-wise
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate = SHIFT_ELEMWISE;
+                            rd_o.shift_rate = SHIFT_ELEMWISE;
                         end
                         {6'b000000, 3'b010}: begin  // vredsum VV
                             unit_o             = UNIT_REDSUM;       //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand

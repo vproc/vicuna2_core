@@ -223,6 +223,8 @@ module vproc_index #(
           end
 
           ELEM_VIOTA: begin
+            // TODO: maybe needs to be ANDed with pipe_out_ready_i
+            // (most instances of all_valid_i)
             if (all_valid_i) begin
               if (last_cycle_i) begin
                 viota_sum_d = '0;

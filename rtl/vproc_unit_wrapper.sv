@@ -548,6 +548,61 @@ module vproc_unit_wrapper
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
+    end else if (UNIT == UNIT_ELEM) gen_elem_wrapper: begin
+      CTRL_T                  unit_out_ctrl;
+      logic  [MAX_OP_W  -1:0] unit_out_res;
+      logic  [MAX_OP_W/8-1:0] unit_out_mask;
+      logic unit_first_cycle;
+      assign pipe_in_mask_ready_o = unit_mask_ready_o & pipe_in_mask_valid_i;
+      vproc_elem #(
+          .VLEN          (VREG_W),
+          .XLEN          (32),
+          .OP_W          (MAX_OP_W),
+          .CTRL_T        (CTRL_T),
+          .XIF_ID_W      (XIF_ID_W),
+          .DONT_CARE_ZERO(DONT_CARE_ZERO)
+      ) elem (
+          .clk_i                 (clk_i),
+          .async_rst_ni          (async_rst_ni),
+          .sync_rst_ni           (sync_rst_ni),
+          .pipe_in_valid_i       (pipe_in_valid_i),
+          .pipe_in_mask_valid_i  (pipe_in_mask_valid_i),
+          .pipe_out_ready_i      (pipe_out_ready_i),
+          .pipe_in_ctrl_i        (pipe_in_ctrl_i),
+          .pipe_in_op1_i         (pipe_in_op_data_i[0]),
+          .pipe_in_op2_i         (pipe_in_op_data_i[1]),
+          .pipe_in_op3_i         (pipe_in_op_data_i[2]),
+          .pipe_in_mask_i        (pipe_in_mask_data_i),
+          .pipe_in_ready_o       (pipe_in_ready_o),
+          .pipe_out_valid_o      (pipe_out_valid_o),
+          .pipe_in_mask_ready_o  (unit_mask_ready_o),
+          .pipe_out_ctrl_o       (unit_out_ctrl),
+          .pipe_out_res_o        (unit_out_res),
+          .pipe_out_mask_o       (unit_out_mask),
+          .pipe_out_first_cycle_o(unit_first_cycle)
+      );
+
+      always_comb begin
+        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_eew_o                      = unit_out_ctrl.eew;
+        pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
+        pipe_out_res_store_o                = '0;
+        pipe_out_res_flags_o                = '{default: pack_flags'('0)};
+        pipe_out_res_flags_o.shift          = 1'b1;
+        pipe_out_res_valid_o                = pipe_out_valid_o;
+        pipe_out_res_data_o                 = unit_out_res;
+        pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
+        pipe_out_res_flags_o.first_cycle    = unit_first_cycle;
+        pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
+        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
+        pipe_out_res_flags_o.shift_rate     = RES_ELEMWISE_WIDTH;
+      end
+
+      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
+      assign pipe_out_pend_clear_cnt_o = '0;
+      assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
+
     end else if (UNIT == UNIT_DIV) begin
       CTRL_T                  unit_out_ctrl;
       logic  [MAX_OP_W  -1:0] unit_out_res;
