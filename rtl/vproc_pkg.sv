@@ -188,6 +188,7 @@ typedef enum logic [1:0] {
 
 typedef struct packed {
     logic           cmp;        // compare instruction (result is a mask)
+    logic       msk_cmp;        // compare when all operands and result are masks
     union packed {
         opcode_alu_sel   sel;
         opcode_alu_shift shift;
@@ -203,7 +204,7 @@ typedef struct packed {
     logic           sat_res;    // saturate result for narrowing operations
     logic           sigext;
 `ifdef VPROC_OP_MODE_UNION
-    logic [4:0] unused;
+    logic [3:0] unused;
 `endif
 } op_mode_alu;
 

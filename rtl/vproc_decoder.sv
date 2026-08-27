@@ -68,6 +68,8 @@ module vproc_decoder #(
 
     logic misaligned_ls /* verilator public */;
 
+    logic override_vl; //allow for overriding vl without broadcasting/clearing vl0 signal
+
     logic op_custom_valid;
     `ifdef VECTOR_CUSTOM
     vproc_pkg::op_mode       custom_mode;
@@ -140,6 +142,7 @@ module vproc_decoder #(
         widenarrow_o  = OP_SINGLEWIDTH;
 
         vl_override_o = 1'b0;
+        override_vl = 1'b0;
 
         `ifdef RISCV_ZVE32F
 
@@ -2189,6 +2192,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011001, 3'b010}: begin  // vmand VV
                             emul_override       = 1'b1;
@@ -2201,6 +2236,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011010, 3'b010}: begin  // vmor VV
                             emul_override       = 1'b1;
@@ -2213,6 +2280,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011011, 3'b010}: begin  // vmxor VV
                             emul_override       = 1'b1;
@@ -2225,6 +2324,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011100, 3'b010}: begin  // vmornot VV
                             emul_override       = 1'b1;
@@ -2237,6 +2368,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011101, 3'b010}: begin  // vmnand VV
                             emul_override       = 1'b1;
@@ -2249,6 +2412,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011110, 3'b010}: begin  // vmnor VV
                             emul_override       = 1'b1;
@@ -2261,6 +2456,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011111, 3'b010}: begin  // vmxnor VV
                             emul_override       = 1'b1;
@@ -2273,6 +2500,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b010111, 3'b000},        // vmv/vmerge VV
                         {6'b010111, 3'b011},        // vmv/vmerge VI
@@ -4722,7 +4981,7 @@ module vproc_decoder #(
         if (emul_override) begin
             emul_o = emul;
         end
-        if (vl_override_o) begin
+        if (vl_override_o | override_vl) begin
             vl_o = vl;
         end
 

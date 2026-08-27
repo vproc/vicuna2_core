@@ -287,8 +287,10 @@ module vproc_alu #(
         processed_vl_d = processed_vl_q;
         if (pipe_in_valid_i & pipe_in_ctrl_i.first_cycle) begin
             processed_vl_d = '0;
-        end else if (pipe_in_valid_i & pipe_in_ready_o) begin
+        end else if (pipe_in_valid_i & pipe_in_ready_o & !state_ex2_q.mode.alu.msk_cmp) begin
             processed_vl_d = processed_vl_q + ALU_OP_W/8;
+        end else if (state_ex2_valid_q & state_ex2_ready & state_ex2_q.mode.alu.msk_cmp) begin
+            processed_vl_d = processed_vl_q + ALU_OP_W; //mask op treats every bit as an element and processes them in stage ex2
         end
     end
 
@@ -312,7 +314,7 @@ module vproc_alu #(
         end
     endgenerate
     // result byte mask
-    assign result_mask_d = operand_mask_tmp_q;
+    assign result_mask_d = state_ex2_q.mode.alu.msk_cmp ? '1 : operand_mask_tmp_q; //Write full mask (undisturbed operation handled in here)
 
     assign pipe_out_valid_o   = state_res_valid_q;
     assign pipe_out_ctrl_o    = state_res_q;
@@ -575,9 +577,36 @@ module vproc_alu #(
                 end
             end
 
-            ALU_VAND:   result_alu_d = operand2_tmp_q & operand1_tmp_q;
-            ALU_VOR:    result_alu_d = operand2_tmp_q | operand1_tmp_q;
-            ALU_VXOR:   result_alu_d = operand2_tmp_q ^ operand1_tmp_q;
+            ALU_VAND:   begin
+                result_alu_d = operand2_tmp_q & operand1_tmp_q;
+                if (state_ex2_q.mode.alu.msk_cmp) begin
+                    for (int i = 0; i < ALU_OP_W; i++) begin
+                        if ((i + processed_vl_q > state_ex2_q.vl) | state_ex2_q.vl_0) begin //if outside of vl, pull from destination register for tail undisturbed
+                            result_alu_d[i] = dest_reg_q[i];
+                        end
+                    end
+                end
+            end
+            ALU_VOR:    begin
+                result_alu_d = operand2_tmp_q | operand1_tmp_q;
+                if (state_ex2_q.mode.alu.msk_cmp) begin
+                    for (int i = 0; i < ALU_OP_W; i++) begin
+                        if ((i + processed_vl_q > state_ex2_q.vl) | state_ex2_q.vl_0) begin //if outside of vl, pull from destination register for tail undisturbed
+                            result_alu_d[i] = dest_reg_q[i];
+                        end
+                    end
+                end
+            end
+            ALU_VXOR:   begin
+                result_alu_d = operand2_tmp_q ^ operand1_tmp_q;
+                if (state_ex2_q.mode.alu.msk_cmp) begin
+                    for (int i = 0; i < ALU_OP_W; i++) begin
+                        if ((i + processed_vl_q > state_ex2_q.vl) | state_ex2_q.vl_0) begin //if outside of vl, pull from destination register for tail undisturbed
+                            result_alu_d[i] = dest_reg_q[i];
+                        end
+                    end
+                end
+            end
             ALU_VSHIFT: result_alu_d = shift_res_q;
 
             // select either one of the operands based on the register `cmp_q',
@@ -630,13 +659,15 @@ module vproc_alu #(
     always_comb begin
         dest_reg_d = dest_reg_q;
         counter_d = counter_q;
-        if (((counter_q == '0) | pipe_in_ctrl_i.first_cycle) & (pipe_in_ready_o & pipe_in_valid_i & pipe_in_mask_valid_i & pipe_in_mask_ready_o & pipe_in_op3_ready_o & pipe_in_op3_valid_i)) begin  //latch new data on first cycle or when counter == 0 and all inputs are ready
+        if ((((counter_q == '0) | pipe_in_ctrl_i.first_cycle) & (pipe_in_ready_o & pipe_in_valid_i & pipe_in_mask_valid_i & pipe_in_mask_ready_o & pipe_in_op3_ready_o & pipe_in_op3_valid_i)) | (pipe_in_ctrl_i.mode.alu.msk_cmp & state_ex2_valid_q & state_ex2_ready)) begin  //latch new data on first cycle or when counter == 0 and all inputs are ready
             dest_reg_d = pipe_in_op3_i;
-            unique case(pipe_in_ctrl_i.eew)                      //could setting this on input SEW cause issues?
-                VSEW_32: counter_d  = 32 -1;                     //Set counter value.  SEW==# cycles to consume ALU_OP_W bits
-                VSEW_16: counter_d  = 16 -1;
-                VSEW_8:  counter_d  = 8  -1;
-            endcase
+            if (!pipe_in_ctrl_i.mode.alu.msk_cmp) begin
+                unique case(pipe_in_ctrl_i.eew)                      //could setting this on input SEW cause issues?
+                    VSEW_32: counter_d  = 32 -1;                     //Set counter value.  SEW==# cycles to consume ALU_OP_W bits, only necessary when input ops arent masks
+                    VSEW_16: counter_d  = 16 -1;
+                    VSEW_8:  counter_d  = 8  -1;
+                endcase
+            end
         end else if (state_ex2_valid_q & state_ex2_ready) begin  //shift based on SEW when bits consumed (in ex2)
             unique case(state_ex2_q.eew)                         //Using first stage buffer
                 VSEW_32: dest_reg_d = {{(ALU_OP_W/32){1'b0}}, dest_reg_d[ALU_OP_W-1:ALU_OP_W/32]};
@@ -663,7 +694,7 @@ module vproc_alu #(
         end
     end
 
-    assign pipe_in_op3_ready_o = flush_op3_q | (pipe_in_ready_o & pipe_in_valid_i & pipe_in_mask_valid_i & pipe_in_mask_ready_o & pipe_in_op3_valid_i & ((counter_q == '0) | pipe_in_ctrl_i.first_cycle));  //Ready when all other args ready, and held until data in unpack cleared
+    assign pipe_in_op3_ready_o = flush_op3_q | ((pipe_in_ready_o & pipe_in_valid_i & pipe_in_mask_valid_i & pipe_in_mask_ready_o & pipe_in_op3_valid_i & ((counter_q == '0) | pipe_in_ctrl_i.first_cycle)) & !pipe_in_ctrl_i.mode.alu.msk_cmp) | (pipe_in_ctrl_i.mode.alu.msk_cmp & (state_ex2_valid_q & state_ex2_ready) | pipe_in_ctrl_i.first_cycle) ;  //Ready when all other args ready, and held until data in unpack cleared
 
     //To handle case when VLEN==128, SEW32, EMUL_1, need to write 4 more bits to the destination register.  Mask register configured to continue to be valid for additional cycles
 
