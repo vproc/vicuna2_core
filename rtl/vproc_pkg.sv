@@ -119,7 +119,7 @@ typedef enum logic [3:0] {
 } op_unit;
 
 // The number of different types of execution units (excludes pseudo-units)
-parameter int unsigned UNIT_CNT = 12;
+parameter int unsigned UNIT_CNT = 14;
 
 typedef enum logic [1:0] {
     COUNT_INC_1 = 2'b00,
