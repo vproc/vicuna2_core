@@ -162,16 +162,12 @@ module vproc_unit_wrapper
         end
         // for(int j = 0; j < MEM_PORTS; j++) begin //TODO: This loop is no longer valid
         //     if(unit_out_valid[j]) begin
-        pipe_out_res_store_o                = unit_out_ctrl.res_store;
         pipe_out_res_data_o                 = unit_out_res;
         pipe_out_res_valid_o                = unit_out_valid[0];
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
-        pipe_out_res_flags_o.shift          = unit_out_ctrl.res_shift;
         pipe_out_res_flags_o.elemwise       = unit_out_ctrl.mode.lsu.stride != LSU_UNITSTRIDE;
-        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         pipe_out_res_flags_o.lsu_instr      = 1;
         pipe_out_res_flags_o.store          = unit_out_ctrl.mode.lsu.store;
-        pipe_out_res_flags_o.field_instr    = unit_out_ctrl.field_init_count > 0;
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
@@ -242,8 +238,6 @@ module vproc_unit_wrapper
         pipe_out_res_data_o = '0;
         pipe_out_res_mask_o = '0;
 
-        pipe_out_res_store_o                 = unit_out_ctrl.res_store & ~unit_out_ctrl.mode.alu.cmp; //TODO: Not using this signal
-        pipe_out_res_flags_o.shift = unit_out_ctrl.res_shift;
         pipe_out_res_flags_o.narrow = unit_out_ctrl.res_narrow[0];
         pipe_out_res_flags_o.narrow_frac = unit_out_ctrl.res_narrow_frac;
         pipe_out_res_flags_o.saturate = unit_out_ctrl.mode.alu.sat_res;
@@ -254,7 +248,6 @@ module vproc_unit_wrapper
         pipe_out_res_flags_o.last_cycle = unit_out_ctrl.last_cycle;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
-        pipe_out_res_flags_o.vreg_idx = unit_out_ctrl.vreg_idx;
 
         if (unit_out_ctrl.res_narrow[0]) begin
           pipe_out_res_flags_o.shift_rate = RES_NARROW_WIDTH;
@@ -290,7 +283,6 @@ module vproc_unit_wrapper
         end
 
       end
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.mode.alu.cmp ? unit_out_ctrl.last_cycle : unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o = unit_out_ctrl.last_cycle;
     end else if (UNIT == UNIT_MUL) gen_mul_wrapper: begin
@@ -346,16 +338,13 @@ module vproc_unit_wrapper
         pipe_out_res_data_o                 = '0;
         pipe_out_res_mask_o                 = '0;
         pipe_out_res_flags_o.shift          = 1'b1;
-        pipe_out_res_store_o                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o                = pipe_out_valid_o;
         pipe_out_res_data_o                 = unit_out_res;
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
-        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
       end
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
     end else if (UNIT == UNIT_SLD) begin
@@ -393,16 +382,13 @@ module vproc_unit_wrapper
         pipe_out_res_flags_o                = '{default: pack_flags'('0)};
         pipe_out_res_data_o                 = '0;
         pipe_out_res_mask_o                 = '0;
-        pipe_out_res_store_o                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o                = pipe_out_valid_o;
         pipe_out_res_data_o                 = unit_out_res;
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
-        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
     end else if (UNIT == UNIT_XRESULT) gen_xresult_wrapper: begin
@@ -463,18 +449,15 @@ module vproc_unit_wrapper
         pipe_out_res_data_o                 = '0;
         pipe_out_res_mask_o                 = '0;
         pipe_out_res_flags_o.shift          = 1'b1;
-        pipe_out_res_store_o                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o                = pipe_out_valid_o;
         pipe_out_res_data_o                 = unit_out_res;
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
         pipe_out_res_flags_o.first_cycle    = xreg_valid_o;
         pipe_out_res_flags_o.last_cycle     = xreg_valid_o;
-        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
         pipe_out_res_flags_o.store          = 1'b1;  //All instructions in this unit do not write back to register file
       end
 
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
@@ -534,17 +517,14 @@ module vproc_unit_wrapper
         // pipe_out_res_data_o                 = '0;
         // pipe_out_res_mask_o                 = '0;
         pipe_out_res_flags_o.shift          = 1'b1;
-        // pipe_out_res_store_o                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o                = pipe_out_valid_o;
         pipe_out_res_data_o                 = unit_out_res;
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
-        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
 
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
@@ -594,12 +574,10 @@ module vproc_unit_wrapper
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask;
         pipe_out_res_flags_o.first_cycle    = unit_first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
-        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
         pipe_out_res_flags_o.shift_rate     = RES_ELEMWISE_WIDTH;
       end
 
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
@@ -648,20 +626,16 @@ module vproc_unit_wrapper
           pipe_out_res_flags_o = '{default: pack_flags'('0)};
           pipe_out_res_data_o  = '0;
           pipe_out_res_mask_o  = '0;
-          pipe_out_res_flags_o.shift           = unit_out_ctrl.res_shift;
           pipe_out_res_flags_o.shift_rate      = RES_ELEMWISE_WIDTH;
           pipe_out_res_flags_o.elemwise        = 1'b1;
-          pipe_out_res_store_o                 = unit_out_ctrl.res_store;
           pipe_out_res_valid_o                 = pipe_out_valid_o;
           pipe_out_res_data_o                  = unit_out_res;
           pipe_out_res_mask_o[MAX_OP_W/8-1:0]  = unit_out_mask;
-          pipe_out_res_flags_o.vreg_idx        = unit_out_ctrl.vreg_idx;
           pipe_out_res_flags_o.first_cycle     = unit_out_ctrl.first_cycle;
           pipe_out_res_flags_o.last_cycle      = unit_out_ctrl.last_cycle;
           pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
 
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
     end else if (UNIT == UNIT_FPU) begin
@@ -854,7 +828,6 @@ module vproc_unit_wrapper
           pipe_out_instr_done_o     = (~flushing_q & unit_out_ctrl.last_cycle & ~unit_out_ctrl.requires_flush ) | flushing_last_cycle;
           pipe_out_pend_clear_o     = (~flushing_q & unit_out_ctrl.last_cycle & ~unit_out_ctrl.requires_flush ) | flushing_last_cycle;
           pipe_out_pend_clear_cnt_o = flushing_emul_q; // TODO reductions always have destination EMUL == 1
-          pipe_out_res_flags_o[0].vreg_idx = unit_out_ctrl.vreg_idx;
 
 
         end else begin
@@ -868,15 +841,12 @@ module vproc_unit_wrapper
           pipe_out_res_data_o                    = '0;
           pipe_out_res_mask_o                    = '0;
           pipe_out_res_flags_o[0].shift          = 1'b1;
-          pipe_out_res_store_o[0]                = unit_out_ctrl.res_store;
           pipe_out_res_valid_o[0]                = unit_out_valid;
           pipe_out_res_data_o[0]                 = unit_out_res;
           pipe_out_res_mask_o[0][MAX_OP_W/8-1:0] = unit_out_mask;
-          pipe_out_pend_clear_o                  = unit_out_ctrl.res_store;
           pipe_out_pend_clear_cnt_o              = '0;
           pipe_out_instr_done_o                  = unit_out_ctrl.last_cycle;
           pipe_out_res_flags_o[0].elemwise       = 1'b0;
-          pipe_out_res_flags_o[0].vreg_idx       = unit_out_ctrl.vreg_idx;
 
 
         end
@@ -915,13 +885,10 @@ module vproc_unit_wrapper
         pipe_out_res_data_o                    = '0;
         pipe_out_res_mask_o                    = '0;
         pipe_out_res_flags_o[0].shift          = 1'b1;
-        pipe_out_res_store_o[0]                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o[0]                = pipe_out_valid_o;
         pipe_out_res_data_o[0]                 = unit_out_res;
         pipe_out_res_mask_o[0][MAX_OP_W/8-1:0] = unit_out_mask;
-        pipe_out_res_flags_o[0].vreg_idx       = unit_out_ctrl.vreg_idx;
       end
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
     end else if (UNIT == UNIT_ZVBC) begin
@@ -958,13 +925,10 @@ module vproc_unit_wrapper
         pipe_out_res_data_o                    = '0;
         pipe_out_res_mask_o                    = '0;
         pipe_out_res_flags_o[0].shift          = 1'b1;
-        pipe_out_res_store_o[0]                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o[0]                = pipe_out_valid_o;
         pipe_out_res_data_o[0]                 = unit_out_res;
         pipe_out_res_mask_o[0][MAX_OP_W/8-1:0] = unit_out_mask;
-        pipe_out_res_flags_o[0].vreg_idx       = unit_out_ctrl.vreg_idx;
       end
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
     end else if (UNIT == UNIT_REDSUM) begin
@@ -1019,18 +983,15 @@ module vproc_unit_wrapper
         pipe_out_res_data_o                 = '0;
         pipe_out_res_mask_o                 = '0;
         pipe_out_res_flags_o.shift          = 1'b1;
-        pipe_out_res_store_o                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o                = pipe_out_valid_o;
         pipe_out_res_data_o                 = unit_out_res;
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask[MAX_OP_W/8-1:0];
-        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         //Single cycle valid, so both first and last cycle are high
         pipe_out_res_flags_o.first_cycle    = pipe_out_valid_o;
         pipe_out_res_flags_o.last_cycle     = pipe_out_valid_o;
         pipe_out_res_flags_o.single_elem_res = pipe_out_valid_o;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
       end
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
@@ -1080,18 +1041,15 @@ module vproc_unit_wrapper
         pipe_out_res_data_o                 = '0;
         pipe_out_res_mask_o                 = '0;
         pipe_out_res_flags_o.shift          = 1'b1;
-        pipe_out_res_store_o                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o                = pipe_out_valid_o;
         pipe_out_res_data_o                 = unit_out_res;
         pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask[MAX_OP_W/8-1:0];
-        pipe_out_res_flags_o.vreg_idx       = unit_out_ctrl.vreg_idx;
         //Single cycle valid, so both first and last cycle are high
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
         pipe_out_res_flags_o.dest_frac       = unit_out_ctrl.decode_metadata.dest_frac;
         pipe_out_res_flags_o.shift_rate      = RES_ELEMWISE_WIDTH;
       end
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
@@ -1130,13 +1088,10 @@ module vproc_unit_wrapper
         pipe_out_res_data_o                    = '0;
         pipe_out_res_mask_o                    = '0;
         pipe_out_res_flags_o[0].shift          = 1'b1;
-        pipe_out_res_store_o[0]                = unit_out_ctrl.res_store;
         pipe_out_res_valid_o[0]                = pipe_out_valid_o;
         pipe_out_res_data_o[0]                 = unit_out_res;
         pipe_out_res_mask_o[0][MAX_OP_W/8-1:0] = unit_out_mask;
-        pipe_out_res_flags_o[0].vreg_idx       = unit_out_ctrl.vreg_idx;
       end
-      assign pipe_out_pend_clear_o     = unit_out_ctrl.res_store;
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
     end

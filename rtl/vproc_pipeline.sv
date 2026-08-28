@@ -125,47 +125,23 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
     typedef struct packed {
         logic                            first_cycle;
         logic                            last_cycle;
-        logic                            masked; //TODO: get assignment for this from issue
-        logic                            alt_last_cycle;
-        logic                            init_addr;      // initialize address (used by LSU)
-        logic                            requires_flush;
+
         logic        [XIF_ID_W     -1:0] id;
         op_unit                          unit;
         op_mode                          mode;
         cfg_vsew                         eew;            // effective element width
         cfg_emul                         emul;           // effective MUL factor
         cfg_vxrm                         vxrm;
-        logic        [CFG_VL_W     -1:0] vl;        // why twice?
-        logic        [CFG_VL_W       :0] vlmax;     // why twice
+        logic        [CFG_VL_W     -1:0] vl;
+        logic        [CFG_VL_W       :0] vlmax;
         logic                            vl_0;
-        logic        [32/8-1:0]          vl_part;
-        logic                            vl_part_0;
-        logic                     [31:0] xval;  //Why twice?
-        unpack_flags [OP_CNT -1:0]       op_flags;
-        logic        [OP_CNT -1:0]       op_load;
-        logic        [OP_CNT -1:0][4 :0] op_init_vaddr;
-        logic        [OP_CNT -1:0][4 :0] op_vaddr;
+
         logic        [OP_CNT -1:0][31:0] op_xval; //Why twice?  This is the better one
-        logic        [RES_CNT-1:0]       res_vreg;
+
         logic        [RES_CNT-1:0]       res_narrow;
-        logic                     [4 :0] res_init_vaddr;
         logic                            res_narrow_frac;
         logic                     [4 :0] res_vaddr;
         logic                     [31:0] pend_vreg_wr;   // pending vector register writes
-
-
-        //All signals below here are very likely deprecated
-        logic                      [2:0] field_counter;    // field counter (for segment loads/stores)    //TODO: Revisit this
-        logic                      [2:0] field_init_count;    // field counter (for segment loads/stores) //TODO: Revisit this
-        logic [MEM_PORTS-1:0][$clog2(MEM_W/8)-1:0] mem_req_vl_part; //TODO: Revisit this
-        logic [MEM_PORTS-1:0]          mem_req_vl_part_0; //TODO: Revisit this
-        logic [MEM_PORTS-1:0]          mem_req_valid; //TODO: Revisit this
-        logic                          last_vl_part;
-        logic                          res_store;
-        logic                          res_shift;
-        logic                          vreg_idx;
-        logic                          count_mul;
-        logic                          field_done;
 
         decode_metadata                decode_metadata; //All above relevant signals should be absorbed into this one and passed from decode
 
@@ -176,35 +152,25 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
     always_comb begin
         metadata_i.first_cycle             = 1'b1; // These should be set in vregunpack
         metadata_i.last_cycle              = 1'b1; // These should be set in vregunpack
-        metadata_i.init_addr               = 1'b1;
-        metadata_i.masked                  = pipe_in_state_i.masked;
-        metadata_i.requires_flush          = pipe_in_state_i.requires_flush;
+
         metadata_i.id                      = pipe_in_state_i.id;
         metadata_i.mode                    = pipe_in_state_i.mode;
 
         metadata_i.eew                     = pipe_in_state_i.eew;
         metadata_i.unit                    = pipe_in_state_i.unit;
-        
+
         metadata_i.emul                    = pipe_in_state_i.emul;
         metadata_i.vxrm                    = pipe_in_state_i.vxrm;
         metadata_i.vl                      = pipe_in_state_i.vl;
         metadata_i.vlmax                   = pipe_in_state_i.vlmax;
         metadata_i.vl_0                    = pipe_in_state_i.vl_0;
-        metadata_i.vl_part                 = '1;  //TODO: Remove this, handle with mask
-        metadata_i.vl_part_0               = '0;  //TODO: Remove this, handle with mask
-        metadata_i.xval                    = pipe_in_state_i.xval;//
-        metadata_i.op_flags                = pipe_in_state_i.op_flags;
-        metadata_i.op_init_vaddr           = pipe_in_state_i.op_vaddr;
-        metadata_i.op_vaddr                = pipe_in_state_i.op_vaddr;
-        metadata_i.op_xval                 = pipe_in_state_i.op_xval;//
-        metadata_i.res_vreg                = pipe_in_state_i.res_vreg;
+
+        metadata_i.op_xval                 = pipe_in_state_i.op_xval;        //TODO: Something uses these values instead of values from decode_metadata
+
         metadata_i.res_narrow              = pipe_in_state_i.res_narrow;
-        metadata_i.res_init_vaddr          = pipe_in_state_i.res_vaddr;
         metadata_i.res_narrow_frac         = pipe_in_state_i.res_narrow_frac;
         metadata_i.res_vaddr               = pipe_in_state_i.res_vaddr;
-        metadata_i.field_counter           = '0; //set to 0 for not segment instructions
-        metadata_i.field_init_count        = '0; //set to 0 for non segment instructions
-        metadata_i.mem_req_valid           = pipe_in_state_i.unit == UNIT_LSU; //This signal should not be necessary
+
         metadata_i.decode_metadata         = pipe_in_state_i.decode_metadata; //TODO: This should be the only struct passed
     end
 
@@ -273,11 +239,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .pipe_in_ready_o            ( pipe_in_ready_o              ),
         .pipe_in_ctrl_i             ( metadata_i                   ),
         .pipe_in_unit_i             ( metadata_i.unit              ), //TODO: Passing metadata already, all other not necessary
-        .pipe_in_alt_eew_i          ( metadata_i.mode.lsu.alt_eew  ),
         .pipe_in_eew_i              ( metadata_i.eew               ),
-        .pipe_in_op_load_i          ( metadata_i.op_load           ),
-        .pipe_in_op_vaddr_i         ( metadata_i.op_vaddr          ),
-        .pipe_in_op_flags_i         ( metadata_i.op_flags          ),
         .pipe_in_op_xval_i          ( metadata_i.op_xval           ),
         .pend_wr_map_i              ( vreg_pend_wr_i               ),
         .pend_wr_clear_i            ( pend_wr_clear_i              ),

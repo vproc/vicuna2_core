@@ -570,11 +570,9 @@ module vproc_vregunpack
         output logic                                     pipe_in_ready_o,
         input  METADATA_T                                pipe_in_ctrl_i,       // pipeline control sigs TODO: Most signals below this one should be absorbed into this struct
         input  vproc_pkg::op_unit                        pipe_in_unit_i,
-        input  vproc_pkg::cfg_vsew                       pipe_in_alt_eew_i,
         input  vproc_pkg::cfg_vsew                       pipe_in_eew_i,        // current element width
         input  logic   [VPORT_CNT-1:0]                   pipe_in_op_load_i,    // load signals of ops
         input  logic   [VPORT_CNT-1:0][MAX_VADDR_W-1:0]  pipe_in_op_vaddr_i,   // vreg addresses of ops
-        input  FLAGS_T [VPORT_CNT-1:0]                   pipe_in_op_flags_i,   // unpack flags of ops
         input  logic   [1:0][31           :0]            pipe_in_op_xval_i,    // X reg values for ops, only 2 of these
         input  logic   [MEM_PORTS-1:0]                   pipe_in_mem_req_valid_i,
         input  logic   [MEM_PORTS-1:0][2:0]              pipe_in_field_counter_i,
@@ -662,17 +660,14 @@ module vproc_vregunpack
         op_unit                                  unit; //Most of these should already be present inside of metadata_t
         cfg_vsew                                 eew;
         cfg_emul                                 emul;
-        cfg_vsew                                 alt_eew;
         logic   [MEM_PORTS-1:0]                  mem_req_valid;
         logic   [MEM_PORTS-1:0][2:0]             field_counter;
         logic   [VPORT_CNT-1:0]                  op_load;
         logic   [VPORT_CNT-1:0][MAX_VADDR_W-1:0] op_vaddr;
-        FLAGS_T [VPORT_CNT-1:0]                  op_flags;
         logic   [2-1:0][31           :0]         op_xval; //Maximum 2 of these.  TODO: PARAMETERIZE
         logic   [VPORT_CNT-1:0][MAX_VPORT_W-1:0] op_buffer;
         logic   [VPORT_CNT-1:0][MAX_OP_W   -1:0] op_data;
         logic   [31:0]                           pend_wr_map;
-        logic                                    masked;
     } vregunpack_state_t;
 
     vregunpack_state_t metadata_d, metadata_q;
@@ -691,17 +686,14 @@ module vproc_vregunpack
         if (state_q == READY) begin
             metadata_d.ctrl     = pipe_in_ctrl_i;
             metadata_d.unit     = pipe_in_unit_i;
-            metadata_d.alt_eew  = pipe_in_alt_eew_i;
             metadata_d.eew      = pipe_in_eew_i;
             metadata_d.emul     = pipe_in_ctrl_i.emul;
             metadata_d.op_load  = pipe_in_op_load_i;
             metadata_d.op_vaddr = pipe_in_op_vaddr_i;
-            metadata_d.op_flags = pipe_in_op_flags_i;
             metadata_d.op_xval  = pipe_in_ctrl_i.op_xval;
             metadata_d.mem_req_valid = pipe_in_mem_req_valid_i;
             metadata_d.field_counter = pipe_in_field_counter_i;
             metadata_d.pend_wr_map = pend_wr_map_i & (~pend_wr_clear_i); //in case a pending write is cleared this cycle
-            metadata_d.masked = pipe_in_ctrl_i.masked;
         end
     end
 
