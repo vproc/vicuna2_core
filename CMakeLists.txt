@@ -139,7 +139,6 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_elem.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_fpu.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_lsu.sv
-                    ${DESIGN_RTL_DIR_VICUNA}/vproc_lsu_extension.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul_block.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_zvbb.sv
