@@ -114,12 +114,13 @@ typedef enum logic [3:0] {
     UNIT_REDSUM,
     UNIT_GATHER,
     UNIT_CUSTOM, //Used for arbitrary custom functional units
+    UNIT_REDMINMAX,
     // pseudo-units (used for instructions that require no unit):
     UNIT_CFG
 } op_unit;
 
 // The number of different types of execution units (excludes pseudo-units)
-parameter int unsigned UNIT_CNT = 14;
+parameter int unsigned UNIT_CNT = 15;
 
 typedef enum logic [1:0] {
     COUNT_INC_1 = 2'b00,
