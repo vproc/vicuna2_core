@@ -4472,30 +4472,21 @@ module vproc_decoder #(
                             unit_o             = UNIT_REDSUM;
                             mode_o.reduction.op = OP_REDXOR;
                         end
-                        // TODO: these go into a new unit
                         {6'b000100, 3'b010}: begin  // vredminu VV
-                            unit_o             = UNIT_XRESULT;
-                            mode_o.elem.op     = ELEM_VREDMINU;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o              = UNIT_REDMINMAX;
+                            mode_o.reduction.op = OP_REDMINU;
                         end
                         {6'b000101, 3'b010}: begin  // vredmin VV
-                            unit_o             = UNIT_XRESULT;
-                            mode_o.elem.op     = ELEM_VREDMIN;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o              = UNIT_REDMINMAX;
+                            mode_o.reduction.op = OP_REDMIN;
                         end
                         {6'b000110, 3'b010}: begin  // vredmaxu VV
-                            unit_o             = UNIT_XRESULT;
-                            mode_o.elem.op     = ELEM_VREDMAXU;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o              = UNIT_REDMINMAX;
+                            mode_o.reduction.op = OP_REDMAXU;
                         end
                         {6'b000111, 3'b010}: begin  // vredmax VV
-                            unit_o             = UNIT_XRESULT;
-                            mode_o.elem.op     = ELEM_VREDMAX;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o              = UNIT_REDMINMAX;
+                            mode_o.reduction.op = OP_REDMAX;
                         end
                         {6'b110000, 3'b000}: begin  // vwredsumu VV
                             unit_o             = UNIT_REDSUM; //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand

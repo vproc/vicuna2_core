@@ -26,11 +26,50 @@ module vproc_vredminmax import vproc_pkg::*; #(
         output logic [OP_W/8-1:0]       pipe_out_mask_o
     );
 
-    //Stub: elaborates and occupies the unit slot, produces no results yet
-    assign pipe_in_ready_o  = 1'b1;
-    assign pipe_out_valid_o = 1'b0;
-    assign pipe_out_ctrl_o  = '0;
+    //STUB: correct handshake, wrong arithmetic. Result is always zero.
+    //Accepts every operand chunk, then completes once after last_cycle.
+
+    //Buffer for pipeline metadata (mirrors vproc_vredsum)
+    CTRL_T ctrl_d, ctrl_q;
+    always_comb begin
+        ctrl_d = pipe_in_ctrl_i;
+        if (!pipe_in_ctrl_i.first_cycle) begin
+            //This instruction only writes a single vreg: hold the first cycle's address
+            ctrl_d.res_vaddr = ctrl_q.res_vaddr;
+        end
+    end
+    always_ff @(posedge clk_i) begin
+        if (pipe_in_valid_i & pipe_in_ready_o) begin
+            ctrl_q <= ctrl_d;
+        end
+    end
+
+    //One result per instruction, raised after the final operand chunk
+    logic complete_q;
+    always_ff @(posedge clk_i) begin
+        if (!sync_rst_ni) begin
+            complete_q <= 1'b0;
+        end else if (pipe_in_valid_i & pipe_in_ready_o & pipe_in_ctrl_i.last_cycle) begin
+            complete_q <= 1'b1;
+        end else if (complete_q & pipe_out_ready_i) begin
+            complete_q <= 1'b0;
+        end
+    end
+
+    assign pipe_in_ready_o  = ~complete_q;
+    assign pipe_out_valid_o = complete_q;
+    assign pipe_out_ctrl_o  = ctrl_q;
     assign pipe_out_res_o   = '0;
-    assign pipe_out_mask_o  = '0;
+
+    //Single element result, width follows SEW (mirrors vproc_vredsum)
+    always_comb begin
+        pipe_out_mask_o = '0;
+        unique case (ctrl_q.eew)
+            VSEW_32: pipe_out_mask_o[3:0] = !ctrl_q.vl_0 ? 4'b1111 : 4'b0000;
+            VSEW_16: pipe_out_mask_o[1:0] = !ctrl_q.vl_0 ? 2'b11 : 2'b00;
+            VSEW_8:  pipe_out_mask_o[0]   = !ctrl_q.vl_0 ? 1'b1 : 1'b0;
+            default: pipe_out_mask_o = '0;
+        endcase
+    end
 
 endmodule

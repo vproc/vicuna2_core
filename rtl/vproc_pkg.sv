@@ -397,16 +397,21 @@ typedef struct packed {
     logic [15:0] unused;
 } op_mode_zvbc;
 
-typedef enum logic [1:0] { 
-    OP_REDSUM = 2'b00,
-    OP_REDAND = 2'b01,
-    OP_REDOR  = 2'b10,
-    OP_REDXOR = 2'b11
+typedef enum logic [2:0] { 
+    OP_REDSUM  = 3'b000,
+    OP_REDAND  = 3'b001,
+    OP_REDOR   = 3'b010,
+    OP_REDXOR  = 3'b011,
+    // op[2] = min/max, op[1] = max over min, op[0] = signed over unsigned
+    OP_REDMINU = 3'b100,
+    OP_REDMIN  = 3'b101,
+    OP_REDMAXU = 3'b110,
+    OP_REDMAX  = 3'b111
 } opcode_reduction;
 
 typedef struct packed {
     opcode_reduction op; 
-    logic [15:0] unused;
+    logic [14:0] unused;
 } op_mode_reduction;
 
 typedef struct packed { //Meant to be reinterpreted by the custom functional unit and the custom decoder
