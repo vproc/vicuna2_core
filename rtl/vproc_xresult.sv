@@ -124,7 +124,15 @@ module vproc_xresult #(
   assign elem_ctrl_d.counter = (first_cycle_i ? '0 : elem_ctrl_q.counter) + counter_inc;
   assign elem_ctrl_d.vl = first_cycle_i ? (vl_0_i ? '0 : vl_i + 1) : elem_ctrl_q.vl;
   logic [$clog2(VLEN):0] vl;
-  assign vl = first_cycle_i ? (vl_0_i ? '0 : vl_i + 1) : elem_ctrl_q.vl;
+
+  always_comb begin
+      unique case(pipe_in_ctrl_i.eew) //vl given in bytes, need to scale to elements
+        VSEW_8: vl = first_cycle_i ? (vl_0_i ? '0 : vl_i + 1) : elem_ctrl_q.vl;
+        VSEW_16: vl = first_cycle_i ? (vl_0_i ? '0 : (vl_i + 1) >> 1) : elem_ctrl_q.vl >> 1;
+        VSEW_32: vl = first_cycle_i ? (vl_0_i ? '0 : (vl_i + 1) >> 2) : elem_ctrl_q.vl >> 2;
+        default : vl = '0;
+      endcase
+  end
 
   // Instantiate leading zero counter (pulp) for vfirst.m
   logic [OP_W - 1 : 0] lzc_input;
