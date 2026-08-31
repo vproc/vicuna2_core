@@ -269,7 +269,7 @@ module vproc_alu #(
         end
     end
 
-    assign pipe_in_ready_o   = state_ex1_ready;
+    assign pipe_in_ready_o   = state_ex1_ready & pipe_in_mask_valid_i;
     assign state_ex1_valid_d = pipe_in_valid_i | lmul1_cond_q; //need to hold valid in this condition
     assign state_ex1_d       = pipe_in_ctrl_i;
 
