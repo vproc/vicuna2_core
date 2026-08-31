@@ -136,7 +136,7 @@ module vproc_mem_port #(
     ///////////
 
     assign obi_bus.req = !req_queue_full & valid_q; //TODO: Suppress requests if past end of vl or completely masked off
-    assign obi_bus.addr = req_addr_q;
+    assign obi_bus.addr = |mask_q ? req_addr_q : '0;               //TODO: For above, adjust this line.  Currently set to force a valid address if masked out access is attempted
     assign obi_bus.we   = store_q;
     assign obi_bus.be   = mask_q;
     assign obi_bus.wdata = data_q;
