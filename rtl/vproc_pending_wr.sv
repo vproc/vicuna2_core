@@ -67,7 +67,7 @@ module vproc_pending_wr #(
                         default: ;
                     endcase
                 end
-            end else if (unit_i == UNIT_REDSUM) begin  //TODO: Other reductions should go here
+            end else if (unit_i == UNIT_REDSUM || unit_i == UNIT_REDMINMAX) begin
                 pend_vd = rd_i.vreg ? (32'h00000001 <<  rd_i.addr              ) : 32'b0;
             end else begin
                 unique case ({emul_i, widenarrow_i == OP_NARROWING})
