@@ -760,21 +760,33 @@ module vproc_decoder #(
                                                 emul = EMUL_1;
                                                 vl = (VREG_W/8)-1;
                                                 decode_metadata_o.dest_emul = EMUL_1;
+                                                decode_metadata_o.operands[1].frac = FULL_REG;
+                                                decode_metadata_o.dest_frac        = FULL_REG;
+                                                decode_metadata_o.operands[1].regs = 1;
                                             end
                                     3'b001: begin
                                                 emul = EMUL_2;
                                                 vl = (2*VREG_W/8)-1;
                                                 decode_metadata_o.dest_emul = EMUL_2;
+                                                decode_metadata_o.operands[1].frac = FULL_REG;
+                                                decode_metadata_o.dest_frac        = FULL_REG;
+                                                decode_metadata_o.operands[1].regs = 2;
                                             end
                                     3'b011: begin
                                                 emul = EMUL_4;
                                                 vl = (4*VREG_W/8)-1;
                                                 decode_metadata_o.dest_emul = EMUL_4;
+                                                decode_metadata_o.operands[1].frac = FULL_REG;
+                                                decode_metadata_o.dest_frac        = FULL_REG;
+                                                decode_metadata_o.operands[1].regs = 4;
                                             end
                                     3'b111: begin
                                                 emul = EMUL_8;
                                                 vl = (8*VREG_W/8)-1;
                                                 decode_metadata_o.dest_emul = EMUL_8;
+                                                decode_metadata_o.operands[1].frac = FULL_REG;
+                                                decode_metadata_o.dest_frac        = FULL_REG;
+                                                decode_metadata_o.operands[1].regs = 8;
                                             end
                                     default: instr_illegal = 1'b1;
                                 endcase
