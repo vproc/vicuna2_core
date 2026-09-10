@@ -114,12 +114,13 @@ typedef enum logic [3:0] {
     UNIT_REDSUM,
     UNIT_GATHER,
     UNIT_CUSTOM, //Used for arbitrary custom functional units
+    UNIT_REDMINMAX,
     // pseudo-units (used for instructions that require no unit):
     UNIT_CFG
 } op_unit;
 
 // The number of different types of execution units (excludes pseudo-units)
-parameter int unsigned UNIT_CNT = 14;
+parameter int unsigned UNIT_CNT = 15;
 
 typedef enum logic [1:0] {
     COUNT_INC_1 = 2'b00,
@@ -397,16 +398,28 @@ typedef struct packed {
 } op_mode_zvbc;
 
 typedef enum logic [1:0] { 
-    OP_REDSUM = 2'b00,
-    OP_REDAND = 2'b01,
-    OP_REDOR  = 2'b10,
-    OP_REDXOR = 2'b11
+    OP_REDSUM  = 2'b00,
+    OP_REDAND  = 2'b01,
+    OP_REDOR   = 2'b10,
+    OP_REDXOR  = 2'b11
 } opcode_reduction;
 
 typedef struct packed {
     opcode_reduction op; 
     logic [15:0] unused;
 } op_mode_reduction;
+
+typedef enum logic [1:0] { 
+    OP_REDMINU = 2'b00,
+    OP_REDMIN  = 2'b01,
+    OP_REDMAXU = 2'b10,
+    OP_REDMAX  = 2'b11
+} opcode_minmax;
+
+typedef struct packed {
+    opcode_minmax op; 
+    logic [15:0] unused;
+} op_mode_minmax;
 
 typedef struct packed { //Meant to be reinterpreted by the custom functional unit and the custom decoder
     logic [17:0] unused;
@@ -435,6 +448,7 @@ typedef struct packed {
     op_mode_zvbc zvbc;
     op_mode_custom custom;
     op_mode_reduction reduction;
+    op_mode_minmax minmax;
     op_mode_gather gather;
 } op_mode;
 

@@ -995,6 +995,70 @@ module vproc_unit_wrapper
       assign pipe_out_pend_clear_cnt_o = '0;
       assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
 
+    end else if (UNIT == UNIT_REDMINMAX) begin
+      CTRL_T                  unit_out_ctrl;
+      logic  [MAX_OP_W  -1:0] unit_out_res;
+      logic  [MAX_OP_W/8-1:0] unit_out_mask;
+
+      //For REDMINMAX, only signal ready when all necessary operands are valid
+      logic  [    OP_CNT-1:0] necessary_ops;
+      for (genvar i = 0; i < OP_CNT; i++) begin
+        assign necessary_ops[i] = pipe_in_ctrl_i.decode_metadata.operands[i].xreg || pipe_in_ctrl_i.decode_metadata.operands[i].vreg;
+      end
+
+      logic unit_in_valid_i;
+      assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & (|pipe_in_valid_i | pipe_in_mask_valid_i); //Input valid only if all necessary ops are valid (including mask)
+
+      logic unit_ready_in_o;
+      for (genvar i = 0; i < OP_CNT; i++) begin
+        assign pipe_in_ready_o[i] = unit_ready_in_o & unit_in_valid_i; //Unit ready only if all necessary ops are valid
+      end
+      assign pipe_in_mask_ready_o = unit_ready_in_o & unit_in_valid_i; //Mask ready synchronized with other arguments
+
+      vproc_vredminmax #(
+          .OP_W          (MAX_OP_W),
+          .CTRL_T        (CTRL_T),
+          .DONT_CARE_ZERO(DONT_CARE_ZERO)
+      ) vproc_redminmax (
+          .clk_i       (clk_i),
+          .async_rst_ni(async_rst_ni),
+          .sync_rst_ni (sync_rst_ni),
+
+          .pipe_in_valid_i(unit_in_valid_i),
+          .pipe_in_ready_o(unit_ready_in_o),
+          .pipe_in_ctrl_i (pipe_in_ctrl_i),
+          .pipe_in_op1_i  (pipe_in_op_data_i[1]),
+          .pipe_in_op2_i  (pipe_in_op_data_i[0]),
+          .pipe_in_mask_i (pipe_in_mask_data_i),
+
+          .pipe_out_valid_o(pipe_out_valid_o),
+          .pipe_out_ready_i(pipe_out_ready_i),
+          .pipe_out_ctrl_o (unit_out_ctrl),
+          .pipe_out_res_o  (unit_out_res),
+          .pipe_out_mask_o (unit_out_mask)
+      );
+      always_comb begin
+        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_eew_o                      = unit_out_ctrl.eew;
+        pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
+        pipe_out_res_store_o                = '0;
+        pipe_out_res_valid_o                = '0;
+        pipe_out_res_flags_o                = '{default: pack_flags'('0)};
+        pipe_out_res_data_o                 = '0;
+        pipe_out_res_mask_o                 = '0;
+        pipe_out_res_flags_o.shift          = 1'b1;
+        pipe_out_res_valid_o                = pipe_out_valid_o;
+        pipe_out_res_data_o                 = unit_out_res;
+        pipe_out_res_mask_o[MAX_OP_W/8-1:0] = unit_out_mask[MAX_OP_W/8-1:0];
+        //Single cycle valid, so both first and last cycle are high
+        pipe_out_res_flags_o.first_cycle    = pipe_out_valid_o;
+        pipe_out_res_flags_o.last_cycle     = pipe_out_valid_o;
+        pipe_out_res_flags_o.single_elem_res = pipe_out_valid_o;
+        pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
+      end
+      assign pipe_out_pend_clear_cnt_o = '0;
+      assign pipe_out_instr_done_o     = unit_out_ctrl.last_cycle;
+
     end else if (UNIT == UNIT_GATHER) begin
       CTRL_T                  unit_out_ctrl;
       logic  [MAX_OP_W  -1:0] unit_out_res;
