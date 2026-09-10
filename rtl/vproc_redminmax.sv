@@ -44,43 +44,46 @@ module vproc_vredminmax import vproc_pkg::*; #(
     endfunction
 
     // compares and returns winner
-    function automatic logic [31:0] minmax(input logic [31:0] a,
-                                           input logic [31:0] b,
-                                           input cfg_vsew     sew,
-                                           input logic [2:0]  op);
+    function automatic logic [31:0] minmax(input logic [31:0]  a,
+                                           input logic [31:0]  b,
+                                           input cfg_vsew      sew,
+                                           input opcode_minmax op);
 
-        // op[1] = max over min, op[0] = signed over unsigned
-        logic a_lt_b;
-        a_lt_b = $signed(normalize(a, sew, op[0])) < $signed(normalize(b, sew, op[0]));
-        return (a_lt_b ^ op[1]) ? a : b; // invert for max
+        logic is_signed, is_max, a_lt_b;
+        is_signed = (op == OP_REDMIN)  | (op == OP_REDMAX);
+        is_max    = (op == OP_REDMAXU) | (op == OP_REDMAX);
+        a_lt_b = $signed(normalize(a, sew, is_signed)) < $signed(normalize(b, sew, is_signed));
+        return (a_lt_b ^ is_max) ? a : b; // invert for max
     endfunction
 
     // neutral value: loses every comparison (unused lanes, masked, past vl)
-    function automatic logic [31:0] identity(input cfg_vsew    sew,
-                                             input logic [2:0] op);
+    function automatic logic [31:0] identity(input cfg_vsew      sew,
+                                             input opcode_minmax op);
 
         logic [31:0] id;
+        logic        is_max;
+        is_max = (op == OP_REDMAXU) | (op == OP_REDMAX);
 
         // unsigned
-        if (!op[0]) begin
-            id = op[1] ? 32'h00000000 : 32'hFFFFFFFF;
+        if (op == OP_REDMINU | op == OP_REDMAXU) begin
+            id = is_max ? 32'h00000000 : 32'hFFFFFFFF;
 
         // signed
         end else begin
             case (sew)
-                VSEW_8:  id = op[1] ? 32'h00000080 : 32'h0000007F;
-                VSEW_16: id = op[1] ? 32'h00008000 : 32'h00007FFF;
-                default: id = op[1] ? 32'h80000000 : 32'h7FFFFFFF;
+                VSEW_8:  id = is_max ? 32'h00000080 : 32'h0000007F;
+                VSEW_16: id = is_max ? 32'h00008000 : 32'h00007FFF;
+                default: id = is_max ? 32'h80000000 : 32'h7FFFFFFF;
             endcase
         end
         return id;
     endfunction
 
-    cfg_vsew     sew;
-    logic [2:0]  op;
-    logic [31:0] id;
+    cfg_vsew      sew;
+    opcode_minmax op;
+    logic [31:0]  id;
     assign sew = pipe_in_ctrl_i.eew;
-    assign op  = pipe_in_ctrl_i.mode.reduction.op;
+    assign op  = pipe_in_ctrl_i.mode.minmax.op;
     assign id  = identity(sew, op);
 
     logic [31:0] leaf [NLEAF]; // NLEAF words of 32 bits

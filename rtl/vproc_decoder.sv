@@ -4474,19 +4474,19 @@ module vproc_decoder #(
                         end
                         {6'b000100, 3'b010}: begin  // vredminu VV
                             unit_o              = UNIT_REDMINMAX;
-                            mode_o.reduction.op = OP_REDMINU;
+                            mode_o.minmax.op    = OP_REDMINU;
                         end
                         {6'b000101, 3'b010}: begin  // vredmin VV
                             unit_o              = UNIT_REDMINMAX;
-                            mode_o.reduction.op = OP_REDMIN;
+                            mode_o.minmax.op    = OP_REDMIN;
                         end
                         {6'b000110, 3'b010}: begin  // vredmaxu VV
                             unit_o              = UNIT_REDMINMAX;
-                            mode_o.reduction.op = OP_REDMAXU;
+                            mode_o.minmax.op    = OP_REDMAXU;
                         end
                         {6'b000111, 3'b010}: begin  // vredmax VV
                             unit_o              = UNIT_REDMINMAX;
-                            mode_o.reduction.op = OP_REDMAX;
+                            mode_o.minmax.op    = OP_REDMAX;
                         end
                         {6'b110000, 3'b000}: begin  // vwredsumu VV
                             unit_o             = UNIT_REDSUM; //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand

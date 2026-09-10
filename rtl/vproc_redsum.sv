@@ -34,8 +34,6 @@ module fractureable_reduction_unit import vproc_pkg::*; #(
                 a_masked[23:16] = a_mask_i[2] ? a_i[23:16] : '1;
                 a_masked[31:24] = a_mask_i[3] ? a_i[31:24] : '1;
             end
-            //Min/max ops belong to UNIT_REDMINMAX and never reach this unit
-            default: a_masked = '0;
         endcase
     end
     
@@ -72,13 +70,6 @@ module fractureable_reduction_unit import vproc_pkg::*; #(
             c_1 = a_masked[15:8] ^ b_i[15:8];
             c_2 = a_masked[23:16] ^ b_i[23:16];
             c_3 = a_masked[31:24] ^ b_i[31:24];
-        end
-        //Min/max ops belong to UNIT_REDMINMAX and never reach this unit
-        default: begin
-            c_0 = '0;
-            c_1 = '0;
-            c_2 = '0;
-            c_3 = '0;
         end
         endcase
     end
