@@ -134,14 +134,18 @@ set(VICUNA_SOURCE   ${DESIGN_RTL_DIR_VICUNA}/vproc_pkg.sv                       
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_dispatcher.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_div.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_div_shift_clz.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_xresult.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_index.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_elem.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_fpu.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_lsu.sv
-                    ${DESIGN_RTL_DIR_VICUNA}/vproc_lsu_extension.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_mul_block.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_zvbb.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_zvbc.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_redsum.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_redminmax.sv
+                    ${DESIGN_RTL_DIR_VICUNA}/vproc_gather.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pending_wr.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline.sv
                     ${DESIGN_RTL_DIR_VICUNA}/vproc_pipeline_wrapper.sv

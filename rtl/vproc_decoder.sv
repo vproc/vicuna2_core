@@ -42,7 +42,9 @@ module vproc_decoder #(
         output vproc_pkg::op_regs       rs2_o,        // source register rs2/vs2
         output vproc_pkg::op_regd       rd_o,          // destination register rd/vd
 
-        output logic                    vl_override_o     //signal if instruction has overridden VL
+        output logic                    vl_override_o,     //signal if instruction has overridden VL
+
+        output decode_metadata          decode_metadata_o //TODO: All necessary signals from above should be migrated to this struct
     );
 
     import vproc_pkg::*;
@@ -65,6 +67,8 @@ module vproc_decoder #(
     evl_policy evl_pol;
 
     logic misaligned_ls /* verilator public */;
+
+    logic override_vl; //allow for overriding vl without broadcasting/clearing vl0 signal
 
     logic op_custom_valid;
     `ifdef VECTOR_CUSTOM
@@ -115,19 +119,30 @@ module vproc_decoder #(
         rs1_o.xreg    = 1'b0;
         rs1_o.r.xval  = DONT_CARE_ZERO ? '0 : 'x;
         rs1_o.r.vaddr = DONT_CARE_ZERO ? '0 : 'x;
+        rs1_o.shift_rate    = SHIFT_FULL_WIDTH;
+        rs1_o.sign    = 1'b0;
+        rs1_o.sew     = vsew_o;
 
         rs2_o.vreg    = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rs2_o.xreg    = 1'b0;
         rs2_o.r.xval  = DONT_CARE_ZERO ? '0 : 'x;
         rs2_o.r.vaddr = DONT_CARE_ZERO ? '0 : 'x;
+        rs2_o.shift_rate    = SHIFT_FULL_WIDTH;
+        rs2_o.sign    = 1'b0;
+        rs1_o.sew     = vsew_o;
+
 
         rd_o.vreg     = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         rd_o.addr     = instr_vd;
+        rd_o.sew     = vsew_o;
+        rd_o.shift_rate    = SHIFT_FULL_WIDTH;
+
         `endif
 
         widenarrow_o  = OP_SINGLEWIDTH;
 
         vl_override_o = 1'b0;
+        override_vl = 1'b0;
 
         `ifdef RISCV_ZVE32F
 
@@ -137,6 +152,73 @@ module vproc_decoder #(
         misaligned_ls = 1'b0;
 
         `endif
+
+        decode_metadata_o = '0; //TODO: This struct should be used to contain all decoded instr data.  Should be directly set instead of indirectly through rs1_o, rs2_o, rd_o
+        decode_metadata_o.masked = instr_masked;
+        //Set number of registers per operand, default value based on emul_o
+        unique case (lmul_i)
+            LMUL_F8,
+            LMUL_F4,
+            LMUL_F2,
+            LMUL_1: begin
+                decode_metadata_o.operands[0].regs = 1;
+                decode_metadata_o.operands[1].regs = 1;
+                decode_metadata_o.operands[2].regs = 1;
+            end
+            LMUL_2: begin
+                decode_metadata_o.operands[0].regs = 2;
+                decode_metadata_o.operands[1].regs = 2;
+                decode_metadata_o.operands[2].regs = 2;
+            end
+            LMUL_4: begin
+                decode_metadata_o.operands[0].regs = 4;
+                decode_metadata_o.operands[1].regs = 4;
+                decode_metadata_o.operands[2].regs = 4;
+            end
+            LMUL_8: begin
+                decode_metadata_o.operands[0].regs = 8;
+                decode_metadata_o.operands[1].regs = 8;
+                decode_metadata_o.operands[2].regs = 8;
+            end
+        endcase
+
+        //Set fractional setting, default based on lmul_i for single width ops
+        unique case (lmul_i)
+            LMUL_F2: begin
+                decode_metadata_o.operands[0].frac = MF2;
+                decode_metadata_o.operands[1].frac = MF2;
+                decode_metadata_o.operands[2].frac = MF2;
+                decode_metadata_o.dest_frac        = MF2;
+            end
+            LMUL_F4: begin
+                decode_metadata_o.operands[0].frac = MF4;
+                decode_metadata_o.operands[1].frac = MF4;
+                decode_metadata_o.operands[2].frac = MF4;
+                decode_metadata_o.dest_frac        = MF4;
+            end
+            LMUL_F8: begin
+                decode_metadata_o.operands[0].frac = MF8;
+                decode_metadata_o.operands[1].frac = MF8;
+                decode_metadata_o.operands[2].frac = MF8;
+                decode_metadata_o.dest_frac        = MF8;
+            end
+            default: begin
+                decode_metadata_o.operands[0].frac = FULL_REG;
+                decode_metadata_o.operands[1].frac = FULL_REG;
+                decode_metadata_o.operands[2].frac = FULL_REG;
+                decode_metadata_o.dest_frac        = FULL_REG;
+            end
+        endcase
+
+        decode_metadata_o.dest_emul = emul_o;
+        decode_metadata_o.mask_operand.repeats = 1; //most operations only need to read the register operand groups once
+        decode_metadata_o.operands[0].repeats = 1;
+        decode_metadata_o.operands[1].repeats = 1;
+        decode_metadata_o.operands[2].repeats = 1;
+        decode_metadata_o.mask_operand.sew = vsew_o;  //mask operand should take the sew of the destination
+        decode_metadata_o.operands[0].sew = vsew_o;
+        decode_metadata_o.operands[1].sew = vsew_o;
+        decode_metadata_o.operands[2].sew = vsew_o;
 
         unique case (instr_i[6:0])
 
@@ -215,12 +297,22 @@ module vproc_decoder #(
                 mode_o.lsu.masked  = instr_masked;
                 mode_o.lsu.nfields = instr_i[31:29];
 
-                rs1_o.vreg   = 1'b0; // rs1 is an x register
+                rs1_o.vreg   = 1'b0; // rs1 is an x register //TODO: These assignments should be unnecessary, all load operand signalling should be done using the new decode_metadata.operands structs
                 rs1_o.xreg   = 1'b1;
                 rs1_o.r.xval = x_rs1_i;
 
                 rd_o.vreg = 1'b1; // vd/vs3 is a vreg
                 rd_o.addr = instr_vd;
+
+                //Redefine operands in order expected by reworked VLSU pipeline
+                decode_metadata_o.operands[1].vreg = (instr_i[6:0] == 7'h27); //Vreg active only for stores
+                decode_metadata_o.operands[1].xreg = 1'b0;
+                decode_metadata_o.operands[1].r.vaddr = instr_vd;
+
+                decode_metadata_o.operands[0].vreg = 1'b0;
+                decode_metadata_o.operands[0].xreg = 1'b0;
+                decode_metadata_o.operands[0].r.vaddr = '0;
+
 
                 // width field (including mew)
                 unique case ({instr_i[28], instr_i[14:12]})
@@ -230,34 +322,389 @@ module vproc_decoder #(
                     default: instr_illegal = 1'b1;
                 endcase
 
+                unique case ({instr_i[28], instr_i[14:12]})
+                    4'b0000: begin
+                            decode_metadata_o.operands[1].sew = VSEW_8;
+                            decode_metadata_o.mask_operand.sew = VSEW_8;
+                    end
+                    4'b0101: begin
+                            decode_metadata_o.operands[1].sew = VSEW_16;
+                            decode_metadata_o.mask_operand.sew = VSEW_16;
+                    end
+                    4'b0110: begin
+                            decode_metadata_o.operands[1].sew = VSEW_32;
+                            decode_metadata_o.mask_operand.sew = VSEW_32;
+                    end
+                    default: instr_illegal = 1'b1;
+                endcase
+
+                //Scale registers based on sew/encoded EEW ratio  VL is scaled below
+                unique case ({lmul_i, vsew_i, {instr_i[28], instr_i[14:12]}})
+                    //VSEW_8
+                    {LMUL_F8, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F8, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F8, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_1, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_1, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_2, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_2, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_2, VSEW_8, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    {LMUL_4, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_4, VSEW_8, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    {LMUL_8, VSEW_8, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    //VSEW_16
+                    {LMUL_F8, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F8, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_2, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_2, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_2, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_4, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_4, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_4, VSEW_16, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    {LMUL_8, VSEW_16, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_8, VSEW_16, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    //VSEW_32
+                    {LMUL_F8, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F4, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF8;
+                        decode_metadata_o.dest_frac        = MF8;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_F2, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF4;
+                        decode_metadata_o.dest_frac        = MF4;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_1, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_2, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = MF2;
+                        decode_metadata_o.dest_frac        = MF2;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_2, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_2, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_4, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 1;
+                    end
+                    {LMUL_4, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_4, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_8, VSEW_32, 4'b0000}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 2;
+                    end
+                    {LMUL_8, VSEW_32, 4'b0101}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 4;
+                    end
+                    {LMUL_8, VSEW_32, 4'b0110}: begin
+                        decode_metadata_o.operands[1].frac = FULL_REG;
+                        decode_metadata_o.dest_frac        = FULL_REG;
+                        decode_metadata_o.operands[1].regs = 8;
+                    end
+                    default: begin
+                        instr_illegal = 1'b1;
+                    end
+                endcase
+
                 // mop field
                 unique case (instr_i[27:26])
                     2'b00: begin // unit-strided load/store
                         mode_o.lsu.stride = LSU_UNITSTRIDE;
-                        rs2_o.vreg        = 1'b0;
+                        rs2_o.vreg        = 1'b0;   //TODO: Dont need to pass this here now
                         rs2_o.r.xval      = DONT_CARE_ZERO ? '0 : 'x;
 
                         // convert to strided load/store if the VLSU requires that the base address
                         // of unit-strided loads/stores is aligned to the width of the memory
-                        // interface, but the base address in rs1 is not
-                        if (ALIGNED_UNITSTRIDE & (x_rs1_i[$clog2(XIF_MEM_W/8)-1:0] != '0)) begin
-                            misaligned_ls = 1'b1;
-                            mode_o.lsu.stride = LSU_STRIDED;
-                            unique case (instr_i[14:12]) // width field
-                                3'b000: rs2_o.r.xval = 32'h1; // EEW 8
-                                3'b101: rs2_o.r.xval = 32'h2; // EEW 16
-                                3'b110: rs2_o.r.xval = 32'h4; // EEW 32
-                                default: ;
-                            endcase
-                        end
+                        // interface, but the base address in rs1 is not //TODO: Eliminate this
+                        // if (ALIGNED_UNITSTRIDE & (x_rs1_i[$clog2(XIF_MEM_W/8)-1:0] != '0)) begin
+                        //     misaligned_ls = 1'b1;
+                        //     mode_o.lsu.stride = LSU_STRIDED;
+                        //     unique case (instr_i[14:12]) // width field
+                        //         3'b000: rs2_o.r.xval = 32'h1; // EEW 8
+                        //         3'b101: rs2_o.r.xval = 32'h2; // EEW 16
+                        //         3'b110: rs2_o.r.xval = 32'h4; // EEW 32
+                        //         default: ;
+                        //     endcase
+                        // end
 
                         // lumop/sumop field
                         unique case (instr_i[24:20])
                             5'b00000: begin // unit-strided load/store (simple or segment)
-                                if (instr_i[31:29] != '0) begin
-                                    // Unit-strided segment stores result in strided stores
-                                    mode_o.lsu.stride = LSU_STRIDED;
 
+
+                                if (instr_i[31:29] != '0) begin
+                                    // Unit-strided segment loads/stores result in strided stores
+
+                                    decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                                    decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                                    mode_o.lsu.stride = LSU_STRIDED;
+                                    unique case ({lmul_i})  //change number of registers to read based on emul and nfields
+                                        LMUL_F8: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_F4: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_F2: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_1:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 1;
+                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 2;
+                                        LMUL_8:  decode_metadata_o.operands[1].regs = 8; //case should not occur for segmented
+                                        default: instr_illegal = 1'b1;
+                                    endcase
+                                    decode_metadata_o.mask_operand.repeats = (instr_i[31:29] + 1); //repeat mask reg for nfields
+
+                                    // //Segmented stores can be accelerated by dividing register groups between operand registers.
+                                    // if ((instr_i[6:0] == 7'h27)) begin
+                                    //     decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                                    //     unique case (instr_i[31:29]) //nfields  
+                                    //         3'b001: begin   //2 segments, 1 group per operand
+                                    //             decode_metadata_o.operands[0].vreg = 1'b1;
+                                    //             decode_metadata_o.operands[0].xreg = 1'b0;
+                                    //             decode_metadata_o.operands[0].shift_rate   = SHIFT_ELEMWISE;
+                                    //             unique case (emul_o) //NFIELDS * EMUL always <= 8
+                                    //                 EMUL_1: decode_metadata_o.operands[0].r.vaddr = instr_vd + 1;
+                                    //                 EMUL_2: decode_metadata_o.operands[0].r.vaddr = instr_vd + 2;
+                                    //                 EMUL_4: decode_metadata_o.operands[0].r.vaddr = instr_vd + 4;
+                                    //             endcase
+
+                                    //         end
+                                    //         3'b010: begin   //3 segments, 1 group per operand
+                                    //             decode_metadata_o.operands[0].vreg = 1'b1;
+                                    //             decode_metadata_o.operands[0].xreg = 1'b0;
+                                    //             decode_metadata_o.operands[0].shift_rate   = SHIFT_ELEMWISE;
+                                    //             decode_metadata_o.operands[2].vreg = 1'b1;
+                                    //             decode_metadata_o.operands[2].xreg = 1'b0;
+                                    //             decode_metadata_o.operands[2].shift_rate   = SHIFT_ELEMWISE;
+                                    //             unique case (emul_o) //NFIELDS * EMUL always <= 8
+                                    //                 EMUL_1: begin
+                                    //                     decode_metadata_o.operands[0].r.vaddr = instr_vd + 1;
+                                    //                     decode_metadata_o.operands[2].r.vaddr = instr_vd + 2;
+                                    //                 end
+                                    //                 EMUL_2: begin
+                                    //                     decode_metadata_o.operands[0].r.vaddr = instr_vd + 2;
+                                    //                     decode_metadata_o.operands[2].r.vaddr = instr_vd + 4;
+                                    //                 end
+                                    //             endcase
+
+                                    //         end
+                                    //         3'b011:;
+                                    //         default:; //TODO: Handle all cases
+                                    //     endcase
+                                    // end
                                     // set the byte stride (which is usually held in rs2) depending
                                     // on the element width and the number of fields as follows:
                                     //     stride = (EEW/8) * nf = (EEW/8) * (instr_i[31:29] + 1)
@@ -278,9 +725,25 @@ module vproc_decoder #(
                                     // Unit-strided segment stores result in strided stores
                                     mode_o.lsu.stride = LSU_STRIDED;
 
+                                    decode_metadata_o.operands[1].shift_rate   = SHIFT_ELEMWISE;
+                                    decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                                    mode_o.lsu.stride = LSU_STRIDED;
+                                     unique case ({lmul_i})  //change number of registers to read based on emul and nfields
+                                        LMUL_F8: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_F4: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_F2: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_1:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 1;
+                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 2;
+                                        LMUL_8:  decode_metadata_o.operands[1].regs = 8; //case should not occur for segmented
+                                        default: instr_illegal = 1'b1;
+                                    endcase
+                                    decode_metadata_o.mask_operand.repeats = (instr_i[31:29] + 1); //repeat mask reg for nfields
+
+
                                     // set the byte stride (which is usually held in rs2) depending
                                     // on the element width and the number of fields as follows:
-                                    //     stride = (EEW/8) * nf = (EEW/8) * (instr_i[31:29] + 1)
+                                    //     stride = (EEW/8) * nf = (EEW/8) * (instr_i[31:29] + 1)  //TODO: This works for cases where # segments = number operands
                                     unique case (instr_i[14:12]) // width field
                                         3'b000: rs2_o.r.xval = {28'b0, {1'b0, instr_i[31:29]} + 4'h1       }; // EEW 8
                                         3'b101: rs2_o.r.xval = {27'b0, {1'b0, instr_i[31:29]} + 4'h1, 1'b0 }; // EEW 16
@@ -291,41 +754,40 @@ module vproc_decoder #(
                             end
                             5'b01000: begin // whole register load/store
                                 emul_override = 1'b1; //TODO: PROBABLY NEEDS SAME TREATMENT AS VMV4R -CHANGE NOT VERIFIED
-                                `ifdef OLD_VICUNA
-                                evl_pol             = EVL_MAX;
-                                `endif
                                 vl_override_o   = 1'b1;
                                 unique case (instr_i[31:29])
                                     3'b000: begin
                                                 emul = EMUL_1;
-                                                `ifndef OLD_VICUNA
                                                 vl = (VREG_W/8)-1;
-                                                `endif
+                                                decode_metadata_o.dest_emul = EMUL_1;
                                             end
                                     3'b001: begin
                                                 emul = EMUL_2;
-                                                `ifndef OLD_VICUNA
                                                 vl = (2*VREG_W/8)-1;
-                                                `endif
+                                                decode_metadata_o.dest_emul = EMUL_2;
                                             end
                                     3'b011: begin
                                                 emul = EMUL_4;
-                                                `ifndef OLD_VICUNA
                                                 vl = (4*VREG_W/8)-1;
-                                                `endif
+                                                decode_metadata_o.dest_emul = EMUL_4;
                                             end
                                     3'b111: begin
                                                 emul = EMUL_8;
-                                                `ifndef OLD_VICUNA
                                                 vl = (8*VREG_W/8)-1;
-                                                `endif
+                                                decode_metadata_o.dest_emul = EMUL_8;
                                             end
                                     default: instr_illegal = 1'b1;
                                 endcase
                                 mode_o.lsu.nfields = '0;
+                                // rs1_o.vreg = 1'b1;
+                                // rs1_o.xreg = 1'b0;
+                                // rs1_o.r.vaddr = instr_vd;//set to base address
                             end
                             5'b01011: begin // mask load/store
                                 evl_pol = EVL_MASK;
+                                // rs1_o.vreg = 1'b1;
+                                // rs1_o.xreg = 1'b0;
+                                // rs1_o.r.vaddr = instr_vd;//set to base address
                             end
                             default: begin
                                 instr_illegal = 1'b1;
@@ -335,29 +797,391 @@ module vproc_decoder #(
                     2'b10: begin // strided load/store
                         mode_o.lsu.stride = LSU_STRIDED;
                         rs2_o.vreg        = 1'b0;
-                        rs2_o.xreg        = 1'b1;
+                        rs2_o.xreg        = 1'b0;
                         rs2_o.r.xval      = x_rs2_i;
+                        rd_o.shift_rate   = SHIFT_ELEMWISE;
+                        decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                        decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                        mode_o.lsu.stride = LSU_STRIDED;
+                         unique case ({lmul_i})  //change number of registers to read based on emul and nfields
+                                        LMUL_F8: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_F4: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_F2: decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_1:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1);
+                                        LMUL_2:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 1;
+                                        LMUL_4:  decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 2;
+                                        LMUL_8:  decode_metadata_o.operands[1].regs = 8; //case should not occur for segmented
+                                        default: instr_illegal = 1'b1;
+                        endcase
+                        decode_metadata_o.mask_operand.repeats = (instr_i[31:29] + 1); //repeat mask reg for nfields
+                        //Scale stride by number segments
+                        // if (!(instr_i[31:29] == '0)) begin
+                        //     unique case (instr_i[14:12]) // width field
+                        //         3'b000: rs2_o.r.xval = (instr_i[31:29] + 1) + x_rs2_i; // EEW 8
+                        //         3'b101: rs2_o.r.xval = ((instr_i[31:29] + 1) << 1) + x_rs2_i; // EEW 16
+                        //         3'b110: rs2_o.r.xval = ((instr_i[31:29] + 1) << 2) + x_rs2_i; // EEW 32
+                        //         default: ;
+                        //     endcase
+                        // end
                     end
                     2'b01,
                     2'b11: begin // indexed load/store
+                        //if (instr_i[31:29] == '0) begin //standard indexed case (nfields == 1)
+                            decode_metadata_o.operands[2].vreg = 1'b1; //Indexed case takes indices from a register with configured sew
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vs2;
 
-                        // store data sew and lmul in alt signal
-                        // index sew and lmul are stored in eew and emul
-                        mode_o.lsu.stride            = LSU_INDEXED;
-                        mode_o.lsu.alt_eew           = vsew_i;
-                        rs2_o.vreg                   = 1'b1;
-                        rs2_o.r.vaddr                = instr_vs2;
+                            unique case ({instr_i[28], instr_i[14:12]}) //sew of indexes is the statically configured sew, encoded in the instruction
+                                4'b0000: decode_metadata_o.operands[2].sew = VSEW_8;
+                                4'b0101: decode_metadata_o.operands[2].sew = VSEW_16;
+                                4'b0110: decode_metadata_o.operands[2].sew = VSEW_32;
+                                default: instr_illegal = 1'b1;
+                            endcase
+                            //select number of registers to read for data
+                            decode_metadata_o.operands[1].sew = vsew_i;  //sew of data is value configured in csr
+                            decode_metadata_o.mask_operand.sew  = vsew_i;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                            unique case (lmul_i)
+                                LMUL_F8: begin
+                                    decode_metadata_o.operands[1].frac = MF8;
+                                    decode_metadata_o.operands[1].regs = instr_i[31:29] + 1; //regs == number segments
+                                    decode_metadata_o.dest_frac = MF8;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.operands[1].frac = MF4;
+                                    decode_metadata_o.operands[1].regs = instr_i[31:29] + 1;
+                                    decode_metadata_o.dest_frac = MF4;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.operands[1].frac = MF2;
+                                    decode_metadata_o.operands[1].regs = instr_i[31:29] + 1;
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = instr_i[31:29] + 1;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_1;
 
-                        unique case (lmul_i)
-                            LMUL_F8,
-                            LMUL_F4,
-                            LMUL_F2,
-                            LMUL_1:  mode_o.lsu.alt_emul = EMUL_1;
-                            LMUL_2:  mode_o.lsu.alt_emul = EMUL_2;
-                            LMUL_4:  mode_o.lsu.alt_emul = EMUL_4;
-                            LMUL_8:  mode_o.lsu.alt_emul = EMUL_8;
-                            default: ;
-                        endcase
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 1;  //regs == number segments * 2
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = (instr_i[31:29] + 1) << 2; //regs == number segments * 4
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                end
+                                LMUL_8: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 8;                         // always 8 (only 1 segment allowed)
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                            endcase
+                            //select number of registers to read for index.  Current emul_o calculation gives the total number to read
+                            //For depending on ratio of EEWs of index and operand, may need to increase for fractional lmul and can reduce for large lmul
+                            unique case ({lmul_i, {instr_i[28], instr_i[14:12]}, vsew_i})           //emul_o is already scaled for the destination emul.  determine number of regs to read based on this //TODO: should be able to reduce these based on ratio?
+                                
+                                //ei8 sew8 cases
+                                {LMUL_F8, 4'b0000, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF8;
+                                end
+                                {LMUL_F4, 4'b0000, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;
+                                end
+                                {LMUL_F2, 4'b0000, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_1, 4'b0000, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_2, 4'b0000, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_4, 4'b0000, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_8, 4'b0000, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                
+                                //ei8 sew16
+                                // {LMUL_MF8, 4'b0000, VSEW_16}: begin //THIS CASE IS IMPOSSIBLE
+                                //     decode_metadata_o.operands[2].regs = 1;
+                                //     decode_metadata_o.operands[2].frac = MF8;
+                                // end
+                                {LMUL_F4, 4'b0000, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF8;
+                                end
+                                {LMUL_F2, 4'b0000, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;
+                                end
+                                {LMUL_1, 4'b0000, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_2, 4'b0000, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_4, 4'b0000, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_8, 4'b0000, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                
+                                //ei8 sew32 
+                                // {LMUL_MF8, 4'b0000, VSEW_32}: begin //THIS CASE IS IMPOSSIBLE
+                                //     decode_metadata_o.operands[2].regs = 1;
+                                //     decode_metadata_o.operands[2].frac = MF8;
+                                // end
+                                // {LMUL_MF4, 4'b0000, VSEW_32}: begin
+                                //     decode_metadata_o.operands[2].regs = 1;
+                                //     decode_metadata_o.operands[2].frac = MF8;
+                                // end
+                                {LMUL_F2, 4'b0000, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF8;
+                                end
+                                {LMUL_1, 4'b0000, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;
+                                end
+                                {LMUL_2, 4'b0000, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_4, 4'b0000, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_8, 4'b0000, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end 
+                                
+                                //ei16 sew8 cases
+                                {LMUL_F8, 4'b0101, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;
+                                end
+                                {LMUL_F4, 4'b0101, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_F2, 4'b0101, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_1, 4'b0101, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_2, 4'b0101, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_4, 4'b0101, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                // {LMUL_8, 4'b0101, VSEW_8}: begin
+                                //     decode_metadata_o.operands[2].regs = 8;
+                                //     decode_metadata_o.operands[2].frac = FULL_REG;
+                                // end
+                                
+                                //ei16 sew16 cases
+                                {LMUL_F8, 4'b0101, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF8;
+                                end
+                                {LMUL_F4, 4'b0101, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;
+                                end
+                                {LMUL_F2, 4'b0101, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_1, 4'b0101, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_2, 4'b0101, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_4, 4'b0101, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_8, 4'b0101, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                //ei16 sew32 cases
+                                // {LMUL_MF8, 4'b0101, VSEW_32}: begin
+                                //     decode_metadata_o.operands[2].regs = 1;
+                                //     decode_metadata_o.operands[2].frac = MF8;
+                                // end
+                                {LMUL_F4, 4'b0101, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF8;
+                                end
+                                {LMUL_F2, 4'b0101, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;
+                                end
+                                {LMUL_1, 4'b0101, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_2, 4'b0101, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_4, 4'b0101, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_8, 4'b0101, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                //ei32 sew8 cases
+                                {LMUL_F8, 4'b0110, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_F4, 4'b0110, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_F2, 4'b0110, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_1, 4'b0110, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_2, 4'b0110, VSEW_8}: begin
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                // {LMUL_4, 4'b0110, VSEW_8}: begin
+                                //     decode_metadata_o.operands[2].regs = 8;
+                                //     decode_metadata_o.operands[2].frac = FULL_REG;
+                                // end
+                                // {LMUL_8, 4'b0110, VSEW_8}: begin
+                                //     decode_metadata_o.operands[2].regs = 8;
+                                //     decode_metadata_o.operands[2].frac = FULL_REG;
+                                // end
+
+                                //ei32 sew16
+                                {LMUL_F8, 4'b0110, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;
+                                end
+                                {LMUL_F4, 4'b0110, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_F2, 4'b0110, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_1, 4'b0110, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_2, 4'b0110, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_4, 4'b0110, VSEW_16}: begin
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                // {LMUL_8, 4'b0110, VSEW_16}: begin
+                                //     decode_metadata_o.operands[2].regs = 8;
+                                //     decode_metadata_o.operands[2].frac = FULL_REG;
+                                // end
+                                //ei32 sew16
+                                {LMUL_F8, 4'b0110, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF8;
+                                end
+                                {LMUL_F4, 4'b0110, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;
+                                end
+                                {LMUL_F2, 4'b0110, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;
+                                end
+                                {LMUL_1, 4'b0110, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_2, 4'b0110, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_4, 4'b0110, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                {LMUL_8, 4'b0110, VSEW_32}: begin
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                default: instr_illegal = 1'b1;
+                            endcase
+
+                            // store data sew and lmul in alt signal
+                            // index sew and lmul are stored in eew and emul
+                            mode_o.lsu.stride            = LSU_INDEXED;
+                            mode_o.lsu.alt_eew           = vsew_i;
+                            rs2_o.vreg                   = 1'b1;
+                            rs2_o.r.vaddr                = instr_vs2;
+
+                            unique case (lmul_i)
+                                LMUL_F8,
+                                LMUL_F4,
+                                LMUL_F2,
+                                LMUL_1:  mode_o.lsu.alt_emul = EMUL_1;
+                                LMUL_2:  mode_o.lsu.alt_emul = EMUL_2;
+                                LMUL_4:  mode_o.lsu.alt_emul = EMUL_4;
+                                LMUL_8:  mode_o.lsu.alt_emul = EMUL_8;
+                                default: ;
+                            endcase
+
+                            decode_metadata_o.mask_operand.repeats = (instr_i[31:29] + 1); //repeat mask reg for nfields
+                            decode_metadata_o.operands[2].repeats = (instr_i[31:29] + 1); //repeat index regs for nfields
                     end
                     default: ;
                 endcase
@@ -381,30 +1205,52 @@ module vproc_decoder #(
                         rs1_o.r.vaddr = instr_vs1;
                         rs2_o.vreg    = 1'b1; // rs2 is a vector register
                         rs2_o.r.vaddr = instr_vs2;
+
+                        decode_metadata_o.operands[0].vreg = 1'b1;
+                        decode_metadata_o.operands[0].xreg = 1'b0;
+                        decode_metadata_o.operands[0].r.vaddr = instr_vs2; //There is an inversion of arguments 1-2 between decode + pipeline wrapper
+
+                        decode_metadata_o.operands[1].vreg = 1'b1;
+                        decode_metadata_o.operands[1].xreg = 1'b0;
+                        decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+
                     end
                     3'b011: begin   // OPIVI
                         rs1_o.vreg    = 1'b0; // rs1 field contains immediate (sign extend for all except slide instructions)
-                        rs1_o.xreg    = 1'b0;
+                        rs1_o.xreg    = 1'b1; // rs1 immediate treated as "xreg" value by unpack
+
+                        decode_metadata_o.operands[0].vreg = 1'b1;
+                        decode_metadata_o.operands[0].xreg = 1'b0;
+                        decode_metadata_o.operands[0].r.vaddr = instr_vs2; //There is an inversion of arguments 1 and 2 between decode and regunpack
+
+                        decode_metadata_o.operands[1].vreg = 1'b0;
+                        decode_metadata_o.operands[1].xreg = 1'b1;
+
                         unique case(instr_i[31:26])
-                            
+
                             6'b001110, // Slide instructions
                             6'b001111, // Slide instructions
                             6'b110101 : begin // VWSLL
                                 rs1_o.r.xval = {{27{1'b0}}, instr_vs1};
+                                decode_metadata_o.operands[1].r.xval = {{27{1'b0}}, instr_vs1};
                             end
                             // VROR immeadiate has an immediate of size 6
                             6'b010100,
                             6'b010101: begin
                                 rs1_o.r.xval = {{26{1'b0}}, instr_i[26], instr_vs1};
+                                decode_metadata_o.operands[1].r.xval = {{26{1'b0}}, instr_i[26], instr_vs1};
                             end
                             // All other instruction are sign extended
                             default: begin
                                 rs1_o.r.xval = {{27{instr_vs1[4]}}, instr_vs1};
+                                decode_metadata_o.operands[1].r.xval = {{27{instr_vs1[4]}}, instr_vs1};
                             end
                         endcase
                         //rs1_o.r.xval  = ((instr_i[31:26] == 6'b001110) | (instr_i[31:26] == 6'b001111)) ? {{27{1'b0}}, instr_vs1} : {{27{instr_vs1[4]}}, instr_vs1};
                         rs2_o.vreg    = 1'b1; // rs2 is a vector register
                         rs2_o.r.vaddr = instr_vs2;
+
+                        
                     end
                     3'b100,          // OPIVX
                     3'b101,          // OPFVF
@@ -414,8 +1260,16 @@ module vproc_decoder #(
                         rs1_o.r.xval  = x_rs1_i;
                         rs2_o.vreg    = 1'b1; // rs2 is a vector register
                         rs2_o.r.vaddr = instr_vs2;
+
+                        decode_metadata_o.operands[0].vreg = 1'b1;
+                        decode_metadata_o.operands[0].xreg = 1'b0;
+                        decode_metadata_o.operands[0].r.vaddr = instr_vs2; //There is an inversion of arguments 1-2 between decode + pipeline wrapper
+
+                        decode_metadata_o.operands[1].vreg = 1'b0;
+                        decode_metadata_o.operands[1].xreg = 1'b1;
+                        decode_metadata_o.operands[1].r.xval = x_rs1_i;
                     end
-                    3'b111: begin   // OPCFG
+                    3'b111: begin   // OPCFG  //TODO:Config instructions don't go to unpack, so currently not using new operand signalling
                         rs1_o.vreg    = 1'b0; // rs1 is either x reg or immediate
                         rs1_o.xreg    = instr_i[31:30] != 2'b11;
                         rs1_o.r.xval  = rs1_o.xreg ? x_rs1_i : {{27{1'b0}}, instr_vs1};
@@ -637,6 +1491,56 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i)
+                                LMUL_F8: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = MF4;
+                                    decode_metadata_o.dest_frac = MF4;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = MF2;
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.operands[0].regs = 2;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.operands[0].regs = 4;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.operands[0].regs = 8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                LMUL_8: begin  //TODO: This case should not be necessary, but somehow occurs
+                                    decode_metadata_o.operands[0].regs = 8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                            endcase
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b101101, 3'b000},        // vnsra VV
                         {6'b101101, 3'b011},        // vnsra VI
@@ -652,6 +1556,56 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_NARROWING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i)
+                                LMUL_F8: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = MF4;
+                                    decode_metadata_o.dest_frac = MF4;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = MF2;
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.operands[0].regs = 2;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.operands[0].regs = 4;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.operands[0].regs = 8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                LMUL_8: begin  //TODO: This case should not be necessary, but somehow occurs
+                                    decode_metadata_o.operands[0].regs = 8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                            endcase
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110000, 3'b010},        // vwaddu VV
                         {6'b110000, 3'b110}: begin  // vwaddu VX
@@ -666,6 +1620,39 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;    
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2; 
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110001, 3'b010},        // vwadd VV
                         {6'b110001, 3'b110}: begin  // vwadd VX
@@ -680,6 +1667,39 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;    
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2; 
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
                         end
                         {6'b110010, 3'b010},        // vwsubu VV
                         {6'b110010, 3'b110}: begin  // vwsubu VX
@@ -694,6 +1714,39 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;    
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2; 
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
                         end
                         {6'b110011, 3'b010},        // vwsub VV
                         {6'b110011, 3'b110}: begin  // vwsub VX
@@ -708,6 +1761,39 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;    
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2; 
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
                         end
                         {6'b110100, 3'b010},        // vwaddu.w VV
                         {6'b110100, 3'b110}: begin  // vwaddu.w VX
@@ -722,6 +1808,51 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[0].frac = MF4;
+                                    decode_metadata_o.operands[0].regs = 1;   
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                    decode_metadata_o.operands[0].frac = MF2;
+                                    decode_metadata_o.operands[0].regs = 1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 2;  
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 8; 
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110101, 3'b010},        // vwadd.w VV
                         {6'b110101, 3'b110}: begin  // vwadd.w VX
@@ -736,6 +1867,51 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[0].frac = MF4;
+                                    decode_metadata_o.operands[0].regs = 1;   
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                    decode_metadata_o.operands[0].frac = MF2;
+                                    decode_metadata_o.operands[0].regs = 1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 2;  
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 8; 
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b110110, 3'b010},        // vwsubu.w VV
                         {6'b110110, 3'b110}: begin  // vwsubu.w VX
@@ -750,6 +1926,51 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b0;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[0].frac = MF4;
+                                    decode_metadata_o.operands[0].regs = 1;   
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                    decode_metadata_o.operands[0].frac = MF2;
+                                    decode_metadata_o.operands[0].regs = 1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 2;  
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 8; 
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110111, 3'b010},        // vwsub.w VV
                         {6'b110111, 3'b110}: begin  // vwsub.w VX
@@ -764,6 +1985,51 @@ module vproc_decoder #(
                             mode_o.alu.sigext   = 1'b1;
                             vxrm_o              = VXRM_RDN;
                             widenarrow_o        = OP_WIDENING_VS2;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[0].frac = MF4;
+                                    decode_metadata_o.operands[0].regs = 1;   
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                    decode_metadata_o.operands[0].frac = MF2;
+                                    decode_metadata_o.operands[0].regs = 1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 2;  
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 8; 
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b010000, 3'b000},        // vadc VV
                         {6'b010000, 3'b011},        // vadc VI
@@ -777,6 +2043,7 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = ALU_MASK_CARRY;
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.masked = 1'b1;
                         end
                         {6'b010010, 3'b000},        // vsbc VV
                         {6'b010010, 3'b011},        // vsbc VI
@@ -790,9 +2057,11 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = ALU_MASK_CARRY;
                             mode_o.alu.cmp      = 1'b0;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.masked = 1'b1;
                         end
                         {6'b010010, 3'b010}: begin  // VXUNARY0
                             rs1_o.vreg          = 1'b0; // No vector register
+                            decode_metadata_o.operands[1].vreg = 1'b0;
                             unique case (instr_vs1[4:3])
                                 2'b00 : begin // v[z|s]ext.[vf2/vf4] VV
                                     unit_o              = UNIT_ALU;
@@ -808,11 +2077,70 @@ module vproc_decoder #(
                                     unique case (instr_vs1[2:1])
                                         2'b11 : begin
                                             instr_illegal       = 1'b0;
-                                            widenarrow_o        = OP_WIDENING_EXT2;
+                                            widenarrow_o        = OP_WIDENING_EXT2; //TODO: Clean up, these signals shoudnt be necessary
+                                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                                            decode_metadata_o.operands[0].sign = instr_vs1[0];
+                                            //s/zext instructions scale source reg, not destination
+                                            unique case (lmul_i) //Destination LMUL/2
+                                                LMUL_F4: begin
+                                                    decode_metadata_o.operands[0].frac = MF8;
+                                                    decode_metadata_o.operands[0].regs = 1;
+                                                end
+                                                LMUL_F2: begin
+                                                    decode_metadata_o.operands[0].frac = MF4;
+                                                    decode_metadata_o.operands[0].regs = 1; 
+                                                end
+                                                LMUL_1: begin
+                                                    decode_metadata_o.operands[0].frac = MF2;
+                                                    decode_metadata_o.operands[0].regs = 1; 
+                                                end
+                                                LMUL_2: begin
+                                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                                    decode_metadata_o.operands[0].regs = 1; 
+                                                end
+                                                LMUL_4: begin
+                                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                                    decode_metadata_o.operands[0].regs = 2; 
+                                                end
+                                                LMUL_8: begin
+                                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                                    decode_metadata_o.operands[0].regs = 4; 
+                                                end
+                                                default: begin
+                                                    instr_illegal = 1'b1;  
+                                                end
+                                            endcase
                                         end
                                         2'b10 : begin
                                             instr_illegal       = 1'b0;
                                             widenarrow_o        = OP_WIDENING_EXT4;
+                                            decode_metadata_o.operands[0].shift_rate = SHIFT_QUARTER_WIDTH;
+                                            decode_metadata_o.operands[0].sign = instr_vs1[0];
+                                            unique case (lmul_i) //Destination LMUL/2
+                                                LMUL_F2: begin
+                                                    decode_metadata_o.operands[0].frac = MF8;
+                                                    decode_metadata_o.operands[0].regs = 1;
+                                                end
+                                                LMUL_1: begin
+                                                    decode_metadata_o.operands[0].frac = MF4;
+                                                    decode_metadata_o.operands[0].regs = 1; 
+                                                end
+                                                LMUL_2: begin
+                                                    decode_metadata_o.operands[0].frac = MF2;
+                                                    decode_metadata_o.operands[0].regs = 1; 
+                                                end
+                                                LMUL_4: begin
+                                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                                    decode_metadata_o.operands[0].regs = 1; 
+                                                end
+                                                LMUL_8: begin
+                                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                                    decode_metadata_o.operands[0].regs = 2; 
+                                                end
+                                                default: begin
+                                                    instr_illegal = 1'b1;  
+                                                end
+                                            endcase
                                         end
                                         default : begin
                                             instr_illegal       = 1'b1;
@@ -864,6 +2192,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011001, 3'b010}: begin  // vmand VV
                             emul_override       = 1'b1;
@@ -876,6 +2236,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011010, 3'b010}: begin  // vmor VV
                             emul_override       = 1'b1;
@@ -888,6 +2280,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011011, 3'b010}: begin  // vmxor VV
                             emul_override       = 1'b1;
@@ -900,6 +2324,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011100, 3'b010}: begin  // vmornot VV
                             emul_override       = 1'b1;
@@ -912,6 +2368,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011101, 3'b010}: begin  // vmnand VV
                             emul_override       = 1'b1;
@@ -924,6 +2412,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011110, 3'b010}: begin  // vmnor VV
                             emul_override       = 1'b1;
@@ -936,6 +2456,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b011111, 3'b010}: begin  // vmxnor VV
                             emul_override       = 1'b1;
@@ -948,6 +2500,38 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
+
+                            mode_o.alu.msk_cmp  = 1'b1;
+
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.operands[2].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
+
+                            decode_metadata_o.dest_emul = EMUL_1;
+
+                            override_vl = 1'b1;
+                            unique case (vsew_i) //Scale vl to # elements (equal to # bytes for VSEW_8)
+                                VSEW_8  : vl = vl_i;
+                                VSEW_16 : vl = {1'b0, vl_i[CFG_VL_W-1:1]};
+                                VSEW_32 : vl = {2'b00, vl_i[CFG_VL_W-1:2]};
+                            endcase
                         end
                         {6'b010111, 3'b000},        // vmv/vmerge VV
                         {6'b010111, 3'b011},        // vmv/vmerge VI
@@ -961,9 +2545,6 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_SEL : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
-                            if (~instr_masked) begin
-                                rs2_o.vreg      = 1'b0;
-                            end
                         end
                         {6'b011000, 3'b000},        // vmseq VV
                         {6'b011000, 3'b011},        // vmseq VI
@@ -977,6 +2558,25 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            //Use OP3 for bitwise undisturbed operation
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+
+                            //For undisturbed operation, need to copy at least 1 byte.
+                            //Pipeline final result signalling is based on the mask register.  By increasing lmul of the mask operand, this ensures a full byte is written, at the cost of extra latency cycles for fractional lmul/smaller configurations
+                            //Vicuna pipeline already handles most of these cases by treating fractional lmuls and EMUL_1, but VREG_W==128 VSEW=32 only has 4 elements for MF4-M1
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                            end
+
+                            //Mask creation ops must create an entire byte, override fractional lmul
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b011001, 3'b000},        // vmsne VV
                         {6'b011001, 3'b011},        // vmsne VI
@@ -990,6 +2590,19 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                            end
+                            //Mask creation ops must create an entire byte, override fractional lmul
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b011010, 3'b000},        // vmsltu VV
                         {6'b011010, 3'b100}: begin  // vmsltu VX
@@ -1003,6 +2616,19 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                            end
+                            //Mask creation ops must create an entire byte, override fractional lmul
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b011011, 3'b000},        // vmslt VV
                         {6'b011011, 3'b100}: begin  // vmslt VX
@@ -1016,6 +2642,19 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                            end
+                            //Mask creation ops must create an entire byte, override fractional lmul
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b011100, 3'b000},        // vmsleu VV
                         {6'b011100, 3'b011},        // vmsleu VI
@@ -1030,6 +2669,19 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                            end
+                            //Mask creation ops must create an entire byte, override fractional lmul
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b011101, 3'b000},        // vmsle VV
                         {6'b011101, 3'b011},        // vmsle VI
@@ -1044,6 +2696,19 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                            end
+                            //Mask creation ops must create an entire byte, override fractional lmul
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b011110, 3'b011},        // vmsgtu VI
                         {6'b011110, 3'b100}: begin  // vmsgtu VX
@@ -1057,6 +2722,19 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                            end
+                            //Mask creation ops must create an entire byte, override fractional lmul
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b011111, 3'b011},        // vmsgt VI
                         {6'b011111, 3'b100}: begin  // vmsgt VX
@@ -1070,6 +2748,20 @@ module vproc_decoder #(
                             mode_o.alu.op_mask  = instr_masked ? ALU_MASK_WRITE : ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b1;
                             vxrm_o              = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].regs = 1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
+                            if (VREG_W == 128) begin
+                                if ((vsew_i == VSEW_32) & (emul_o == EMUL_1)) begin
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                            end
+                            //Mask creation ops must create an entire byte, override fractional lmul
+                            //TODO: Could do this conditionally based on VREG_W/SEW?
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b010001, 3'b000},        // vmadc VV
                         {6'b010001, 3'b011},        // vmadc VI
@@ -1248,6 +2940,56 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = vxrm_i;
                             widenarrow_o          = OP_NARROWING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i)
+                                LMUL_F8: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = MF4;
+                                    decode_metadata_o.dest_frac = MF4;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = MF2;
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.operands[0].regs = 2;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.operands[0].regs = 4;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.operands[0].regs = 8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                LMUL_8: begin  //TODO: This case should not be necessary, but somehow occurs
+                                    decode_metadata_o.operands[0].regs = 8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                            endcase
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b101111, 3'b000},        // vnclip VV
                         {6'b101111, 3'b011},        // vnclip VI
@@ -1264,8 +3006,58 @@ module vproc_decoder #(
                             mode_o.alu.cmp        = 1'b0;
                             vxrm_o                = vxrm_i;
                             widenarrow_o          = OP_NARROWING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i)
+                                LMUL_F8: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = MF4;
+                                    decode_metadata_o.dest_frac = MF4;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = MF2;
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.operands[0].regs = 2;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.operands[0].regs = 4;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.operands[0].regs = 8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                LMUL_8: begin  //TODO: This case should not be necessary, but somehow occurs
+                                    decode_metadata_o.operands[0].regs = 8;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                            endcase
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
-                        {6'b100111, 3'b011}: begin  // vmv<nr>r VI
+                        {6'b100111, 3'b011}: begin  // vmv<nr>r V
                             unit_o              = UNIT_ALU;
                             mode_o.alu.opx2.res = ALU_VSEL;
                             mode_o.alu.opx1.sel = ALU_SEL_MASK;
@@ -1275,37 +3067,45 @@ module vproc_decoder #(
                             mode_o.alu.sat_res  = 1'b0;
                             mode_o.alu.op_mask  = ALU_MASK_NONE;
                             mode_o.alu.cmp      = 1'b0;
-                            //Changes to control flow to improve performance.  Introduces timing anomalies
-                            //Need to now specific the actual vector length of these instructions, as they are now used to determine when to stop
-                            `ifdef OLD_VICUNA
                             evl_pol             = EVL_MAX;
-                            `endif
                             emul_override       = 1'b1;
                             vl_override_o   = 1'b1;
                             unique case (instr_vs1)
                                 5'b00000: begin
                                             emul = EMUL_1;
-                                            `ifndef OLD_VICUNA
-                                            vl = (VREG_W/8)-1;
-                                            `endif
+                                            decode_metadata_o.operands[0].regs = 1;
+                                            decode_metadata_o.operands[0].frac = FULL_REG;
+                                            decode_metadata_o.operands[1].regs = 1;
+                                            decode_metadata_o.operands[1].frac = FULL_REG;
+                                            decode_metadata_o.dest_frac = FULL_REG;
+                                            decode_metadata_o.dest_emul = EMUL_1;
                                           end
                                 5'b00001: begin
                                             emul = EMUL_2;
-                                            `ifndef OLD_VICUNA
-                                            vl = (2*VREG_W/8)-1;
-                                            `endif
+                                            decode_metadata_o.operands[0].regs = 2;
+                                            decode_metadata_o.operands[0].frac = FULL_REG;
+                                            decode_metadata_o.operands[1].regs = 2;
+                                            decode_metadata_o.operands[1].frac = FULL_REG;
+                                            decode_metadata_o.dest_frac = FULL_REG;
+                                            decode_metadata_o.dest_emul = EMUL_2;
                                           end
                                 5'b00011: begin
                                             emul = EMUL_4;
-                                            `ifndef OLD_VICUNA
-                                            vl = (4*VREG_W/8)-1;
-                                            `endif
+                                            decode_metadata_o.operands[0].regs = 4;
+                                            decode_metadata_o.operands[0].frac = FULL_REG;
+                                            decode_metadata_o.operands[1].regs = 4;
+                                            decode_metadata_o.operands[1].frac = FULL_REG;
+                                            decode_metadata_o.dest_frac = FULL_REG;
+                                            decode_metadata_o.dest_emul = EMUL_4;
                                           end
                                 5'b00111: begin
                                             emul = EMUL_8;
-                                            `ifndef OLD_VICUNA
-                                            vl = (8*VREG_W/8)-1;
-                                            `endif
+                                            decode_metadata_o.operands[0].regs = 8;
+                                            decode_metadata_o.operands[0].frac = FULL_REG;
+                                            decode_metadata_o.operands[1].regs = 8;
+                                            decode_metadata_o.operands[1].frac = FULL_REG;
+                                            decode_metadata_o.dest_frac = FULL_REG;
+                                            decode_metadata_o.dest_emul = EMUL_8;
                                           end
                                 default: instr_illegal = 1'b1;
                             endcase
@@ -1364,9 +3164,15 @@ module vproc_decoder #(
                             mode_o.mul.accsub     = 1'b0;
                             mode_o.mul.op1_signed = 1'b0; // irrelevant
                             mode_o.mul.op2_signed = 1'b0; // irrelevant
-                            mode_o.mul.op2_is_vd  = 1'b1;
+                            mode_o.mul.op2_is_vd  = 1'b1; // irrelevant
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vs2;
                         end
                         {6'b101011, 3'b010},        // vnmsub VV
                         {6'b101011, 3'b110}: begin  // vnmsub VX
@@ -1378,6 +3184,12 @@ module vproc_decoder #(
                             mode_o.mul.op2_is_vd  = 1'b1;
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vs2;
                         end
                         {6'b101101, 3'b010},        // vmacc VV
                         {6'b101101, 3'b110}: begin  // vmacc VX
@@ -1389,6 +3201,9 @@ module vproc_decoder #(
                             mode_o.mul.op2_is_vd  = 1'b0;
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
                         end
                         {6'b101111, 3'b010},        // vnmsac VV
                         {6'b101111, 3'b110}: begin  // vnmsac VX
@@ -1400,6 +3215,9 @@ module vproc_decoder #(
                             mode_o.mul.op2_is_vd  = 1'b0;
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
                         end
                         {6'b111000, 3'b010},        // vwmulu VV
                         {6'b111000, 3'b110}: begin  // vwmulu VX
@@ -1412,6 +3230,39 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;    
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2; 
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b111010, 3'b010},        // vwmulsu VV
                         {6'b111010, 3'b110}: begin  // vwmulsu VX
@@ -1424,6 +3275,39 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;    
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2; 
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b111011, 3'b010},        // vwmul VV
                         {6'b111011, 3'b110}: begin  // vwmul VX
@@ -1436,6 +3320,40 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;    
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2; 
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b111100, 3'b010},        // vwmaccu VV
                         {6'b111100, 3'b110}: begin  // vwmaccu VX
@@ -1448,6 +3366,56 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;  
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;    
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;   
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;   
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;  
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b111101, 3'b010},        // vwmacc VV
                         {6'b111101, 3'b110}: begin  // vwmacc VX
@@ -1460,6 +3428,56 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;  
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;    
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;   
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;   
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;  
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b111110, 3'b010},        // vwmaccus VV
                         {6'b111110, 3'b110}: begin  // vwmaccus VX
@@ -1472,6 +3490,56 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;  
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;    
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;   
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;   
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;  
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b1;
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b111111, 3'b010},        // vwmaccsu VV
                         {6'b111111, 3'b110}: begin  // vwmaccsu VX
@@ -1484,6 +3552,56 @@ module vproc_decoder #(
                             mode_o.mul.masked     = instr_masked;
                             vxrm_o                = VXRM_RDN;
                             widenarrow_o          = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_HALF_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;  
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF4;  
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = MF2;    
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[2].regs = 1;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;   
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[2].regs = 2;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;   
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4;
+                                    decode_metadata_o.operands[2].regs = 4;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;  
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[2].regs = 8;
+                                    decode_metadata_o.operands[2].frac = FULL_REG;
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b0;
+
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_FULL_WIDTH;
                         end
                         {6'b100111, 3'b000},        // vsmul VV
                         {6'b100111, 3'b100}: begin  // vsmul VX
@@ -1504,6 +3622,11 @@ module vproc_decoder #(
                             mode_o.div.op         = DIV_DIVU;
                             mode_o.div.masked     = instr_masked;
                             widenarrow_o          = OP_SINGLEWIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b100001, 3'b010},        // vdiv VV
                         {6'b100001, 3'b110}: begin  // vdiv VX
@@ -1511,6 +3634,11 @@ module vproc_decoder #(
                             mode_o.div.op         = DIV_DIV;
                             mode_o.div.masked     = instr_masked;
                             widenarrow_o          = OP_SINGLEWIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
                         {6'b100010, 3'b010},        // vremu VV
                         {6'b100010, 3'b110}: begin  // vremu VX
@@ -1518,6 +3646,11 @@ module vproc_decoder #(
                             mode_o.div.op         = DIV_REMU;
                             mode_o.div.masked     = instr_masked;
                             widenarrow_o          = OP_SINGLEWIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b100011, 3'b010},        // vrem VV
                         {6'b100011, 3'b110}: begin  // vrem VX
@@ -1525,6 +3658,11 @@ module vproc_decoder #(
                             mode_o.div.op         = DIV_REM;
                             mode_o.div.masked     = instr_masked;
                             widenarrow_o          = OP_SINGLEWIDTH;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
 
                         `ifdef RISCV_ZVE32F  
@@ -1965,13 +4103,10 @@ module vproc_decoder #(
                         end
 
                         {6'b010000, 3'b001}: begin  // VWFUNARY0
-                            unit_o = UNIT_ELEM;
+                            unit_o = UNIT_XRESULT;
                             unique case (instr_i[19:15])
                                 5'b00000: begin
                                             mode_o.elem.op = ELEM_XMV;    // vfmv.f.s
-                                            `ifndef OLD_VICUNA
-                                            evl_pol             = EVL_1;
-                                            `endif
                                         end
                                 default:  instr_illegal  = 1'b1;
                             endcase
@@ -2165,6 +4300,14 @@ module vproc_decoder #(
                             mode_o.sld.dir    = SLD_UP;
                             mode_o.sld.slide1 = 1'b0;
                             mode_o.sld.masked = instr_masked;
+                            decode_metadata_o.operands[1].vreg = 1'b0;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[1].xreg = 1'b0;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            //TODO: Slides break for fractional lmul, overriding to full
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG;        
                         end
                         {6'b001111, 3'b011},        // vslidedown VI
                         {6'b001111, 3'b100}: begin  // vslidedown VX
@@ -2172,19 +4315,42 @@ module vproc_decoder #(
                             mode_o.sld.dir    = SLD_DOWN;
                             mode_o.sld.slide1 = 1'b0;
                             mode_o.sld.masked = instr_masked;
+                            decode_metadata_o.operands[1].vreg = 1'b0;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[1].xreg = 1'b0;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            //TODO: Slides break for fractional lmul, overriding to full
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b001110, 3'b110}: begin  // vslide1up VX
                             unit_o            = UNIT_SLD;
                             mode_o.sld.dir    = SLD_UP;
                             mode_o.sld.slide1 = 1'b1;
                             mode_o.sld.masked = instr_masked;
-                            rd_o.vreg         = 1'b1;
+                            decode_metadata_o.operands[1].vreg = 1'b0;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[1].xreg = 1'b0;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            //TODO: Slides break for fractional lmul, overriding to full
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
                         {6'b001111, 3'b110}: begin  // vslide1down VX
                             unit_o            = UNIT_SLD;
                             mode_o.sld.dir    = SLD_DOWN;
                             mode_o.sld.slide1 = 1'b1;
                             mode_o.sld.masked = instr_masked;
+                            decode_metadata_o.operands[1].vreg = 1'b0;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[1].xreg = 1'b0;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            //TODO: Slides break for fractional lmul, overriding to full
+                            decode_metadata_o.operands[0].frac = FULL_REG;
+                            decode_metadata_o.operands[1].frac = FULL_REG;
+                            decode_metadata_o.dest_frac        = FULL_REG; 
                         end
 
 
@@ -2192,95 +4358,274 @@ module vproc_decoder #(
                         {6'b001100, 3'b000},        // vrgather VV
                         {6'b001100, 3'b011},        // vrgather VI
                         {6'b001100, 3'b100}: begin  // vrgather VX
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VRGATHER;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_GATHER;
+                            mode_o.gather.scalar_rs1 = !(instr_i[14:12] == 3'b000);
+                            decode_metadata_o.operands[0].vreg = 1'b0; //This op is read directly in gather unit
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].vreg = instr_i[14:12] == 3'b000;
+                            decode_metadata_o.operands[1].r.xval = rs1_o.r.xval;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+                        end
+                        {6'b001110, 3'b000}: begin  //vrgatherei16 vv
+                            unit_o             = UNIT_GATHER;
+                            mode_o.gather.scalar_rs1 = 1'b0;
+                            decode_metadata_o.operands[0].vreg = 1'b0; //This op is read directly in gather unit
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].sew = VSEW_16; //indexes with ei16
+                            decode_metadata_o.operands[1].r.xval = rs1_o.r.xval;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate  = SHIFT_ELEMWISE;
+
+
+                            //Configure OP1 based on lmul_i and vsew_i
+                            //Default settings are fine if vsew_i == VSEW_16
+                            case ({lmul_i, vsew_i})
+                                {LMUL_F8, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = MF4;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_F4, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = MF2;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_F2, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_1, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 2;
+                                end
+                                {LMUL_2, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 4;
+                                end
+                                {LMUL_4, VSEW_8}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 8;
+                                end
+                                {LMUL_F4, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = MF8;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_F2, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = MF4;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_1, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = MF2;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_2, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                {LMUL_4, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 2;
+                                end
+                                {LMUL_8, VSEW_32}: begin
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 4;
+                                end
+                            endcase
+
                         end
                         {6'b010111, 3'b010}: begin  // vcompress VV
                             unit_o             = UNIT_ELEM;
                             mode_o.elem.op     = ELEM_VCOMPRESS;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            // mode_o.elem.xreg   = 1'b0;
+                            // mode_o.elem.masked = instr_masked;
+                            decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                            decode_metadata_o.operands[1].r.vaddr = instr_vs1;
+                            decode_metadata_o.operands[2].r.vaddr = instr_vd;
+                            decode_metadata_o.operands[0].vreg = 1'b1;
+                            decode_metadata_o.operands[0].xreg = 1'b0;
+                            decode_metadata_o.operands[1].vreg = 1'b1;
+                            decode_metadata_o.operands[1].xreg = 1'b0;
+                            decode_metadata_o.operands[2].vreg = 1'b1;
+                            decode_metadata_o.operands[2].xreg = 1'b0;
+                            // decode_metadata_o.operands[0].regs = 1;
+                            decode_metadata_o.operands[1].regs = 1;
+                            // decode_metadata_o.operands[2].regs = 1;
+                            // vs2 and vd are element-wise
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.operands[2].shift_rate = SHIFT_ELEMWISE;
+                            decode_metadata_o.mask_operand.shift_rate = SHIFT_ELEMWISE;
+                            rd_o.shift_rate = SHIFT_ELEMWISE;
                         end
                         {6'b000000, 3'b010}: begin  // vredsum VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDSUM;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM;       //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand
+                            mode_o.reduction.op = OP_REDSUM;
                         end
                         {6'b000001, 3'b010}: begin  // vredand VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDAND;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM;
+                            mode_o.reduction.op = OP_REDAND;
                         end
                         {6'b000010, 3'b010}: begin  // vredor VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDOR;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM;
+                            mode_o.reduction.op = OP_REDOR;
                         end
                         {6'b000011, 3'b010}: begin  // vredxor VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDXOR;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM;
+                            mode_o.reduction.op = OP_REDXOR;
                         end
                         {6'b000100, 3'b010}: begin  // vredminu VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDMINU;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o              = UNIT_REDMINMAX;
+                            mode_o.minmax.op    = OP_REDMINU;
                         end
                         {6'b000101, 3'b010}: begin  // vredmin VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDMIN;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o              = UNIT_REDMINMAX;
+                            mode_o.minmax.op    = OP_REDMIN;
                         end
                         {6'b000110, 3'b010}: begin  // vredmaxu VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDMAXU;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o              = UNIT_REDMINMAX;
+                            mode_o.minmax.op    = OP_REDMAXU;
                         end
                         {6'b000111, 3'b010}: begin  // vredmax VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDMAX;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o              = UNIT_REDMINMAX;
+                            mode_o.minmax.op    = OP_REDMAX;
                         end
                         {6'b110000, 3'b000}: begin  // vwredsumu VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDSUM;
-                            mode_o.elem.sigext = 1'b0;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM; //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand
                             widenarrow_o       = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[1].frac = MF4;
+                                    decode_metadata_o.operands[1].regs = 1;   
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                    decode_metadata_o.operands[1].frac = MF2;
+                                    decode_metadata_o.operands[1].regs = 1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 2;  
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 8; 
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b0;
+                            decode_metadata_o.operands[0].sign = 1'b0;
                         end
                         {6'b110001, 3'b000}: begin  // vwredsum VV
-                            unit_o             = UNIT_ELEM;
-                            mode_o.elem.op     = ELEM_VREDSUM;
-                            mode_o.elem.sigext = 1'b1;
-                            mode_o.elem.xreg   = 1'b0;
-                            mode_o.elem.masked = instr_masked;
+                            unit_o             = UNIT_REDSUM; //TODO: Currently, too many source registers are read for vs1.  should be able to override this with better valid/ready signalling + lmul per operand
                             widenarrow_o       = OP_WIDENING;
+                            decode_metadata_o.operands[1].shift_rate = SHIFT_FULL_WIDTH;
+                            decode_metadata_o.operands[0].shift_rate = SHIFT_HALF_WIDTH;
+                            unique case (lmul_i) //Destination LMUL/2
+                                LMUL_F8: begin
+                                    decode_metadata_o.dest_frac = MF4; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[1].frac = MF4;
+                                    decode_metadata_o.operands[1].regs = 1;   
+                                end
+                                LMUL_F4: begin
+                                    decode_metadata_o.dest_frac = MF2;
+                                    decode_metadata_o.dest_emul = EMUL_1; 
+                                    decode_metadata_o.operands[1].frac = MF2;
+                                    decode_metadata_o.operands[1].regs = 1;  
+                                end
+                                LMUL_F2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 1; 
+                                end
+                                LMUL_1: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_2;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 2;  
+                                end
+                                LMUL_2: begin
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.dest_emul = EMUL_4; 
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 4; 
+                                end
+                                LMUL_4: begin
+                                    decode_metadata_o.dest_frac = FULL_REG; 
+                                    decode_metadata_o.dest_emul = EMUL_8;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].regs = 8; 
+                                end
+                                default: begin
+                                    instr_illegal = 1'b1;  
+                                end
+                            endcase
+                            decode_metadata_o.operands[1].sign = 1'b1;
+                            decode_metadata_o.operands[0].sign = 1'b1;
                         end
 
 
                         // Unary arithmetic:
                         {6'b010000, 3'b010}: begin  // VWXUNARY0
-                            unit_o = UNIT_ELEM;
+                            unit_o = UNIT_XRESULT;
                             unique case (instr_i[19:15])
-                                5'b00000: begin
-                                            mode_o.elem.op = ELEM_XMV;    // vmv.x.s 
-                                            `ifndef OLD_VICUNA
-                                            evl_pol             = EVL_1;
-                                            `endif
-                                        end
-                                5'b10000: mode_o.elem.op = ELEM_VPOPC;  // vpopc
-                                5'b10001: mode_o.elem.op = ELEM_VFIRST; // vfirst
+                                5'b00000: begin // vmv.x.s
+                                    mode_o.elem.op = ELEM_XMV;
+                                    decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[0].vreg = 1'b1;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b0;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                5'b10000: begin // vpopc.m
+                                    mode_o.elem.op = ELEM_VPOPC;
+                                    // First operand is vs2, second is mask register, but we treat is a regular vector register
+                                    decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[1].r.vaddr = '0;
+                                    decode_metadata_o.operands[0].vreg = 1'b1;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b1;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                5'b10001: begin // vfirst.m
+                                    mode_o.elem.op = ELEM_VFIRST;
+                                    // First operand is vs2, second is mask register, but we treat is a regular vector register
+                                    decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[1].r.vaddr = '0;
+                                    decode_metadata_o.operands[0].vreg = 1'b1;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b1;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
                                 default:  instr_illegal  = 1'b1;
                             endcase
                             mode_o.elem.xreg   = 1'b1;
@@ -2309,13 +4654,32 @@ module vproc_decoder #(
                         end
                         {6'b010100, 3'b010}: begin  // VMUNARY0
                             if (instr_vs1[4]) begin
-                                unit_o             = UNIT_ELEM;
-                                mode_o.elem.op     = instr_vs1[0] ? ELEM_VID : ELEM_VIOTA;
-                                mode_o.elem.xreg   = 1'b0;
-                                mode_o.elem.masked = instr_masked;
-                                instr_illegal      = instr_vs1[3:1] != 3'b000; //Potential issue
-                                rs1_o.vreg         = 1'b0;
-                                rs2_o.vreg         = ~instr_vs1[0]; // vid has no source reg
+                                unit_o             = UNIT_INDEX;
+                                if (instr_vs1[0]) begin
+                                    mode_o.elem.op     = ELEM_VID;
+                                    mode_o.elem.xreg   = 1'b0;
+                                    mode_o.elem.masked = instr_masked;
+                                    // Potential issue
+                                    instr_illegal      = instr_vs1[3:1] != 3'b000;
+                                    // decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[0].vreg = 1'b0;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b0;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                    rs1_o.vreg         = 1'b0;
+                                    rs2_o.vreg         = 1'b0;
+                                end else begin
+                                    mode_o.elem.op     = ELEM_VIOTA;
+                                    decode_metadata_o.operands[0].r.vaddr = instr_vs2;
+                                    decode_metadata_o.operands[1].r.vaddr = '0;
+                                    decode_metadata_o.operands[0].vreg = 1'b1;
+                                    decode_metadata_o.operands[0].xreg = 1'b0;
+                                    decode_metadata_o.operands[1].vreg = 1'b1;
+                                    decode_metadata_o.operands[1].xreg = 1'b0;
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                end
+                                // rs2_o.vreg         = ~instr_vs1[0]; // vid has no source reg
                             end
                         end
 
@@ -2413,7 +4777,6 @@ module vproc_decoder #(
         endcase
 
          if (unit_o == UNIT_LSU) begin
-
             unique case ({mode_o.lsu.eew, vsew_i})
                 {VSEW_8 , VSEW_32}: begin   // EEW / SEW = 1 / 4
                     // use EMUL == 1 for fractional EMUL (LMUL < 4), VL is updated anyways
@@ -2484,7 +4847,6 @@ module vproc_decoder #(
                 end
                 default: ;
             endcase
-            
             if(mode_o.lsu.stride == LSU_INDEXED) begin
                 // vl does not need to be scaled since for indexed stride
                 // we use default sew and lmul
@@ -2553,9 +4915,6 @@ module vproc_decoder #(
                     default: ;
                 endcase
                 vl_o = vl_i;
-                
-                
-
             end else if (widenarrow_o == OP_WIDENING_EXT2) begin
                 // unlike other widening ops, for [s/z]ext.vf2, eew, emul, and vl are already set correctly     
                 vsew_o = vsew_i;
@@ -2570,8 +4929,6 @@ module vproc_decoder #(
                     default: ;
                 endcase
                 vl_o = vl_i;
-                
-                
              end else if (widenarrow_o == OP_WIDENING_EXT4) begin
                 // unlike other widening ops, for [s/z]ext.vf4, eew, emul, and vl are already set correctly     
                 vsew_o = vsew_i;
@@ -2614,10 +4971,11 @@ module vproc_decoder #(
 
         if (emul_override) begin
             emul_o = emul;
-            `ifndef OLD_VICUNA
-            vl_o   = vl;
-            `endif
         end
+        if (vl_override_o | override_vl) begin
+            vl_o = vl;
+        end
+
 
         unique case (evl_pol)
             EVL_1: begin
@@ -2704,7 +5062,7 @@ module vproc_decoder #(
         vd_invalid  = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         narrow_frac_o = DONT_CARE_ZERO ? 1'b0 : 1'bx;
         // regular operation:
-        unique case (widenarrow_o)
+        unique case (widenarrow_o)  //TODO: Rewrite this handling with decoder
             OP_SINGLEWIDTH: begin
                 vs1_invalid = (instr_vs1 & {2'b00, regaddr_mask       }) != 5'b0;
                 vs2_invalid = (instr_vs2 & {2'b00, regaddr_mask       }) != 5'b0;
@@ -2750,7 +5108,7 @@ module vproc_decoder #(
             vd_invalid  = 1'b0;
         end
 
-        if (unit_o == UNIT_ELEM) begin
+        if (unit_o == UNIT_XRESULT) begin
             unique case (mode_o.elem.op)
                 ELEM_VREDSUM,
                 ELEM_VREDAND,

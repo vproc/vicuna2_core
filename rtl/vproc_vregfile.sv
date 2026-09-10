@@ -9,7 +9,7 @@ module vproc_vregfile #(
         parameter int unsigned                           MAX_PORT_W             = 128,  // max port width in bits
         parameter int unsigned                           MAX_ADDR_W             = 128,  // max addr width in bits
         parameter int unsigned                           PORT_RD_CNT            = 1,    // number of read ports
-        parameter int unsigned                           PORT_RD_W[PORT_RD_CNT] = '{0}, // read port widths
+        //parameter int unsigned                           PORT_RD_W[PORT_RD_CNT] = '{0}, // read port widths
         parameter int unsigned                           PORT_WR_CNT            = 1,    // number of write ports
         parameter int unsigned                           PORT_WR_W[PORT_WR_CNT] = '{0}  // write port widths
     )(

@@ -106,16 +106,21 @@ typedef enum logic [3:0] {
     UNIT_DIV,
     UNIT_FPU,
     UNIT_SLD,
+    UNIT_XRESULT,
+    UNIT_INDEX,
     UNIT_ELEM,
     UNIT_ZVBB,
     UNIT_ZVBC,
+    UNIT_REDSUM,
+    UNIT_GATHER,
     UNIT_CUSTOM, //Used for arbitrary custom functional units
+    UNIT_REDMINMAX,
     // pseudo-units (used for instructions that require no unit):
     UNIT_CFG
 } op_unit;
 
 // The number of different types of execution units (excludes pseudo-units)
-parameter int unsigned UNIT_CNT = 10;
+parameter int unsigned UNIT_CNT = 15;
 
 typedef enum logic [1:0] {
     COUNT_INC_1 = 2'b00,
@@ -184,6 +189,7 @@ typedef enum logic [1:0] {
 
 typedef struct packed {
     logic           cmp;        // compare instruction (result is a mask)
+    logic       msk_cmp;        // compare when all operands and result are masks
     union packed {
         opcode_alu_sel   sel;
         opcode_alu_shift shift;
@@ -199,7 +205,7 @@ typedef struct packed {
     logic           sat_res;    // saturate result for narrowing operations
     logic           sigext;
 `ifdef VPROC_OP_MODE_UNION
-    logic [4:0] unused;
+    logic [3:0] unused;
 `endif
 } op_mode_alu;
 
@@ -391,9 +397,38 @@ typedef struct packed {
     logic [15:0] unused;
 } op_mode_zvbc;
 
+typedef enum logic [1:0] { 
+    OP_REDSUM  = 2'b00,
+    OP_REDAND  = 2'b01,
+    OP_REDOR   = 2'b10,
+    OP_REDXOR  = 2'b11
+} opcode_reduction;
+
+typedef struct packed {
+    opcode_reduction op; 
+    logic [15:0] unused;
+} op_mode_reduction;
+
+typedef enum logic [1:0] { 
+    OP_REDMINU = 2'b00,
+    OP_REDMIN  = 2'b01,
+    OP_REDMAXU = 2'b10,
+    OP_REDMAX  = 2'b11
+} opcode_minmax;
+
+typedef struct packed {
+    opcode_minmax op; 
+    logic [15:0] unused;
+} op_mode_minmax;
+
 typedef struct packed { //Meant to be reinterpreted by the custom functional unit and the custom decoder
     logic [17:0] unused;
 } op_mode_custom;
+
+typedef struct packed {
+    logic scalar_rs1; 
+    logic [16:0] unused;
+} op_mode_gather;
 
 `ifdef VPROC_OP_MODE_UNION
 typedef union packed {
@@ -412,12 +447,36 @@ typedef struct packed {
     op_mode_zvbb zvbb;
     op_mode_zvbc zvbc;
     op_mode_custom custom;
+    op_mode_reduction reduction;
+    op_mode_minmax minmax;
+    op_mode_gather gather;
 } op_mode;
+
+typedef enum logic [1:0] {
+    SHIFT_FULL_WIDTH,     // Operand Shifts Maximum Width Every Cycle out of VREGUNPACK
+    SHIFT_HALF_WIDTH,      // Operand Shifts Half Width Every Cycle out of VREGUNPACK ( SEWx2 Widening Operations)
+    SHIFT_QUARTER_WIDTH,   // Operand Shifts Quarter Width Every Cycle out of VREGUNPACK (SEWx4 Widening Operations)
+    SHIFT_ELEMWISE        // Operand Shifts a Single Element out Every Cycle
+} op_shift_rate;
+
+//Operands which do not occupy entire registers (fractional lmul) are called out explictly
+typedef enum logic [1:0] {
+    FULL_REG,
+    MF2,
+    MF4,
+    MF8
+} op_fractional;
 
 // source register type:
 typedef struct packed {
-    logic vreg;
-    logic xreg;
+    logic            vreg;
+    logic            xreg;
+    op_shift_rate    shift_rate;
+    logic            sign;
+    cfg_vsew         sew;
+    op_fractional    frac;      //Separate from number of registers to allow for fractional segmented operations
+    logic [3:0]      repeats;   //how many times should the register group be read and passed to the pipeline
+    logic [3:0]      regs;      //how many registers does this operand require? (normally related to emul).  Maximum currently 15 (intentionally higher than necessary)
 `ifdef VPROC_OP_REGS_UNION
     union {
 `else
@@ -432,6 +491,9 @@ typedef struct packed {
 typedef struct packed {
     logic       vreg;
     logic [4:0] addr;
+    op_shift_rate   shift_rate;
+    logic           sign;
+    cfg_vsew        sew;
 } op_regd;
 
 // operand fetch info structure
@@ -439,17 +501,30 @@ typedef struct packed {
     logic shift;
     logic hold;
     logic vreg;
+    logic xreg;
     logic elemwise;
     logic narrow;
     logic vf4_ext;
     logic sigext;
     logic lsu_instr;
     logic field_instr;
+    logic first_cycle;
+    op_shift_rate shift_rate;
+    logic sign;
+    cfg_vsew        sew;
 } unpack_flags;
+
+typedef enum logic [1:0] {
+    RES_FULL_WIDTH,     // Result produces full datapath width of data every cycle
+    RES_NARROW_WIDTH,      // Result produces half datapath width of data every cycle
+    RES_ELEMWISE_WIDTH,   // Result is a single element (reduction operations)
+    RES_BITWISE_WIDTH    // Result is a single bit/OP_W (mask creation operations)
+} result_shift_rate;
 
 // result store info structure
 typedef struct packed {
     logic       shift;
+    result_shift_rate shift_rate;
     logic       elemwise;
     logic       narrow;
     logic       narrow_frac;
@@ -458,8 +533,13 @@ typedef struct packed {
     logic [2:0] mul_idx;
     logic [4:0] vreg_idx; //TODO: This should be defined per pipeline as log2(VREG_W/MAX_OP_W) bits wide
     logic       first_cycle;
+    logic       last_cycle;
     logic       lsu_instr;
+    logic       store;
     logic       field_instr;
+    logic       mask_res;
+    op_fractional dest_frac;
+    logic         single_elem_res;
 } pack_flags;
 
 
@@ -479,5 +559,13 @@ localparam fpu_features_t RV32ZVFH = '{
     FpFmtMask:     5'b10100,
     IntFmtMask:    4'b0010  //TODO:FIX
 };
+//New struct for decode flags to be passed to unpack:  TODO: Migrate all necessary signal outputs from vproc_decode to this struct and remove duplicates
+typedef struct packed {
+    op_regs [2:0] operands;     //TODO: Dynamically select # operands based on # read ports, currently fixed to 3
+    op_regs       mask_operand; //Todo: many signals in the op_regs datatype are unncessesary for the mask operand.  Should probably have its own, smaller version of the struct
+    logic         masked;
+    cfg_emul      dest_emul;
+    op_fractional dest_frac;  
+} decode_metadata;
 
 endpackage
