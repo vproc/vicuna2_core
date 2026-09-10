@@ -246,25 +246,20 @@ module vproc_result #(
     xif_result_if.result.exccode = '0;
     xif_result_if.result.err = '0;
     xif_result_if.result.dbg = '0;
+    xif_result_if.result_valid = (!csr_res_fifo_empty & (csr_res_fifo_out.id == res_id_fifo_out)) | (!vlsu_res_fifo_empty & (vlsu_res_fifo_out.id == res_id_fifo_out)) | (!xreg_res_fifo_empty & (xreg_res_fifo_out.id == res_id_fifo_out)) | (!empty_res_fifo_empty & (empty_res_fifo_out == res_id_fifo_out));
 
-    if (pop_empty_id) begin
-        xif_result_if.result_valid = 1'b1;
-
-    end else if (pop_xreg_id) begin
-        xif_result_if.result_valid = 1'b1;
+    if (pop_xreg_id) begin
 
         xif_result_if.result.data = xreg_res_fifo_out.data;
         xif_result_if.result.rd = xreg_res_fifo_out.rd;
         xif_result_if.result.we = 1'b1;
 
     end else if (pop_vlsu_id) begin
-        xif_result_if.result_valid = 1'b1;
 
         xif_result_if.result.exc = vlsu_res_fifo_out.exc;
         xif_result_if.result.exccode = vlsu_res_fifo_out.exccode;
 
     end else if (pop_csr_id) begin
-        xif_result_if.result_valid = 1'b1;
 
         xif_result_if.result.data = csr_res_fifo_out.data;
         xif_result_if.result.rd = csr_res_fifo_out.addr;
