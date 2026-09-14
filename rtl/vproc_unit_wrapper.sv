@@ -97,7 +97,7 @@ module vproc_unit_wrapper
       end
 
       logic unit_in_valid_i;
-      assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & (|pipe_in_valid_i | pipe_in_mask_valid_i) & ! indexed_op_clear_ready; //Input valid only if all necessary ops are valid (including mask) and not clearing an index operand
+      assign unit_in_valid_i = &(~(pipe_in_valid_i ^ necessary_ops)) & (!pipe_in_ctrl_i.decode_metadata.masked | pipe_in_mask_valid_i) & (|pipe_in_valid_i | pipe_in_mask_valid_i) & ! indexed_op_clear_ready; //Input valid only if all necessary ops are valid (including mask) and not clearing an index operand
 
       logic unit_ready_in_o;
       for (genvar i = 0; i < 2; i++) begin
