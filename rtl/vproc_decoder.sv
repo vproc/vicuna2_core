@@ -5146,6 +5146,11 @@ module vproc_decoder #(
             endcase
         end
 
+        if (unit_o == UNIT_REDSUM || unit_o == UNIT_REDMINMAX) begin
+            vs1_invalid = 1'b0;
+            vd_invalid  = 1'b0;
+        end
+
         if (unit_o == UNIT_FPU) begin
             if (mode_o.fpu.op_reduction) begin
                 // all FPU reduction instructions read the init value from vs1,
