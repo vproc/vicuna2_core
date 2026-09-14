@@ -4146,6 +4146,12 @@ module vproc_decoder #(
                                     mode_o.alu.op_mask  = ALU_MASK_NONE;
                                     mode_o.alu.cmp      = 1'b0;
                                     evl_pol             = EVL_1;
+                                    decode_metadata_o.dest_emul        = EMUL_1;
+                                    decode_metadata_o.dest_frac        = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
                                 end
                                 default: begin
                                     instr_illegal = 1'b1;
@@ -4613,6 +4619,9 @@ module vproc_decoder #(
                                     decode_metadata_o.operands[1].xreg = 1'b0;
                                     decode_metadata_o.operands[0].regs = 1;
                                     decode_metadata_o.operands[1].regs = 1;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
                                 end
                                 5'b10000: begin // vpopc.m
                                     mode_o.elem.op = ELEM_VPOPC;
@@ -4624,7 +4633,11 @@ module vproc_decoder #(
                                     decode_metadata_o.operands[1].vreg = 1'b1;
                                     decode_metadata_o.operands[1].xreg = 1'b0;
                                     decode_metadata_o.operands[0].regs = 1;
-                                    decode_metadata_o.operands[1].regs = 1;
+                                    decode_metadata_o.operands[1].regs = 1;                                    
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
                                 end
                                 5'b10001: begin // vfirst.m
                                     mode_o.elem.op = ELEM_VFIRST;
@@ -4637,6 +4650,10 @@ module vproc_decoder #(
                                     decode_metadata_o.operands[1].xreg = 1'b0;
                                     decode_metadata_o.operands[0].regs = 1;
                                     decode_metadata_o.operands[1].regs = 1;
+                                    decode_metadata_o.dest_emul = EMUL_1;
+                                    decode_metadata_o.dest_frac = FULL_REG;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
                                 end
                                 default:  instr_illegal  = 1'b1;
                             endcase
@@ -4658,6 +4675,12 @@ module vproc_decoder #(
                                     mode_o.alu.op_mask  = ALU_MASK_NONE;
                                     mode_o.alu.cmp      = 1'b0;
                                     evl_pol             = EVL_1;
+                                    decode_metadata_o.dest_emul        = EMUL_1;
+                                    decode_metadata_o.dest_frac        = FULL_REG;
+                                    decode_metadata_o.operands[0].regs = 1;
+                                    decode_metadata_o.operands[1].regs = 1;
+                                    decode_metadata_o.operands[0].frac = FULL_REG;
+                                    decode_metadata_o.operands[1].frac = FULL_REG;
                                 end
                                 default: begin
                                     instr_illegal = 1'b1;
