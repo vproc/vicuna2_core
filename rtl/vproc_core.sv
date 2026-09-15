@@ -204,63 +204,63 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     assign async_rst_n = ASYNC_RESET ? rst_ni : 1'b1  ;
     assign sync_rst_n  = ASYNC_RESET ? 1'b1   : rst_ni;
 
+    //TODO: NEW CSR MODULE/UNIT
+    // ///////////////////////////////////////////////////////////////////////////
+    // // CONFIGURATION STATE AND CSR READ AND WRITES
 
-    ///////////////////////////////////////////////////////////////////////////
-    // CONFIGURATION STATE AND CSR READ AND WRITES
+    // cfg_vsew             vsew_q,     vsew_d;     // VSEW (single element width)
+    // cfg_lmul             lmul_q,     lmul_d;     // LMUL
+    // logic [1:0]          agnostic_q, agnostic_d; // agnostic policy (vta & vma)
+    // logic                vl_0_q,     vl_0_d;     // set if VL == 0
+    // logic [CFG_VL_W-1:0] vl_q,       vl_d;       // VL * (VSEW / 8) - 1
+    // logic [CFG_VL_W  :0] vl_csr_q,   vl_csr_d;   // VL (intentionally CFG_VL_W+1 wide)
+    // logic [CFG_VL_W-1:0] vstart_q,   vstart_d;   // vector start index
+    // cfg_vxrm             vxrm_q,     vxrm_d;     // fixed-point rounding mode
+    // logic                vxsat_q,    vxsat_d;    // fixed-point saturation flag
+    // always_ff @(posedge clk_i or negedge async_rst_n) begin : vproc_cfg_reg
+    //     if (~async_rst_n) begin
+    //         vsew_q     <= VSEW_INVALID;
+    //         lmul_q     <= LMUL_1;
+    //         agnostic_q <= '0;
+    //         vl_0_q     <= 1'b0;
+    //         vl_q       <= '0;
+    //         vl_csr_q   <= '0;
+    //         vstart_q   <= '0;
+    //         vxrm_q     <= VXRM_RNU;
+    //         vxsat_q    <= 1'b0;
+    //     end
+    //     else if (~sync_rst_n) begin
+    //         vsew_q     <= VSEW_INVALID;
+    //         lmul_q     <= LMUL_1;
+    //         agnostic_q <= '0;
+    //         vl_0_q     <= 1'b0;
+    //         vl_q       <= '0;
+    //         vl_csr_q   <= '0;
+    //         vstart_q   <= '0;
+    //         vxrm_q     <= VXRM_RNU;
+    //         vxsat_q    <= 1'b0;
+    //     end else begin
+    //         vsew_q     <= vsew_d;
+    //         lmul_q     <= lmul_d;
+    //         agnostic_q <= agnostic_d;
+    //         vl_0_q     <= vl_0_d;
+    //         vl_q       <= vl_d;
+    //         vl_csr_q   <= vl_csr_d;
+    //         vstart_q   <= vstart_d;
+    //         vxrm_q     <= vxrm_d;
+    //         vxsat_q    <= vxsat_d;
+    //     end
+    // end
+    // logic cfg_valid;
+    // assign cfg_valid = vsew_q != VSEW_INVALID;
 
-    cfg_vsew             vsew_q,     vsew_d;     // VSEW (single element width)
-    cfg_lmul             lmul_q,     lmul_d;     // LMUL
-    logic [1:0]          agnostic_q, agnostic_d; // agnostic policy (vta & vma)
-    logic                vl_0_q,     vl_0_d;     // set if VL == 0
-    logic [CFG_VL_W-1:0] vl_q,       vl_d;       // VL * (VSEW / 8) - 1
-    logic [CFG_VL_W  :0] vl_csr_q,   vl_csr_d;   // VL (intentionally CFG_VL_W+1 wide)
-    logic [CFG_VL_W-1:0] vstart_q,   vstart_d;   // vector start index
-    cfg_vxrm             vxrm_q,     vxrm_d;     // fixed-point rounding mode
-    logic                vxsat_q,    vxsat_d;    // fixed-point saturation flag
-    always_ff @(posedge clk_i or negedge async_rst_n) begin : vproc_cfg_reg
-        if (~async_rst_n) begin
-            vsew_q     <= VSEW_INVALID;
-            lmul_q     <= LMUL_1;
-            agnostic_q <= '0;
-            vl_0_q     <= 1'b0;
-            vl_q       <= '0;
-            vl_csr_q   <= '0;
-            vstart_q   <= '0;
-            vxrm_q     <= VXRM_RNU;
-            vxsat_q    <= 1'b0;
-        end
-        else if (~sync_rst_n) begin
-            vsew_q     <= VSEW_INVALID;
-            lmul_q     <= LMUL_1;
-            agnostic_q <= '0;
-            vl_0_q     <= 1'b0;
-            vl_q       <= '0;
-            vl_csr_q   <= '0;
-            vstart_q   <= '0;
-            vxrm_q     <= VXRM_RNU;
-            vxsat_q    <= 1'b0;
-        end else begin
-            vsew_q     <= vsew_d;
-            lmul_q     <= lmul_d;
-            agnostic_q <= agnostic_d;
-            vl_0_q     <= vl_0_d;
-            vl_q       <= vl_d;
-            vl_csr_q   <= vl_csr_d;
-            vstart_q   <= vstart_d;
-            vxrm_q     <= vxrm_d;
-            vxsat_q    <= vxsat_d;
-        end
-    end
-    logic cfg_valid;
-    assign cfg_valid = vsew_q != VSEW_INVALID;
-
-    // CSR reads
-    assign csr_vtype_o  = cfg_valid ? {24'b0, agnostic_q, 1'b0, vsew_q, lmul_q} : 32'h80000000;
-    assign csr_vl_o     = cfg_valid ? {{(32-CFG_VL_W-1){1'b0}}, vl_csr_q} : '0;
-    assign csr_vlenb_o  = VREG_W / 8;
-    assign csr_vstart_o = '0;
-    assign csr_vxrm_o   = vxrm_q;
-    assign csr_vxsat_o  = vxsat_q;
+    // // CSR reads
+    // assign csr_vtype_o  = cfg_valid ? {24'b0, agnostic_q, 1'b0, vsew_q, lmul_q} : 32'h80000000;
+    // assign csr_vl_o     = cfg_valid ? {{(32-CFG_VL_W-1){1'b0}}, vl_csr_q} : '0;
+    // assign csr_vlenb_o  = VREG_W / 8;
+    // assign csr_vstart_o = '0;
+    // assign csr_vxrm_o   = vxrm_q;
+    // assign csr_vxsat_o  = vxsat_q;
 
 
     ///////////////////////////////////////////////////////////////////////////
@@ -290,21 +290,22 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic        dec_ready,       dec_valid,       dec_clear;
     logic        dec_buf_valid_q, dec_buf_valid_d;
     decoder_data dec_data_q,      dec_data_d;
-    always_ff @(posedge clk_i or negedge async_rst_n) begin : vproc_dec_buf_valid
-        if (~async_rst_n) begin
-            dec_buf_valid_q <= 1'b0;
-        end
-        else if (~sync_rst_n) begin
-            dec_buf_valid_q <= 1'b0;
-        end else begin
-            dec_buf_valid_q <= dec_buf_valid_d;
-        end
-    end
-    always_ff @(posedge clk_i) begin : vproc_dec_buf_data
-        if (dec_ready) begin
-            dec_data_q <= dec_data_d;
-        end
-    end
+    //TODO: ELIMINATE THIS BUFFER
+    // always_ff @(posedge clk_i or negedge async_rst_n) begin : vproc_dec_buf_valid
+    //     if (~async_rst_n) begin
+    //         dec_buf_valid_q <= 1'b0;
+    //     end
+    //     else if (~sync_rst_n) begin
+    //         dec_buf_valid_q <= 1'b0;
+    //     end else begin
+    //         dec_buf_valid_q <= dec_buf_valid_d;
+    //     end
+    // end
+    // always_ff @(posedge clk_i) begin : vproc_dec_buf_data
+    //     if (dec_ready) begin
+    //         dec_data_q <= dec_data_d;
+    //     end
+    // end
     assign dec_buf_valid_d = (~dec_ready | dec_valid) & ~dec_clear;
 
     // Check if scalar source operands are valid
@@ -391,8 +392,9 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // speculative until there is a corresponding commit transaction.  The
     // commit transaction changes the instruction's state to either committed
     // or killed, depending on the corresponding bit in the commit transaction.
-    // The instruction remains in that state until it is complete.  Note that
-    // an instruction may be incomplete despite having been retired (by
+    // The instruction remains in that state until it is complete.   
+    // TODO: Handle below condition with a new pipeline ID 
+    // Note that an instruction may be incomplete despite having been retired (by
     // providing a result to the host CPU via the XIF result interface).
     // Hence, the host CPU might attempt to reuse the ID of an incomplete
     // instruction.  To avoid this, the decoder stalls in case the instruction
@@ -413,7 +415,37 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         instr_empty_res_q <= instr_empty_res_d;
     end
 
-    assign issue_id_used = instr_state_q[xif_issue_if.issue_req.id] != INSTR_INVALID;
+    //Update issue/commit status
+    always_comb begin
+        instr_state_d = instr_state_q;
+        if ((xif_commit_if.commit.id == xif_issue_if.issue_req.id) & xif_commit_if.commit_valid & xif_issue_if.issue_valid) begin //If the same instruction is committed and issued in the same cycle
+            //Mark offloaded and comitted instructions as comitted (in this mode, instructions are offloaded non-speculatively and cannot be killed)
+            if (xif_issue_if.issue_valid & xif_issue_if.issue_ready & xif_commit_if.commit_valid) begin
+                instr_state_d[xif_issue_if.issue_req.id] = INSTR_COMMITTED;
+            end
+            //Mark instructions invalid once result is signalled
+            if (xif_result_if.result_valid & xif_result_if.result_ready) begin
+                instr_state_d[xif_result_if.result.id] = INSTR_INVALID;
+            end
+        end else begin
+            if (xif_issue_if.issue_valid & xif_issue_if.issue_ready) begin
+                instr_state_d[xif_issue_if.issue_req.id] = INSTR_SPECULATIVE;
+            end
+            if (xif_issue_if.commit_valid) begin
+                if (xif_commit_if.commit.commit_kill) begin
+                    instr_state_d[xif_commit_if.commit.id] = INSTR_KILLED;
+                end else begin
+                    instr_state_d[xif_commit_if.commit.id] = INSTR_COMMITTED;
+                end
+            end
+            if (xif_result_if.result_valid & xif_result_if.result_ready) begin
+                instr_state_d[xif_result_if.result.id] = INSTR_INVALID;
+            end
+        end
+    end
+
+    assign issue_id_used = instr_state_q[xif_issue_if.issue_req.id] != INSTR_INVALID; //TODO: This condition should no longer occur.  Scalar core should not be able to offload the same ID twice
+    ////////
 
     // Instruction complete signal for each pipeline
     logic [PIPE_CNT-1:0]               instr_complete_valid;
@@ -441,358 +473,74 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     assign instr_offload = xif_issue_if.issue_valid & xif_issue_if.issue_ready &
                            xif_issue_if.issue_resp.accept;
 
-    always_comb begin
-        instr_state_d      = instr_state_q;
-        instr_empty_res_d  = instr_empty_res_q;
-        result_csr_valid   = 1'b0;
-        result_csr_id      = dec_data_q.id;
-        result_csr_addr    = dec_data_q.rd.addr;
-        result_empty_valid = 1'b0;
-        result_empty_id    = xif_commit_if.commit.id;
-        dec_clear          = 1'b0;
+    ///////////////////////////////
+    // DISPATCH QUEUES
+    //
+    // TODO: Instructions are dispatched to the pipeline strictly in order, only after they are committed, or eliminated from the queue when killed
+    // TODO: Separate queue for CSR operations, since these go to the TODO: CSR unit and not the pipeline
+    // TODO: Fallthrough mode enabled to improve performance in the case where offloaded instructions are non-speculative (i.e. committed immediately as in the CVA6).  TODO: Confirm this has no effect on FMAX
+    // TODO: For improved performance, a new ID (pipeline ID) is assigned for regfile arbitration purposes to prevent unneccesary stalls from instructions having the same XIF ID
+    ///////////////////////////////
 
-        if (instr_offload) begin
-            // For each issued instruction, remember whether it will produce an
-            // empty result or not. This must be done for accepted as well as
-            // rejected instructions, since the main core will commit all of
-            // them and rejected instructions must not produce a result.
-            `ifdef COMMIT_AND_ISSUE
-                //CVA6 sends commit and issue together
-                instr_state_d    [xif_issue_if.issue_req.id] = INSTR_COMMITTED;
-            `else
-                instr_state_d    [xif_issue_if.issue_req.id] = INSTR_SPECULATIVE;
-            `endif
-            instr_empty_res_d[xif_issue_if.issue_req.id] = ~xif_issue_if.issue_resp.writeback & ~xif_issue_if.issue_resp.loadstore;
-        end
+    logic push_pipeline_disp, pop_pipeline_disp;
+    logic pipeline_disp_full, pipeline_disp_empty;
 
-        // Generate an empty result for all instructions except those that
-        // writeback to the main core and for vector loads and stores
-        `ifdef COMMIT_AND_ISSUE
-        if (xif_commit_if.commit_valid) begin
-            result_empty_valid = instr_empty_res_q[xif_commit_if.commit.id] || instr_empty_res_d[xif_commit_if.commit.id]; //allow for commit in same cycle as issue
-        end
-        //clear instr_empty_res_d on successful result signalling
-        if (xif_result_if.result_valid && xif_result_if.result_ready) begin
-            instr_empty_res_d[xif_result_if.result.id] = 1'b0;
-        end
-        `else
-        if (xif_commit_if.commit_valid & (instr_state_q[xif_commit_if.commit.id] != INSTR_INVALID)) begin
-            result_empty_valid = instr_empty_res_q[xif_commit_if.commit.id];
-        end
-        `endif   
-        // Only instructions that have already been offloaded or are being offloaded right now
-        // can be committed.  Commit transactions for invalid IDs are ignored. //CV32A6 can commit an instruction while offloading
-        if (xif_commit_if.commit_valid & (
-            (instr_offload & (xif_issue_if.issue_req.id == xif_commit_if.commit.id)) |
-            (instr_state_q[xif_commit_if.commit.id] != INSTR_INVALID)
-        )) begin
-            if (dec_buf_valid_q & (dec_data_q.unit == UNIT_CFG) & (dec_data_q.id == xif_commit_if.commit.id)) begin
-                // Configuration instructions are not enqueued.  The instruction
-                // is retired and the result returned as soon as it is
-                // committed.
-                result_csr_valid = ~xif_commit_if.commit.commit_kill;
-                if (result_csr_ready | xif_commit_if.commit.commit_kill) begin
-                    dec_clear                    = 1'b1;
-                    instr_state_d[dec_data_q.id] = INSTR_INVALID;
-                end else begin
-                    instr_state_d[xif_commit_if.commit.id] = xif_commit_if.commit.commit_kill ?
-                                                             INSTR_KILLED : INSTR_COMMITTED;
-                end
-            end else begin
-                instr_state_d[xif_commit_if.commit.id] = xif_commit_if.commit.commit_kill ?
-                                                         INSTR_KILLED : INSTR_COMMITTED;
-            end
-        end
-        if (dec_buf_valid_q & (dec_data_q.unit == UNIT_CFG) & (
-            (instr_state_q[dec_data_q.id] == INSTR_COMMITTED) |
-            (instr_state_q[dec_data_q.id] == INSTR_KILLED   )
-        )) begin
-            // Execute a configuration instruction that has already been
-            // committed earlier (e.g., while decoding and accepting the
-            // instruction).
-            result_csr_valid = instr_state_q[dec_data_q.id] == INSTR_COMMITTED;
-            if (result_csr_ready | (instr_state_q[dec_data_q.id] == INSTR_KILLED)) begin
-                dec_clear                    = 1'b1;
-                instr_state_d[dec_data_q.id] = INSTR_INVALID;
-            end
-        end
-        for (int i = 0; i < PIPE_CNT; i++) begin
-            if (instr_complete_valid[i]) begin
-                instr_state_d   [instr_complete_id[i]] = INSTR_INVALID;
-            end
-        end
-    end
+    logic pipeline_ready;
 
+    decoder_data pipeline_disp_data;
 
-    ///////////////////////////////////////////////////////////////////////////
-    // VSET[I]VL[I] CONFIGURATION UPDATE LOGIC
+    assign push_pipeline_disp = dec_valid & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
+    assign pop_pipeline_disp = (((pipeline_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid) | (!pipeline_disp_empty & (instr_state_q[pipeline_disp_data.id] != INSTR_SPECULATIVE)));                       //Pop CSR instruction if csr instruction is committed or killed. CSR unit is always ready to receive an instruction, only need to wait for it to be committed
 
-    // temporary variables for calculating new vector length for vset[i]vl[i]
-    logic [33:0] cfg_avl;   // AVL * (VSEW / 8) - 1
-    always_comb begin
-        cfg_avl = DONT_CARE_ZERO ? '0 : 'x;
-        unique case (dec_data_q.mode.cfg.vsew)
-            VSEW_8:  cfg_avl = {2'b00, dec_data_q.rs1.r.xval - 1       };
-            VSEW_16: cfg_avl = {1'b0 , dec_data_q.rs1.r.xval - 1, 1'b1 };
-            VSEW_32: cfg_avl = {       dec_data_q.rs1.r.xval - 1, 2'b11};
-            default: ;
-        endcase
-    end
+    assign result_empty_valid = pop_pipeline_disp & pipeline_ready & (instr_unit != UNIT_LSU) & (instr_unit != UNIT_XRESULT)
+    assign result_empty_id = pipeline_disp_data.id;
 
-    // CSR read/write logic
-    logic [1:0] vxrm_next;
-    assign vxrm_d = cfg_vxrm'(vxrm_next);
-    always_comb begin
-        vsew_d     = vsew_q;
-        lmul_d     = lmul_q;
-        agnostic_d = agnostic_q;
-        vl_0_d     = vl_0_q;
-        vl_d       = vl_q;
-        vl_csr_d   = vl_csr_q;
-        vstart_d   = vstart_q;
-        vxrm_next  = vxrm_q;
-        vxsat_d    = vxsat_q;
+    fifo_v3 #(
+    .FALL_THROUGH (1'b1        ),
+    .dtype        (decoder_data),
+    .DEPTH        (4           )
+    ) pipeline_dispatch_queue (
+        .clk_i,
+        .rst_ni     (sync_rst_ni),
+        .flush_i    (1'b0                          ),
+        .data_i     ( dec_data_d                   ),
+        .push_i     ( push_pipeline_disp           ),
+        .data_o     ( pipeline_disp_data           ),
+        .pop_i      ( pop_pipeline_disp & pipeline_ready ),
+        .empty_o    ( pipeline_disp_empty          ),
+        .full_o     ( pipeline_disp_full           )
+    );
 
-        result_csr_delayed = DONT_CARE_ZERO ? '0 : 'x;
-        result_csr_data    = DONT_CARE_ZERO ? '0 : 'x;
+    //CSR operations have a separate dispatch queue for improved performance.  Each committed vsetvli instruction can be applied immediately to allow offloading of next standard vector instruction
+    logic push_csr_disp, pop_csr_disp;
+    logic csr_disp_full, csr_disp_empty;
 
-        // regular CSR register read/write
-        if (result_csr_valid) begin
-            result_csr_delayed = 1'b0; // result is the current (old) value for regular CSR reads
-            unique case (dec_data_q.mode.cfg.csr_op)
-                CFG_VTYPE_READ:   result_csr_data = csr_vtype_o;
-                CFG_VL_READ:      result_csr_data = csr_vl_o;
-                CFG_VLENB_READ:   result_csr_data = csr_vlenb_o;
-                CFG_VSTART_WRITE,
-                CFG_VSTART_SET,
-                CFG_VSTART_CLEAR: result_csr_data = {{(32-CFG_VL_W){1'b0}}, vstart_q};
-                CFG_VXSAT_WRITE,
-                CFG_VXSAT_SET,
-                CFG_VXSAT_CLEAR:  result_csr_data = {31'b0, vxsat_q};
-                CFG_VXRM_WRITE,
-                CFG_VXRM_SET,
-                CFG_VXRM_CLEAR:   result_csr_data = {30'b0, vxrm_q};
-                CFG_VCSR_WRITE,
-                CFG_VCSR_SET,
-                CFG_VCSR_CLEAR:   result_csr_data = {29'b0, vxrm_q, vxsat_q};
-                default: ;
-            endcase
-            // update read/write CSR
-            unique case (dec_data_q.mode.cfg.csr_op)
-                CFG_VSTART_WRITE: vstart_d              =  dec_data_q.rs1.r.xval[CFG_VL_W-1:0];
-                CFG_VSTART_SET:   vstart_d             |=  dec_data_q.rs1.r.xval[CFG_VL_W-1:0];
-                CFG_VSTART_CLEAR: vstart_d             &= ~dec_data_q.rs1.r.xval[CFG_VL_W-1:0];
-                CFG_VXSAT_WRITE:  vxsat_d               =  dec_data_q.rs1.r.xval[0         :0];
-                CFG_VXSAT_SET:    vxsat_d              |=  dec_data_q.rs1.r.xval[0         :0];
-                CFG_VXSAT_CLEAR:  vxsat_d              &= ~dec_data_q.rs1.r.xval[0         :0];
-                CFG_VXRM_WRITE:   vxrm_next             =  dec_data_q.rs1.r.xval[1         :0];
-                CFG_VXRM_SET:     vxrm_next            |=  dec_data_q.rs1.r.xval[1         :0];
-                CFG_VXRM_CLEAR:   vxrm_next            &= ~dec_data_q.rs1.r.xval[1         :0];
-                CFG_VCSR_WRITE:   {vxrm_next, vxsat_d}  =  dec_data_q.rs1.r.xval[2         :0];
-                CFG_VCSR_SET:     {vxrm_next, vxsat_d} |=  dec_data_q.rs1.r.xval[2         :0];
-                CFG_VCSR_CLEAR:   {vxrm_next, vxsat_d} &= ~dec_data_q.rs1.r.xval[2         :0];
-                default: ;
-            endcase
-        end
+    decoder_data csr_disp_data;
 
-        // update configuration state for vset[i]vl[i] instructions
-        if (result_csr_valid & (dec_data_q.mode.cfg.csr_op == CFG_VSETVL)) begin
-            vsew_d             = dec_data_q.mode.cfg.vsew;
-            lmul_d             = dec_data_q.mode.cfg.lmul;
-            agnostic_d         = dec_data_q.mode.cfg.agnostic;
-            result_csr_delayed = 1'b1; // result is the updated value, hence delayed by one cycle
-            if (dec_data_q.mode.cfg.keep_vl) begin
-                // Change VSEW and LMUL while keeping the current VL. Note that the spec states:
-                // > This form can only be used when VLMAX and hence vl is not actually changed by
-                // > the new SEW/LMUL ratio. Use of the instruction with a new SEW/LMUL ratio that
-                // > would result in a change of VLMAX is reserved. Implementations may set vill in
-                // > this case.
-                // Despite keeping the same VL, the `vl_q` register is a byte count and needs to be
-                // updated. Changes to the current SEW/LMUL ratio result set VSEW to VSEW_INVALID.
-                vl_d = DONT_CARE_ZERO ? '0 : 'x;
-                unique case ({vsew_q, dec_data_q.mode.cfg.vsew})
-                    // VSEW scaled by 4
-                    {VSEW_8 , VSEW_32}: begin
-                        vl_d = {vl_q[CFG_VL_W-3:0], 2'b11}; // vl_d = (vl_q + 1) * 4 - 1
-                        unique case ({lmul_q, dec_data_q.mode.cfg.lmul})
-                            {LMUL_F8, LMUL_F2},
-                            {LMUL_F4, LMUL_1 },
-                            {LMUL_F2, LMUL_2 },
-                            {LMUL_1 , LMUL_4 },
-                            {LMUL_2 , LMUL_8 }: ;
-                            default: vsew_d = VSEW_INVALID;
-                        endcase
-                    end
-                    // VSEW scaled by 2
-                    {VSEW_8 , VSEW_16},
-                    {VSEW_16, VSEW_32}: begin
-                        vl_d = {vl_q[CFG_VL_W-2:0], 1'b1}; // vl_d = (vl_q + 1) * 2 - 1
-                        unique case ({lmul_q, dec_data_q.mode.cfg.lmul})
-                            {LMUL_F8, LMUL_F4},
-                            {LMUL_F4, LMUL_F2},
-                            {LMUL_F2, LMUL_1 },
-                            {LMUL_1 , LMUL_2 },
-                            {LMUL_2 , LMUL_4 },
-                            {LMUL_4 , LMUL_8 }: ;
-                            default: vsew_d = VSEW_INVALID;
-                        endcase
-                    end
-                    // VSEW scaled by 1
-                    {VSEW_8 , VSEW_8 },
-                    {VSEW_16, VSEW_16},
-                    {VSEW_32, VSEW_32}: begin
-                        vl_d = vl_q;
-                        if (lmul_q != dec_data_q.mode.cfg.lmul) begin
-                            vsew_d = VSEW_INVALID;
-                        end
-                    end
-                    // VSEW scaled by 1/2
-                    {VSEW_16, VSEW_8 },
-                    {VSEW_32, VSEW_16}: begin
-                        vl_d = {1'b0, vl_q[CFG_VL_W-1:1]}; // vl_d = vl_q / 2
-                        unique case ({lmul_q, dec_data_q.mode.cfg.lmul})
-                            {LMUL_F4, LMUL_F8},
-                            {LMUL_F2, LMUL_F4},
-                            {LMUL_1 , LMUL_F2},
-                            {LMUL_2 , LMUL_1 },
-                            {LMUL_4 , LMUL_2 },
-                            {LMUL_8 , LMUL_4 }: ;
-                            default: vsew_d = VSEW_INVALID;
-                        endcase
-                    end
-                    // VSEW scaled by 1/4
-                    {VSEW_32, VSEW_8 }: begin
-                        vl_d = {2'b00, vl_q[CFG_VL_W-1:2]}; // vl_d = vl_q / 4
-                        unique case ({lmul_q, dec_data_q.mode.cfg.lmul})
-                            {LMUL_F2, LMUL_F8},
-                            {LMUL_1 , LMUL_F4},
-                            {LMUL_2 , LMUL_F2},
-                            {LMUL_4 , LMUL_1 },
-                            {LMUL_8 , LMUL_2 }: ;
-                            default: vsew_d = VSEW_INVALID;
-                        endcase
-                    end
-                    default: ;
-                endcase
-            end else begin
-                // Vicuna supports all integer LMUL settings combined with any legal SEW setting.
-                // Fractional LMUL support covers the minimum requirements of the V specification:
-                // > Implementations must provide fractional LMUL settings [...] to support
-                // > LMUL ≥ SEWMIN/ELEN, where SEWMIN is the narrowest supported SEW value and ELEN
-                // > is the widest supported SEW value.
-                // The minimum SEW is 8 and ELEN is 32, hence Vicuna supports LMULs of 1/2 and 1/4.
-                // However, the fractional LMUL cannot be combined with any SEW. The spec states:
-                // > For a given supported fractional LMUL setting, implementations must support
-                // > SEW settings between SEWMIN and LMUL * ELEN, inclusive.
-                // LMUL 1/4 is only compatible with a SEW of 8 and LMUL 1/2 with a SEW of 8 and 16.
-                // Attempts to use an illegal combination sets the `vill` bit in `vtype` (by
-                // overwriting the VSEW setting with VSEW_INVALID.
-                vl_0_d = 1'b0;
-                vl_d   = DONT_CARE_ZERO ? '0 : 'x;
-                unique case (dec_data_q.mode.cfg.lmul)
-                    LMUL_F4: vl_d = ((cfg_avl[33:CFG_VL_W-5] == '0) & ~dec_data_q.mode.cfg.vlmax) ? cfg_avl[CFG_VL_W-1:0] : {5'b00000, {(CFG_VL_W-5){1'b1}}};
-                    LMUL_F2: vl_d = ((cfg_avl[33:CFG_VL_W-4] == '0) & ~dec_data_q.mode.cfg.vlmax) ? cfg_avl[CFG_VL_W-1:0] : {4'b0000,  {(CFG_VL_W-4){1'b1}}};
-                    LMUL_1 : vl_d = ((cfg_avl[33:CFG_VL_W-3] == '0) & ~dec_data_q.mode.cfg.vlmax) ? cfg_avl[CFG_VL_W-1:0] : {3'b000,   {(CFG_VL_W-3){1'b1}}};
-                    LMUL_2 : vl_d = ((cfg_avl[33:CFG_VL_W-2] == '0) & ~dec_data_q.mode.cfg.vlmax) ? cfg_avl[CFG_VL_W-1:0] : {2'b00,    {(CFG_VL_W-2){1'b1}}};
-                    LMUL_4 : vl_d = ((cfg_avl[33:CFG_VL_W-1] == '0) & ~dec_data_q.mode.cfg.vlmax) ? cfg_avl[CFG_VL_W-1:0] : {1'b0,     {(CFG_VL_W-1){1'b1}}};
-                    LMUL_8 : vl_d = ((cfg_avl[33:CFG_VL_W  ] == '0) & ~dec_data_q.mode.cfg.vlmax) ? cfg_avl[CFG_VL_W-1:0] :            { CFG_VL_W   {1'b1}} ;
-                    default: ;
-                endcase
-                vl_csr_d = DONT_CARE_ZERO ? '0 : 'x;
-                unique case ({dec_data_q.mode.cfg.lmul, dec_data_q.mode.cfg.vsew})
-                    {LMUL_F4, VSEW_8 },
-                    {LMUL_F2, VSEW_16},
-                    {LMUL_1 , VSEW_32}: vl_csr_d = ((dec_data_q.rs1.r.xval[31:CFG_VL_W-5] == '0) & ~dec_data_q.mode.cfg.vlmax) ? dec_data_q.rs1.r.xval[CFG_VL_W:0] : {6'b1, {(CFG_VL_W-5){1'b0}}};
-                    {LMUL_F2, VSEW_8 },
-                    {LMUL_1 , VSEW_16},
-                    {LMUL_2 , VSEW_32}: vl_csr_d = ((dec_data_q.rs1.r.xval[31:CFG_VL_W-4] == '0) & ~dec_data_q.mode.cfg.vlmax) ? dec_data_q.rs1.r.xval[CFG_VL_W:0] : {5'b1, {(CFG_VL_W-4){1'b0}}};
-                    {LMUL_1 , VSEW_8 },
-                    {LMUL_2 , VSEW_16},
-                    {LMUL_4 , VSEW_32}: vl_csr_d = ((dec_data_q.rs1.r.xval[31:CFG_VL_W-3] == '0) & ~dec_data_q.mode.cfg.vlmax) ? dec_data_q.rs1.r.xval[CFG_VL_W:0] : {4'b1, {(CFG_VL_W-3){1'b0}}};
-                    {LMUL_2 , VSEW_8 },
-                    {LMUL_4 , VSEW_16},
-                    {LMUL_8 , VSEW_32}: vl_csr_d = ((dec_data_q.rs1.r.xval[31:CFG_VL_W-2] == '0) & ~dec_data_q.mode.cfg.vlmax) ? dec_data_q.rs1.r.xval[CFG_VL_W:0] : {3'b1, {(CFG_VL_W-2){1'b0}}};
-                    {LMUL_4 , VSEW_8 },
-                    {LMUL_8 , VSEW_16}: vl_csr_d = ((dec_data_q.rs1.r.xval[31:CFG_VL_W-1] == '0) & ~dec_data_q.mode.cfg.vlmax) ? dec_data_q.rs1.r.xval[CFG_VL_W:0] : {2'b1, {(CFG_VL_W-1){1'b0}}};
-                    {LMUL_8 , VSEW_8 }: vl_csr_d = ((dec_data_q.rs1.r.xval[31:CFG_VL_W  ] == '0) & ~dec_data_q.mode.cfg.vlmax) ? dec_data_q.rs1.r.xval[CFG_VL_W:0] : {1'b1, {(CFG_VL_W  ){1'b0}}};
-                    default: vsew_d = VSEW_INVALID;
-                endcase
-            end
-            if ((dec_data_q.rs1.r.xval == 32'b0) & ~dec_data_q.mode.cfg.vlmax & ~dec_data_q.mode.cfg.keep_vl) begin
-                vl_0_d   = 1'b1;
-                vl_d     = {CFG_VL_W{1'b0}};
-                vl_csr_d = '0;
-            end
-        end
-    end
+    assign push_csr_disp = dec_valid & (instr_unit == UNIT_CFG); //Push on valid instruction decode for vector pipeline
+    assign pop_pipeline_disp = ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid) | (!csr_disp_empty & (instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE));                       //Pop CSR instruction if csr instruction is committed or killed. CSR unit is always ready to receive an instruction, only need to wait for it to be committed
 
+    //TODO: Need to discard killed instructions without signalling + reset ID value
+    fifo_v3 #(
+    .FALL_THROUGH (1'b1        ),
+    .dtype        (decoder_data),  //Can likely be optimized with less data for csr ops
+    .DEPTH        (1           )   //Likely only needs one slot here?
+    ) csr_dispatch_queue (
+        .clk_i,
+        .rst_ni     (sync_rst_ni),
+        .flush_i    (1'b0                          ),
+        .data_i     ( dec_data_d                   ),
+        .push_i     ( push_csr_disp                ),
+        .data_o     ( csr_disp_data                ),
+        .pop_i      ( pop_csr_disp                 ),
+        .empty_o    ( csr_disp_empty               ),
+        .full_o     ( csr_disp_full                )
+    );
 
-    ///////////////////////////////////////////////////////////////////////////
-    // INSTRUCTION QUEUE
-
-    // acknowledge signal from the dispatcher (indicate that an instruction has
-    // been accepted for execution on an execution unit)
-    logic op_ack;
-
-    // instruction queue output signals
-    logic        queue_valid_q,      queue_valid_d;
-    decoder_data queue_data_q,       queue_data_d;
-    logic [31:0] queue_pending_wr_q, queue_pending_wr_d; // potential write hazards
-    generate
-        // add an extra pipeline stage to calculate the hazards
-        if (BUF_FLAGS[BUF_DEQUEUE]) begin
-            always_ff @(posedge clk_i or negedge async_rst_n) begin : vproc_queue_valid
-                if (~async_rst_n) begin
-                    queue_valid_q <= 1'b0;
-                end
-                else if (~sync_rst_n) begin
-                    queue_valid_q <= 1'b0;
-                end
-                else if ((~queue_valid_q) | op_ack) begin
-                    queue_valid_q <= queue_valid_d;
-                end
-            end
-            always_ff @(posedge clk_i) begin : vproc_queue_data
-                // move in next instruction when this buffer stage is empty
-                // or when the current instruction is acknowledged
-                if ((~queue_valid_q) | op_ack) begin
-                    queue_data_q       <= queue_data_d;
-                    queue_pending_wr_q <= queue_pending_wr_d;
-                end
-            end
-        end else begin
-            assign queue_valid_q      = queue_valid_d;
-            assign queue_data_q       = queue_data_d;
-            assign queue_pending_wr_q = queue_pending_wr_d;
-        end
-    endgenerate
-
-    // instruction queue
-    decoder_data queue_flags_any;
-    generate
-        if (INSTR_QUEUE_SZ > 0) begin
-            vproc_queue #(
-                .WIDTH        ( $bits(decoder_data)     ),
-                .DEPTH        ( INSTR_QUEUE_SZ          )
-            ) instr_queue (
-                .clk_i        ( clk_i                   ),
-                .async_rst_ni ( async_rst_n             ),
-                .sync_rst_ni  ( sync_rst_n              ),
-                .enq_ready_o  ( queue_ready             ),
-                .enq_valid_i  ( queue_push              ),
-                .enq_data_i   ( dec_data_q              ),
-                .deq_ready_i  ( ~queue_valid_q | op_ack ),
-                .deq_valid_o  ( queue_valid_d           ),
-                .deq_data_o   ( queue_data_d            ),
-                .flags_any_o  ( queue_flags_any         ),
-                .flags_all_o  (                         )
-            );
-        end else begin
-            assign queue_valid_d = queue_push;
-            assign queue_ready   = ~queue_valid_q | op_ack;
-            assign queue_data_d  = dec_data_q;
-        end
-    endgenerate
+    ////////////
+    // CSR Module
+    // CSR operations do not go to the pipeline, instead they are handled in a special functional unit here.
+    ////////////
 
     // potential vector register hazards of the currently dequeued instruction
     vproc_pending_wr #(
@@ -840,9 +588,9 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .clk_i              ( clk_i              ),
         .async_rst_ni       ( async_rst_n        ),
         .sync_rst_ni        ( sync_rst_n         ),
-        .instr_valid_i      ( queue_valid_q      ),
-        .instr_ready_o      ( op_ack             ),
-        .instr_data_i       ( queue_data_q       ),
+        .instr_valid_i      ( pop_pipeline_disp  ),
+        .instr_ready_o      ( pipeline_ready     ),
+        .instr_data_i       ( pipeline_disp_data ),
         .instr_vreg_wr_i    ( queue_pending_wr_q ),
         .dispatch_valid_o   ( pipe_instr_valid   ),
         .dispatch_ready_i   ( pipe_instr_ready   ),
@@ -996,26 +744,12 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     generate
         for (genvar i = 0; i < PIPE_CNT; i++) begin
-//`ifndef VERILATOR
-            // Currently not possible in Verilator due to https://github.com/verilator/verilator/issues/3433
-            //localparam int unsigned PIPE_VPORT_W[PIPE_VPORT_CNT[i]]  = 128;
+
             localparam int unsigned PIPE_VADDR_W[PIPE_VPORT_CNT[i]]  = VADDR_RD_W[PIPE_VPORT_IDX[i] +: PIPE_VPORT_CNT[i]];
-//`endif
             localparam int unsigned PIPE_MAX_VPORT_W = MAX_VPORT_RD_SLICE(VPORT_RD_W, PIPE_VPORT_IDX[i], PIPE_VPORT_CNT[i]);
             localparam int unsigned PIPE_MAX_VADDR_W = MAX_VPORT_RD_SLICE(VADDR_RD_W, PIPE_VPORT_IDX[i], PIPE_VPORT_CNT[i]);
 
             localparam bit [PIPE_VPORT_CNT[i]-1:0] PIPE_VPORT_BUFFER = {{(PIPE_VPORT_CNT[i]-1){1'b0}}, 1'b1};
-
-            // logic [PIPE_VPORT_CNT[i]-1:0][4       :0] vreg_rd_addr;
-            // logic [PIPE_VPORT_CNT[i]-1:0][VREG_W-1:0] vreg_rd_data;
-            // always_comb begin
-            //     vregfile_rd_addr[PIPE_VPORT_IDX[i]+PIPE_VPORT_CNT[i]-1:PIPE_VPORT_IDX[i]] = vreg_rd_addr[PIPE_VPORT_CNT[i]-1:0];
-            //     for (int j = 0; j < PIPE_VPORT_CNT[i]; j++) begin
-            //         vreg_rd_data[j] = vregfile_rd_data[PIPE_VPORT_IDX[i] + j];
-            //     end
-            // end
-
-
 
             // LSU-related signals
             OBI_BUS #(
@@ -1048,16 +782,9 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_VPORT_W              ( PIPE_MAX_VPORT_W           ),
                 .MAX_VADDR_W              ( PIPE_MAX_VADDR_W           ),
                 .VPORT_CNT                ( VPORT_RD_CNT               ),
-// `ifdef VERILATOR
-//                 // Workaround for Verilator due to https://github.com/verilator/verilator/issues/3433
-//                 .VPORT_OFFSET             ( PIPE_VPORT_IDX[i]          ),
-//                 .VREGFILE_VPORT_CNT       ( VPORT_RD_CNT               ),
-//                 .VREGFILE_VPORT_W         ( VPORT_RD_W                 ),
-//                 .VREGFILE_VADDR_W         ( VADDR_RD_W                 ),
-// `else
-                //.VPORT_W                  ( PIPE_VPORT_W               ),
+
                 .VADDR_W                  ( PIPE_VADDR_W               ),
-//`endif
+
                 .VPORT_BUFFER             ( PIPE_VPORT_BUFFER          ),
                 .VPORT_V0                 ( 1'b1                       ),
                 .MAX_OP_W                 ( PIPE_W[i]                  ),
