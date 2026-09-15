@@ -109,7 +109,7 @@ module vproc_vregpack #(
         ctrl_d = ctrl_q;
         ctrl_d.valid = (pipe_in_valid_i | (ctrl_q.valid & !(vreg_wr_gnt_i | ctrl_q.store))) & !single_element_res & !pipe_in_res_flags_i[0].mask_res; //Hold valid signal if write port is blocked on last write
         ctrl_d.last_cycle = ((pipe_in_res_flags_i[0].last_cycle & pipe_in_valid_i) | (ctrl_q.last_cycle & ctrl_q.valid & ctrl_q.shifts_remaining == '0 & !(vreg_wr_gnt_i | ctrl_q.store))) & !single_element_res;
-        ctrl_d.store = pipe_in_res_flags_i[0].store;
+        ctrl_d.store = pipe_in_valid_i ? pipe_in_res_flags_i[0].store : ctrl_q.store;
         if (pipe_in_valid_i & pipe_in_res_flags_i[0].first_cycle & !pipe_in_res_flags_i[0].mask_res ) begin
             if (!single_element_res) begin
                     //Load configuration from the pipeline if not single element result //TODO: Only one set of result flags should be passed through the pipeline

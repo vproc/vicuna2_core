@@ -93,7 +93,7 @@ module vproc_mem_port #(
             end
         end
 
-        valid_d = valid_i & ready_o;
+        valid_d = valid_i;
     end
 
     ///////////
