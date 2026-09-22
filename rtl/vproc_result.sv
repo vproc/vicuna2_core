@@ -39,7 +39,7 @@ module vproc_result #(
         output logic                result_csr_ready_o,
         input  logic [XIF_ID_W-1:0] result_csr_id_i,
         input  logic [4:0]          result_csr_addr_i,
-        input  logic                result_csr_delayed_i,
+        input  logic                result_csr_delayed_i,  //TODO: DELAYED SIGNALS GO AWAY WITH NEW CSR INTERFACE
         input  logic [31:0]         result_csr_data_i,
         input  logic [31:0]         result_csr_data_delayed_i,
 
@@ -263,7 +263,7 @@ module vproc_result #(
 
         xif_result_if.result.data = csr_res_fifo_out.data;
         xif_result_if.result.rd = csr_res_fifo_out.addr;
-        xif_result_if.result.we = 1'b1;
+        xif_result_if.result.we = 1'b1; //TODO: currently always writing back?
     end
   end
 

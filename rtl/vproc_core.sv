@@ -204,65 +204,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     assign async_rst_n = ASYNC_RESET ? rst_ni : 1'b1  ;
     assign sync_rst_n  = ASYNC_RESET ? 1'b1   : rst_ni;
 
-    //TODO: NEW CSR MODULE/UNIT
-    // ///////////////////////////////////////////////////////////////////////////
-    // // CONFIGURATION STATE AND CSR READ AND WRITES
-
-    // cfg_vsew             vsew_q,     vsew_d;     // VSEW (single element width)
-    // cfg_lmul             lmul_q,     lmul_d;     // LMUL
-    // logic [1:0]          agnostic_q, agnostic_d; // agnostic policy (vta & vma)
-    // logic                vl_0_q,     vl_0_d;     // set if VL == 0
-    // logic [CFG_VL_W-1:0] vl_q,       vl_d;       // VL * (VSEW / 8) - 1
-    // logic [CFG_VL_W  :0] vl_csr_q,   vl_csr_d;   // VL (intentionally CFG_VL_W+1 wide)
-    // logic [CFG_VL_W-1:0] vstart_q,   vstart_d;   // vector start index
-    // cfg_vxrm             vxrm_q,     vxrm_d;     // fixed-point rounding mode
-    // logic                vxsat_q,    vxsat_d;    // fixed-point saturation flag
-    // always_ff @(posedge clk_i or negedge async_rst_n) begin : vproc_cfg_reg
-    //     if (~async_rst_n) begin
-    //         vsew_q     <= VSEW_INVALID;
-    //         lmul_q     <= LMUL_1;
-    //         agnostic_q <= '0;
-    //         vl_0_q     <= 1'b0;
-    //         vl_q       <= '0;
-    //         vl_csr_q   <= '0;
-    //         vstart_q   <= '0;
-    //         vxrm_q     <= VXRM_RNU;
-    //         vxsat_q    <= 1'b0;
-    //     end
-    //     else if (~sync_rst_n) begin
-    //         vsew_q     <= VSEW_INVALID;
-    //         lmul_q     <= LMUL_1;
-    //         agnostic_q <= '0;
-    //         vl_0_q     <= 1'b0;
-    //         vl_q       <= '0;
-    //         vl_csr_q   <= '0;
-    //         vstart_q   <= '0;
-    //         vxrm_q     <= VXRM_RNU;
-    //         vxsat_q    <= 1'b0;
-    //     end else begin
-    //         vsew_q     <= vsew_d;
-    //         lmul_q     <= lmul_d;
-    //         agnostic_q <= agnostic_d;
-    //         vl_0_q     <= vl_0_d;
-    //         vl_q       <= vl_d;
-    //         vl_csr_q   <= vl_csr_d;
-    //         vstart_q   <= vstart_d;
-    //         vxrm_q     <= vxrm_d;
-    //         vxsat_q    <= vxsat_d;
-    //     end
-    // end
-    // logic cfg_valid;
-    // assign cfg_valid = vsew_q != VSEW_INVALID;
-
-    // // CSR reads
-    // assign csr_vtype_o  = cfg_valid ? {24'b0, agnostic_q, 1'b0, vsew_q, lmul_q} : 32'h80000000;
-    // assign csr_vl_o     = cfg_valid ? {{(32-CFG_VL_W-1){1'b0}}, vl_csr_q} : '0;
-    // assign csr_vlenb_o  = VREG_W / 8;
-    // assign csr_vstart_o = '0;
-    // assign csr_vxrm_o   = vxrm_q;
-    // assign csr_vxsat_o  = vxsat_q;
-
-
     ///////////////////////////////////////////////////////////////////////////
     // VECTOR INSTRUCTION DECODER INTERFACE
 
@@ -290,22 +231,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic        dec_ready,       dec_valid,       dec_clear;
     logic        dec_buf_valid_q, dec_buf_valid_d;
     decoder_data dec_data_q,      dec_data_d;
-    //TODO: ELIMINATE THIS BUFFER
-    // always_ff @(posedge clk_i or negedge async_rst_n) begin : vproc_dec_buf_valid
-    //     if (~async_rst_n) begin
-    //         dec_buf_valid_q <= 1'b0;
-    //     end
-    //     else if (~sync_rst_n) begin
-    //         dec_buf_valid_q <= 1'b0;
-    //     end else begin
-    //         dec_buf_valid_q <= dec_buf_valid_d;
-    //     end
-    // end
-    // always_ff @(posedge clk_i) begin : vproc_dec_buf_data
-    //     if (dec_ready) begin
-    //         dec_data_q <= dec_data_d;
-    //     end
-    // end
+
     assign dec_buf_valid_d = (~dec_ready | dec_valid) & ~dec_clear;
 
     // Check if scalar source operands are valid
@@ -321,6 +247,16 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     op_unit instr_unit;
     op_mode instr_mode;
+
+    //Signals between CSRs and Decode
+    logic [CFG_VL_W-1:0]     vl;
+    logic                    vl_0;
+    //logic [CFG_VL_W:0]       vlmax; TODO: Currently computed in decode
+    cfg_emul                 lmul;
+    cfg_vsew                 sew;
+    cfg_vxrm                 vxrm;
+    logic                    illegal_cfg_o;
+
     vproc_decoder #(
         .VREG_W             ( VREG_W                              ),
         .CFG_VL_W           ( CFG_VL_W                            ),
@@ -332,10 +268,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .instr_valid_i      ( instr_valid                         ),
         .x_rs1_i            ( xif_issue_if.issue_req.rs[0]        ),
         .x_rs2_i            ( xif_issue_if.issue_req.rs[1]        ),
-        .vsew_i             ( vsew_q                              ),
-        .lmul_i             ( lmul_q                              ),
-        .vxrm_i             ( vxrm_q                              ),
-        .vl_i               ( vl_q                                ),
+        .vsew_i             ( sew                                 ),
+        .lmul_i             ( lmul                                ),
+        .vxrm_i             ( vxrm                                ),
+        .vl_i               ( vl                                  ),
         `ifdef RISCV_ZVE32F
         .fpr_wr_req_valid   ( fpr_wr_req_valid                    ),
         .fpr_wr_req_addr_o  ( fpr_wr_req_addr_o                   ),
@@ -358,7 +294,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .decode_metadata_o  ( dec_data_d.decode_metadata          )
     );
     assign dec_data_d.id         = xif_issue_if.issue_req.id;
-    assign dec_data_d.vl_0       = vl_0_q & ~dec_vl_override;
+    assign dec_data_d.vl_0       = vl_0 & ~dec_vl_override;
     assign dec_data_d.unit       = instr_unit;
     assign dec_data_d.mode       = instr_mode;
     assign dec_data_d.pend_load  = (instr_unit == UNIT_LSU) & ~instr_mode.lsu.store;
@@ -431,7 +367,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
             if (xif_issue_if.issue_valid & xif_issue_if.issue_ready) begin
                 instr_state_d[xif_issue_if.issue_req.id] = INSTR_SPECULATIVE;
             end
-            if (xif_issue_if.commit_valid) begin
+            if (xif_commit_if.commit_valid) begin
                 if (xif_commit_if.commit.commit_kill) begin
                     instr_state_d[xif_commit_if.commit.id] = INSTR_KILLED;
                 end else begin
@@ -458,6 +394,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic [4:0]                              result_csr_addr;
     logic                                    result_csr_delayed;
     logic [31:0]                             result_csr_data;
+    logic                                    result_csr_we;
 
     logic queue_ready, queue_push; // instruction queue ready and push signals (enqueue handshake)
     assign queue_push = dec_buf_valid_q & (dec_data_q.unit != UNIT_CFG);
@@ -492,7 +429,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     assign push_pipeline_disp = dec_valid & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
     assign pop_pipeline_disp = (((pipeline_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid) | (!pipeline_disp_empty & (instr_state_q[pipeline_disp_data.id] != INSTR_SPECULATIVE)));                       //Pop CSR instruction if csr instruction is committed or killed. CSR unit is always ready to receive an instruction, only need to wait for it to be committed
 
-    assign result_empty_valid = pop_pipeline_disp & pipeline_ready & (instr_unit != UNIT_LSU) & (instr_unit != UNIT_XRESULT)
+    //Signal empty result on sucessful dispatch when not LSU or XRESULT instructions
+    assign result_empty_valid = pop_pipeline_disp & pipeline_ready & (instr_unit != UNIT_LSU) & (instr_unit != UNIT_XRESULT);
     assign result_empty_id = pipeline_disp_data.id;
 
     fifo_v3 #(
@@ -512,24 +450,41 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     );
 
     //CSR operations have a separate dispatch queue for improved performance.  Each committed vsetvli instruction can be applied immediately to allow offloading of next standard vector instruction
+
+    //Reduced struct just for csr accesses
+    typedef struct packed {
+        logic [XIF_ID_W-1:0]   id;
+        logic[31:0]           val;
+        op_mode_cfg           cfg;
+        logic[4:0]            dest_addr;
+    } csr_dec_data;
+
+    csr_dec_data csr_fifo_input;
+
+    assign csr_fifo_input.id = dec_data_d.id;
+    assign csr_fifo_input.cfg = dec_data_d.mode.cfg;
+    assign csr_fifo_input.val = dec_data_d.rs1.r.xval;
+    assign csr_fifo_input.dest_addr = dec_data_d.rd.addr;
+
     logic push_csr_disp, pop_csr_disp;
     logic csr_disp_full, csr_disp_empty;
+    logic csr_ready;
 
-    decoder_data csr_disp_data;
+    csr_dec_data csr_disp_data;
 
     assign push_csr_disp = dec_valid & (instr_unit == UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_pipeline_disp = ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid) | (!csr_disp_empty & (instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE));                       //Pop CSR instruction if csr instruction is committed or killed. CSR unit is always ready to receive an instruction, only need to wait for it to be committed
+    assign pop_csr_disp = (((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid) | (!csr_disp_empty & (instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE))) & csr_ready;                       //Pop CSR instruction if csr instruction is committed or killed.
 
     //TODO: Need to discard killed instructions without signalling + reset ID value
     fifo_v3 #(
     .FALL_THROUGH (1'b1        ),
-    .dtype        (decoder_data),  //Can likely be optimized with less data for csr ops
+    .dtype        (csr_dec_data),
     .DEPTH        (1           )   //Likely only needs one slot here?
     ) csr_dispatch_queue (
         .clk_i,
         .rst_ni     (sync_rst_ni),
         .flush_i    (1'b0                          ),
-        .data_i     ( dec_data_d                   ),
+        .data_i     ( csr_fifo_input               ),
         .push_i     ( push_csr_disp                ),
         .data_o     ( csr_disp_data                ),
         .pop_i      ( pop_csr_disp                 ),
@@ -537,10 +492,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .full_o     ( csr_disp_full                )
     );
 
-    ////////////
-    // CSR Module
-    // CSR operations do not go to the pipeline, instead they are handled in a special functional unit here.
-    ////////////
+
 
     // potential vector register hazards of the currently dequeued instruction
     vproc_pending_wr #(
@@ -548,27 +500,15 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .VREG_W         ( VREG_W                  ),
         .DONT_CARE_ZERO ( DONT_CARE_ZERO          )
     ) queue_pending_wr (
-        .vsew_i         ( queue_data_d.vsew       ),
-        .emul_i         ( queue_data_d.emul       ),
-        .vl_i           ( queue_data_d.vl         ),
-        .unit_i         ( queue_data_d.unit       ),
-        .mode_i         ( queue_data_d.mode       ),
-        .widenarrow_i   ( queue_data_d.widenarrow ),
-        .rd_i           ( queue_data_d.rd         ),
+        .vsew_i         ( pipeline_disp_data.vsew       ),
+        .emul_i         ( pipeline_disp_data.emul       ),
+        .vl_i           ( pipeline_disp_data.vl         ),
+        .unit_i         ( pipeline_disp_data.unit       ),
+        .mode_i         ( pipeline_disp_data.mode       ),
+        .widenarrow_i   ( pipeline_disp_data.widenarrow ),
+        .rd_i           ( pipeline_disp_data.rd         ),
         .pending_wr_o   ( queue_pending_wr_d      )
     );
-
-    // keep track of pending loads and stores
-    logic pending_load_lsu, pending_store_lsu;
-    assign pending_load_o  = (dec_buf_valid_q & dec_data_q.pend_load      ) |
-                                                queue_flags_any.pend_load   |
-                             (queue_valid_q   & queue_data_q.pend_load    ) |
-                             pending_load_lsu;
-    assign pending_store_o = (dec_buf_valid_q & dec_data_q.pend_store     ) |
-                                                queue_flags_any.pend_store  |
-                             (queue_valid_q   & queue_data_q.pend_store   ) |
-                             pending_store_lsu;
-
 
     ///////////////////////////////////////////////////////////////////////////
     // DISPATCHER
@@ -591,7 +531,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .instr_valid_i      ( pop_pipeline_disp  ),
         .instr_ready_o      ( pipeline_ready     ),
         .instr_data_i       ( pipeline_disp_data ),
-        .instr_vreg_wr_i    ( queue_pending_wr_q ),
+        .instr_vreg_wr_i    ( queue_pending_wr_d ),
         .dispatch_valid_o   ( pipe_instr_valid   ),
         .dispatch_ready_i   ( pipe_instr_ready   ),
         .dispatch_data_o    ( pipe_instr_data    ),
@@ -717,6 +657,57 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         end
     end
 
+    ////////////////////
+    // CSR Unit
+    // CSR accesses are performed in parallel to the main pipelines, removing most stalls caused by vsetvl accesses
+    // CSR Access Stalls must be generated in two cases:
+    //  1. A Speculative VSETVL instruction exists in the dispatch buffer.  Decode must stall in this case
+    //  2. VXSAT is accessed while a fixed point operation is still in progress. Decode can continue in this case
+    ////////////////////
+
+    logic csr_valid;
+
+    assign csr_valid = !csr_disp_empty | push_csr_disp; //valid input to csr unit when csr dispatch is not empty OR a value is being pushed for fall through
+    vproc_csr #(
+        .VLEN(VREG_W),
+        .CFG_VL_W($clog2(VREG_W)),
+        .DEC_DATA_CSR_T(csr_dec_data),
+        .XIF_ID_W(XIF_ID_W)
+    ) vproc_csr (
+        .clk_i(clk_i),
+        .async_rst_ni(async_rst_ni),
+        .sync_rst_ni(async_rst_ni),
+
+        //Interface to expose csrs to DECODE
+
+        .vl_o(vl),    //TODO: currently passing old vl bytes
+        .vl_0_o(vl_0),
+        //.vlmax_o(), //TODO: currently passing old vlmax number of elements TODO: Currently computed in decode
+        .lmul_o(lmul),
+        .sew_o(sew),
+        .illegal_cfg_o(illegal_cfg),
+        .vxrm_o(vxrm),
+
+        //TODO: Expose other relevant CSRs
+
+        //Interface with CSR dispatch queue
+        .dec_data_i(csr_disp_data),
+        .valid_i(csr_valid),
+        .ready_o(csr_ready),
+
+        //Interface with Result Module
+        .result_csr_valid_o(result_csr_valid),
+        .result_csr_ready_i(result_csr_ready),
+        .result_csr_id_o(result_csr_id),
+        .result_csr_addr_o(result_csr_addr),
+        .result_csr_data_o(result_csr_data),
+        .result_csr_we_o(result_csr_we)
+
+        //TODO: Interface to update VCSR for fixed point ops
+
+        //TODO: Interface to update custom performance counter CSRs
+
+    );
     //////
 
     logic                lsu_trans_complete_valid;
@@ -1015,7 +1006,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .result_csr_ready_o        ( result_csr_ready           ),
         .result_csr_id_i           ( result_csr_id              ),
         .result_csr_addr_i         ( result_csr_addr            ),
-        .result_csr_delayed_i      ( result_csr_delayed         ),
+        .result_csr_delayed_i      ( 1'b0                       ),//TODO: delayed result no longer necessary
         .result_csr_data_i         ( result_csr_data            ),
         .result_csr_data_delayed_i ( csr_vl_o                   ),
         .result_fifo_full_stall_o  (result_fifo_full_stall      ),

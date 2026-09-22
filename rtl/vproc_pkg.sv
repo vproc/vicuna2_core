@@ -329,37 +329,32 @@ typedef struct packed {
 `endif
 } op_mode_elem;
 
-typedef enum logic [3:0] {
+typedef enum logic [2:0] {
     // vsetvl (modifies vtype and vl)
-    CFG_VSETVL,
+    CSR_VSETVL,
     // read-only CSR
-    CFG_VTYPE_READ,
-    CFG_VL_READ,
-    CFG_VLENB_READ,
+    CSR_VTYPE,
+    CSR_VL,
+    CSR_VLENB,
     // read-write CSR
-    CFG_VSTART_WRITE,
-    CFG_VSTART_SET,
-    CFG_VSTART_CLEAR,
-    CFG_VXSAT_WRITE,
-    CFG_VXSAT_SET,
-    CFG_VXSAT_CLEAR,
-    CFG_VXRM_WRITE,
-    CFG_VXRM_SET,
-    CFG_VXRM_CLEAR,
-    CFG_VCSR_WRITE,
-    CFG_VCSR_SET,
-    CFG_VCSR_CLEAR
-} cfg_csr_op;
+    CSR_VSTART,
+    CSR_VXSAT,
+    CSR_VXRM,
+    CSR_VCSR
+    //Any new CSRS added below
+} csr_type;
 
 typedef struct packed {
-    cfg_csr_op  csr_op;
+    csr_type    csr;
     cfg_vsew    vsew;
     cfg_lmul    lmul;
     logic [1:0] agnostic;
     logic       vlmax;
     logic       keep_vl;
+    logic       r;
+    logic       w;
 `ifdef VPROC_OP_MODE_UNION
-    logic [4:0] unused;
+    logic [3:0] unused;
 `endif
 } op_mode_cfg;
 

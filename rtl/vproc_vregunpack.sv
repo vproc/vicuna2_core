@@ -737,7 +737,7 @@ module vproc_vregunpack
 
                 .pipe_in_valid_i(shift_reg_in_valid_q & (metadata_q.ctrl.decode_metadata.operands[i].vreg | metadata_q.ctrl.decode_metadata.operands[i].xreg)),
                 .shift_reg_ready_o(shift_regs_ready[i]),
-                .operand_eew_i(metadata_q.ctrl.decode_metadata.operands[i].sew),                                          //TODO: Mixed precision operations will need an EEW/operand
+                .operand_eew_i(metadata_q.ctrl.decode_metadata.operands[i].sew),
                 .operand_regs_i(metadata_q.ctrl.decode_metadata.operands[i].regs),
                 .repeats_i(metadata_q.ctrl.decode_metadata.operands[i].repeats),
                 .operand_emul_i(metadata_q.ctrl.decode_metadata.dest_emul),
@@ -756,7 +756,7 @@ module vproc_vregunpack
                 .vreg_rd_addr_o(shift_reg_addr[i]),
                 .vreg_rd_data_i(vreg_rd_data_i[i]),
 
-                .vfu_ready_i(pipe_out_ready_i[i]),                                          //TODO: For desynced operands, will need a ready signal per operand
+                .vfu_ready_i(pipe_out_ready_i[i]),
                 .vfu_data_valid_o(shift_regs_valid[i]),
                 .vfu_data_o(shift_reg_outputs[i])
             );
