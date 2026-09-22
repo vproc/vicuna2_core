@@ -74,6 +74,10 @@ assign vlenb = VLEN/8; //Static value for vlenb
 
 always_comb begin //TODO:vcsr special handling, since VXSAT bit can be set by a functional unit in parallel to a csr write
     vcsr_d = vcsr;
+    if (valid_i & ready_o & (dec_data_i.cfg.csr == CSR_VXRM)) begin
+        vcsr_d[2:1] = dec_data_i.val[1:0];
+    end 
+    //TODO additional condition for writes to vcsr specifically? could override the vxsat flag
 end
 
 logic[31:0] vlmax;
@@ -206,6 +210,8 @@ assign result_csr_we_o = dec_data_i.cfg.r; //csr reads need to write a value bac
 always_comb begin
     case(dec_data_i.cfg.csr)
         CSR_VSETVL: result_csr_data_o = vl_d; //vsetvl result is the new value of vl
+        CSR_VXRM : result_csr_data_o = {{(30){1'b0}}, vcsr[2:1]};
+        CSR_VXSAT : result_csr_data_o = {{(31){1'b0}}, vcsr[0]};
         default: result_csr_data_o = '0;
     endcase
 end

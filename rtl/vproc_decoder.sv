@@ -225,60 +225,33 @@ module vproc_decoder #(
             // OPCODE SYSTEM:
             7'h73: begin
                 unit_o = UNIT_CFG;
-                mode_o.cfg.csr    = CSR_VXSAT;
-                //instr_illegal = 1'b1; //TODO: Adapt CSR accesses to new framework CSR unit
-                // select CFG operation based on CSR address (instr_i[31:20]) and CSR instruction's
-                // // funct3 field (instr_i[14:12])
-                // unique case ({instr_i[31:20], instr_i[14:12]})
-                //     // read-write CSR
-                //     {12'h008, 3'b001},
-                //     {12'h008, 3'b101}: mode_o.cfg.csr_op = CFG_VSTART_WRITE;
-                //     {12'h008, 3'b010},
-                //     {12'h008, 3'b110}: mode_o.cfg.csr_op = CFG_VSTART_SET;
-                //     {12'h008, 3'b011},
-                //     {12'h008, 3'b111}: mode_o.cfg.csr_op = CFG_VSTART_CLEAR;
-                //     {12'h009, 3'b001},
-                //     {12'h009, 3'b101}: mode_o.cfg.csr_op = CFG_VXSAT_WRITE;
-                //     {12'h009, 3'b010},
-                //     {12'h009, 3'b110}: mode_o.cfg.csr_op = CFG_VXSAT_SET;
-                //     {12'h009, 3'b011},
-                //     {12'h009, 3'b111}: mode_o.cfg.csr_op = CFG_VXSAT_CLEAR;
-                //     {12'h00A, 3'b001},
-                //     {12'h00A, 3'b101}: mode_o.cfg.csr_op = CFG_VXRM_WRITE;
-                //     {12'h00A, 3'b010},
-                //     {12'h00A, 3'b110}: mode_o.cfg.csr_op = CFG_VXRM_SET;
-                //     {12'h00A, 3'b011},
-                //     {12'h00A, 3'b111}: mode_o.cfg.csr_op = CFG_VXRM_CLEAR;
-                //     {12'h00F, 3'b001},
-                //     {12'h00F, 3'b101}: mode_o.cfg.csr_op = CFG_VCSR_WRITE;
-                //     {12'h00F, 3'b010},
-                //     {12'h00F, 3'b110}: mode_o.cfg.csr_op = CFG_VCSR_SET;
-                //     {12'h00F, 3'b011},
-                //     {12'h00F, 3'b111}: mode_o.cfg.csr_op = CFG_VCSR_CLEAR;
-                //     // read-only CSR
-                //     {12'hC20, 3'b010},
-                //     {12'hC20, 3'b110},
-                //     {12'hC20, 3'b011},
-                //     {12'hC20, 3'b111}: begin
-                //         mode_o.cfg.csr_op = CFG_VL_READ;
-                //         instr_illegal     = instr_vs1 != '0; // attempt to write to a read-only CSR
-                //     end
-                //     {12'hC21, 3'b010},
-                //     {12'hC21, 3'b110},
-                //     {12'hC21, 3'b011},
-                //     {12'hC21, 3'b111}: begin
-                //         mode_o.cfg.csr_op = CFG_VTYPE_READ;
-                //         instr_illegal     = instr_vs1 != '0; // attempt to write to a read-only CSR
-                //     end
-                //     {12'hC22, 3'b010},
-                //     {12'hC22, 3'b110},
-                //     {12'hC22, 3'b011},
-                //     {12'hC22, 3'b111}: begin
-                //         mode_o.cfg.csr_op = CFG_VLENB_READ;
-                //         instr_illegal     = instr_vs1 != '0; // attempt to write to a read-only CSR
-                //     end
-                    //default: instr_illegal = 1'b1;
-                //endcase
+                // // select CFG operation based on CSR address (instr_i[31:20]) and CSR instruction's
+                // // // funct3 field (instr_i[14:12])
+                unique case (instr_i[31:20])
+                    // read-write CSR
+                    12'h008: mode_o.cfg.csr = CSR_VSTART;
+                    12'h009: mode_o.cfg.csr = CSR_VXSAT;
+                    12'h00A: mode_o.cfg.csr = CSR_VXRM;
+                    12'h00F: mode_o.cfg.csr = CSR_VCSR;
+
+                    12'hC20: begin
+                        mode_o.cfg.csr = CSR_VL;
+                        instr_illegal     = instr_vs1 != '0; // attempt to write to a read-only CSR
+                    end
+                    12'hC21: begin
+                        mode_o.cfg.csr = CSR_VTYPE;
+                        instr_illegal     = instr_vs1 != '0; // attempt to write to a read-only CSR
+                    end
+                    12'hC22: begin
+                        mode_o.cfg.csr = CSR_VLENB;
+                        instr_illegal     = instr_vs1 != '0; // attempt to write to a read-only CSR
+                    end
+
+                    default: instr_illegal = 1'b1;
+                endcase
+                mode_o.cfg.w = instr_vs1 != '0; // mark csr write
+                mode_o.cfg.r = 1'b1; //Currently, always reading.  main core ignores value if not requested
+
                 // select either rs1 or immediate value
                 unique case (instr_i[14:12])
                     3'b001,
