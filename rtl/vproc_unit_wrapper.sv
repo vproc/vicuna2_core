@@ -149,7 +149,6 @@ module vproc_unit_wrapper
           .obi_bus                 (obi_bus)
       );
       always_comb begin
-        pipe_out_instr_id_o  = unit_out_ctrl.id;
         pipe_out_eew_o       = unit_out_ctrl.decode_metadata.operands[1].sew;
         pipe_out_vaddr_o     = unit_out_ctrl.res_vaddr;
         pipe_out_res_flags_o = '{default: pack_flags'('0)};
@@ -171,7 +170,7 @@ module vproc_unit_wrapper
         pipe_out_res_flags_o.first_cycle    = unit_out_ctrl.first_cycle;
         pipe_out_res_flags_o.last_cycle     = unit_out_ctrl.last_cycle;
         pipe_out_res_flags_o.dest_frac      = unit_out_ctrl.decode_metadata.dest_frac;
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         //     end
         // end
       end
@@ -229,7 +228,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o     (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o = unit_out_ctrl.id;
+        pipe_out_instr_id_o = unit_out_ctrl.pipe_id;
         pipe_out_eew_o = unit_out_ctrl.eew;
         pipe_out_vaddr_o = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o = '0;
@@ -329,7 +328,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                      = unit_out_ctrl.eew;
         pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                = '0;
@@ -374,7 +373,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o     (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                      = unit_out_ctrl.eew;
         pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                = '0;
@@ -440,7 +439,7 @@ module vproc_unit_wrapper
       );
 
       always_comb begin
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                      = unit_out_ctrl.eew;
         pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                = '0;
@@ -508,7 +507,7 @@ module vproc_unit_wrapper
       );
 
       always_comb begin
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                      = unit_out_ctrl.eew;
         pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                = '0;
@@ -563,7 +562,7 @@ module vproc_unit_wrapper
       );
 
       always_comb begin
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                      = unit_out_ctrl.eew;
         pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                = '0;
@@ -618,7 +617,7 @@ module vproc_unit_wrapper
       );
 
       always_comb begin
-          pipe_out_instr_id_o = unit_out_ctrl.id;
+          pipe_out_instr_id_o = unit_out_ctrl.pipe_id;
           pipe_out_eew_o      = unit_out_ctrl.eew;
           pipe_out_vaddr_o    = unit_out_ctrl.res_vaddr;
           pipe_out_res_store_o = '0;
@@ -666,191 +665,191 @@ module vproc_unit_wrapper
           .pipe_out_res_o  (unit_out_res),
           .pipe_out_mask_o (unit_out_mask)
       );
+      //TODO: Port FPU
+      // // Unit control for reduction operations.  Ignored for normal FPU operations
+      // // output buffer signals
+      // logic is_reduction_q, is_reduction_d;
+      // logic has_valid_result_q, has_valid_result_d;
+      // COUNTER_T vd_count_q, vd_count_d;
+      // logic flushing_q, flushing_d;
+      // logic [XIF_ID_W-1:0] flushing_id_q, flushing_id_d;
+      // vproc_pkg::cfg_vsew flushing_eew_q, flushing_eew_d;
+      // vproc_pkg::cfg_emul flushing_emul_q, flushing_emul_d;
+      // logic [4:0] flushing_vaddr_q, flushing_vaddr_d;
+      // always_ff @(posedge clk_i) begin
+      //   if (pipe_out_ready_i) begin
+      //     vd_count_q         <= vd_count_d;
+      //     has_valid_result_q <= has_valid_result_d;
+      //     flushing_id_q      <= flushing_id_d;
+      //     flushing_eew_q     <= flushing_eew_d;
+      //     flushing_emul_q    <= flushing_emul_d;
+      //     flushing_vaddr_q   <= flushing_vaddr_d;
+      //     is_reduction_q     <= is_reduction_d;
+      //   end
+      // end
+      // always_ff @(posedge clk_i or negedge async_rst_ni) begin
+      //   if (~async_rst_ni) begin
+      //     flushing_q <= 1'b0;
+      //   end else if (~sync_rst_ni) begin
+      //     flushing_q <= 1'b0;
+      //   end else if (pipe_out_ready_i) begin
+      //     flushing_q <= flushing_d;
+      //   end
+      // end
+      // // track whether there are any valid results
+      // always_comb begin
+      //   has_valid_result_d = has_valid_result_q;
+      //   if (unit_out_ctrl.first_cycle) begin
+      //     has_valid_result_d = 1'b0;
+      //   end
+      //   if (unit_out_valid) begin
+      //     has_valid_result_d = 1'b1;
+      //   end
+      // end
+      // //track if current op is a reduction
+      // always_comb begin
+      //   if (unit_out_ctrl.mode.fpu.op_reduction) begin
+      //     is_reduction_d = 1'b1;
+      //   end else if (pipe_out_instr_done_o) begin
+      //     is_reduction_d = 1'b0;
+      //   end else begin
+      //     is_reduction_d = is_reduction_q;
+      //   end
+      // end
+      // // determine when we see the first valid result
+      // logic first_valid_result;
+      // assign first_valid_result = ~flushing_q & unit_out_valid & (unit_out_ctrl.first_cycle | ~has_valid_result_q);
+      // always_comb begin
+      //   vd_count_d.val = DONT_CARE_ZERO ? '0 : 'x;
+      //   unique case (flushing_q ? flushing_eew_q : unit_out_ctrl.eew)
+      //     VSEW_16:
+      //     vd_count_d.val = vd_count_q.val + {{(COUNTER_W-2){1'b0}}, flushing_q | pipe_out_valid_o, 1'b0};
+      //     VSEW_32:
+      //     vd_count_d.val = vd_count_q.val + {{(COUNTER_W-3){1'b0}}, flushing_q | pipe_out_valid_o, 2'b0};
+      //     default: vd_count_d.val = '1;
+      //   endcase
+      //   if (first_valid_result) begin
+      //     vd_count_d.val      = '0;
+      //     vd_count_d.val[1:0] = DONT_CARE_ZERO ? '0 : 'x;
+      //     unique case (unit_out_ctrl.eew)
+      //       VSEW_16: vd_count_d.val[1:0] = 2'b01;
+      //       VSEW_32: vd_count_d.val[1:0] = 2'b11;
+      //       default: ;
+      //     endcase
+      //   end
+      // end
 
-      // Unit control for reduction operations.  Ignored for normal FPU operations
-      // output buffer signals
-      logic is_reduction_q, is_reduction_d;
-      logic has_valid_result_q, has_valid_result_d;
-      COUNTER_T vd_count_q, vd_count_d;
-      logic flushing_q, flushing_d;
-      logic [XIF_ID_W-1:0] flushing_id_q, flushing_id_d;
-      vproc_pkg::cfg_vsew flushing_eew_q, flushing_eew_d;
-      vproc_pkg::cfg_emul flushing_emul_q, flushing_emul_d;
-      logic [4:0] flushing_vaddr_q, flushing_vaddr_d;
-      always_ff @(posedge clk_i) begin
-        if (pipe_out_ready_i) begin
-          vd_count_q         <= vd_count_d;
-          has_valid_result_q <= has_valid_result_d;
-          flushing_id_q      <= flushing_id_d;
-          flushing_eew_q     <= flushing_eew_d;
-          flushing_emul_q    <= flushing_emul_d;
-          flushing_vaddr_q   <= flushing_vaddr_d;
-          is_reduction_q     <= is_reduction_d;
-        end
-      end
-      always_ff @(posedge clk_i or negedge async_rst_ni) begin
-        if (~async_rst_ni) begin
-          flushing_q <= 1'b0;
-        end else if (~sync_rst_ni) begin
-          flushing_q <= 1'b0;
-        end else if (pipe_out_ready_i) begin
-          flushing_q <= flushing_d;
-        end
-      end
-      // track whether there are any valid results
-      always_comb begin
-        has_valid_result_d = has_valid_result_q;
-        if (unit_out_ctrl.first_cycle) begin
-          has_valid_result_d = 1'b0;
-        end
-        if (unit_out_valid) begin
-          has_valid_result_d = 1'b1;
-        end
-      end
-      //track if current op is a reduction
-      always_comb begin
-        if (unit_out_ctrl.mode.fpu.op_reduction) begin
-          is_reduction_d = 1'b1;
-        end else if (pipe_out_instr_done_o) begin
-          is_reduction_d = 1'b0;
-        end else begin
-          is_reduction_d = is_reduction_q;
-        end
-      end
-      // determine when we see the first valid result
-      logic first_valid_result;
-      assign first_valid_result = ~flushing_q & unit_out_valid & (unit_out_ctrl.first_cycle | ~has_valid_result_q);
-      always_comb begin
-        vd_count_d.val = DONT_CARE_ZERO ? '0 : 'x;
-        unique case (flushing_q ? flushing_eew_q : unit_out_ctrl.eew)
-          VSEW_16:
-          vd_count_d.val = vd_count_q.val + {{(COUNTER_W-2){1'b0}}, flushing_q | pipe_out_valid_o, 1'b0};
-          VSEW_32:
-          vd_count_d.val = vd_count_q.val + {{(COUNTER_W-3){1'b0}}, flushing_q | pipe_out_valid_o, 2'b0};
-          default: vd_count_d.val = '1;
-        endcase
-        if (first_valid_result) begin
-          vd_count_d.val      = '0;
-          vd_count_d.val[1:0] = DONT_CARE_ZERO ? '0 : 'x;
-          unique case (unit_out_ctrl.eew)
-            VSEW_16: vd_count_d.val[1:0] = 2'b01;
-            VSEW_32: vd_count_d.val[1:0] = 2'b11;
-            default: ;
-          endcase
-        end
-      end
+      // logic instr_speculative, instr_committed;
+      // always_comb begin
+      //   instr_speculative = DONT_CARE_ZERO ? '0 : 'x;
+      //   instr_committed   = DONT_CARE_ZERO ? '0 : 'x;
+      //   unique case (instr_state_i[unit_out_ctrl.id])
+      //     INSTR_SPECULATIVE:             instr_speculative = 1'b1;
+      //     INSTR_COMMITTED, INSTR_KILLED: instr_speculative = 1'b0;
+      //     default:                       ;
+      //   endcase
+      //   unique case (instr_state_i[unit_out_ctrl.id])
+      //     INSTR_SPECULATIVE, INSTR_KILLED: instr_committed = 1'b0;
+      //     INSTR_COMMITTED:                 instr_committed = 1'b1;
+      //     default:                         ;
+      //   endcase
+      // end
 
-      logic instr_speculative, instr_committed;
-      always_comb begin
-        instr_speculative = DONT_CARE_ZERO ? '0 : 'x;
-        instr_committed   = DONT_CARE_ZERO ? '0 : 'x;
-        unique case (instr_state_i[unit_out_ctrl.id])
-          INSTR_SPECULATIVE:             instr_speculative = 1'b1;
-          INSTR_COMMITTED, INSTR_KILLED: instr_speculative = 1'b0;
-          default:                       ;
-        endcase
-        unique case (instr_state_i[unit_out_ctrl.id])
-          INSTR_SPECULATIVE, INSTR_KILLED: instr_committed = 1'b0;
-          INSTR_COMMITTED:                 instr_committed = 1'b1;
-          default:                         ;
-        endcase
-      end
-
-      // flush the downstream part of the pipeline after the last cycle if needed
-      logic flushing_last_cycle;
-      always_comb begin
-        flushing_d          = flushing_q;
-        flushing_id_d       = flushing_id_q;
-        flushing_eew_d      = flushing_eew_q;
-        flushing_emul_d     = flushing_emul_q;
-        flushing_vaddr_d    = flushing_vaddr_q;
-        flushing_last_cycle = 1'b0;
-        if (~flushing_q & unit_out_valid & unit_out_ctrl.last_cycle & unit_out_ctrl.requires_flush) begin
-          flushing_d       = 1'b1;
-          flushing_id_d    = unit_out_ctrl.id;
-          flushing_eew_d   = unit_out_ctrl.eew;
-          flushing_emul_d  = unit_out_ctrl.emul;
-          flushing_vaddr_d = unit_out_ctrl.res_vaddr;
-        end
-        if (flushing_q & (vd_count_d.part.low == '1)) begin
-          flushing_d          = 1'b0;
-          flushing_last_cycle = 1'b1;
-        end
-      end
-
-
-      assign pipe_out_valid_o = (unit_out_valid) | flushing_q;
-      assign unit_out_ready   = pipe_out_ready_i & ~flushing_q;
-      //unit out stall signal missing.  Needed for ELEM operation?
-      //assign pipe_out_valid_o = (unit_out_valid & ~unit_out_stall) | flushing_q;
-      //assign unit_out_ready   = pipe_out_ready_i & ~flushing_q & ~unit_out_stall;
-
-      logic [4:0] base_vaddr;
-      assign base_vaddr = flushing_q ? flushing_vaddr_q : unit_out_ctrl.res_vaddr;
-      logic res_flag_shift_vsew32;
-      if (MAX_RES_W > 32) begin
-        assign res_flag_shift_vsew32 = vd_count_d.val[$clog2(MAX_RES_W/8)-1:2] == '0;
-      end else begin
-        assign res_flag_shift_vsew32 = 1'b1;
-      end
-      always_comb begin
-
-        if (is_reduction_q | unit_out_ctrl.mode.fpu.op_reduction) begin
-
-          pipe_out_instr_id_o = flushing_q ? flushing_id_q : unit_out_ctrl.id;
-          pipe_out_eew_o      = flushing_q ? flushing_eew_q : unit_out_ctrl.eew;
-          pipe_out_vaddr_o    = DONT_CARE_ZERO ? '0 : 'x;
-          unique case (flushing_q ? flushing_emul_q : unit_out_ctrl.emul)
-            EMUL_1:  pipe_out_vaddr_o = base_vaddr;
-            EMUL_2:  pipe_out_vaddr_o = base_vaddr | {4'b0, vd_count_d.part.mul[0:0]};
-            EMUL_4:  pipe_out_vaddr_o = base_vaddr | {3'b0, vd_count_d.part.mul[1:0]};
-            EMUL_8:  pipe_out_vaddr_o = base_vaddr | {2'b0, vd_count_d.part.mul[2:0]};
-            default: ;
-          endcase
-          pipe_out_res_store_o = '0;
-          pipe_out_res_valid_o = '0;
-          pipe_out_res_flags_o = '{default: pack_flags'('0)};
-          pipe_out_res_data_o = '0;
-          pipe_out_res_mask_o = '0;
-          pipe_out_res_flags_o[0].shift = DONT_CARE_ZERO ? '0 : 'x;
-          unique case (flushing_q ? flushing_eew_q : unit_out_ctrl.eew)
-            VSEW_8:  pipe_out_res_flags_o[0].shift = vd_count_d.val[$clog2(MAX_RES_W/8)-1:0] == '0;
-            VSEW_16: pipe_out_res_flags_o[0].shift = vd_count_d.val[$clog2(MAX_RES_W/8)-1:1] == '0;
-            VSEW_32: pipe_out_res_flags_o[0].shift = res_flag_shift_vsew32;
-            default: ;
-          endcase
-          pipe_out_res_flags_o[0].elemwise = 1'b1;
-          pipe_out_res_store_o[0] = ((unit_out_valid) | flushing_q) & (vd_count_d.part.low == '1);
-          pipe_out_res_valid_o[0] = flushing_q | unit_out_valid;
-          pipe_out_res_data_o[0] = unit_out_res;
-          pipe_out_res_mask_o[0][3:0] = flushing_q ? '0 : unit_out_mask;
-
-          pipe_out_instr_done_o     = (~flushing_q & unit_out_ctrl.last_cycle & ~unit_out_ctrl.requires_flush ) | flushing_last_cycle;
-          pipe_out_pend_clear_o     = (~flushing_q & unit_out_ctrl.last_cycle & ~unit_out_ctrl.requires_flush ) | flushing_last_cycle;
-          pipe_out_pend_clear_cnt_o = flushing_emul_q; // TODO reductions always have destination EMUL == 1
+      // // flush the downstream part of the pipeline after the last cycle if needed
+      // logic flushing_last_cycle;
+      // always_comb begin
+      //   flushing_d          = flushing_q;
+      //   flushing_id_d       = flushing_id_q;
+      //   flushing_eew_d      = flushing_eew_q;
+      //   flushing_emul_d     = flushing_emul_q;
+      //   flushing_vaddr_d    = flushing_vaddr_q;
+      //   flushing_last_cycle = 1'b0;
+      //   if (~flushing_q & unit_out_valid & unit_out_ctrl.last_cycle & unit_out_ctrl.requires_flush) begin
+      //     flushing_d       = 1'b1;
+      //     flushing_id_d    = unit_out_ctrl.id;
+      //     flushing_eew_d   = unit_out_ctrl.eew;
+      //     flushing_emul_d  = unit_out_ctrl.emul;
+      //     flushing_vaddr_d = unit_out_ctrl.res_vaddr;
+      //   end
+      //   if (flushing_q & (vd_count_d.part.low == '1)) begin
+      //     flushing_d          = 1'b0;
+      //     flushing_last_cycle = 1'b1;
+      //   end
+      // end
 
 
-        end else begin
-          //Normal Connections for not reduction operations
-          pipe_out_instr_id_o                    = unit_out_ctrl.id;
-          pipe_out_eew_o                         = unit_out_ctrl.eew;
-          pipe_out_vaddr_o                       = unit_out_ctrl.res_vaddr;
-          pipe_out_res_store_o                   = '0;
-          pipe_out_res_valid_o                   = '0;
-          pipe_out_res_flags_o                   = '{default: pack_flags'('0)};
-          pipe_out_res_data_o                    = '0;
-          pipe_out_res_mask_o                    = '0;
-          pipe_out_res_flags_o[0].shift          = 1'b1;
-          pipe_out_res_valid_o[0]                = unit_out_valid;
-          pipe_out_res_data_o[0]                 = unit_out_res;
-          pipe_out_res_mask_o[0][MAX_OP_W/8-1:0] = unit_out_mask;
-          pipe_out_pend_clear_cnt_o              = '0;
-          pipe_out_instr_done_o                  = unit_out_ctrl.last_cycle;
-          pipe_out_res_flags_o[0].elemwise       = 1'b0;
+      // assign pipe_out_valid_o = (unit_out_valid) | flushing_q;
+      // assign unit_out_ready   = pipe_out_ready_i & ~flushing_q;
+      // //unit out stall signal missing.  Needed for ELEM operation?
+      // //assign pipe_out_valid_o = (unit_out_valid & ~unit_out_stall) | flushing_q;
+      // //assign unit_out_ready   = pipe_out_ready_i & ~flushing_q & ~unit_out_stall;
+
+      // logic [4:0] base_vaddr;
+      // assign base_vaddr = flushing_q ? flushing_vaddr_q : unit_out_ctrl.res_vaddr;
+      // logic res_flag_shift_vsew32;
+      // if (MAX_RES_W > 32) begin
+      //   assign res_flag_shift_vsew32 = vd_count_d.val[$clog2(MAX_RES_W/8)-1:2] == '0;
+      // end else begin
+      //   assign res_flag_shift_vsew32 = 1'b1;
+      // end
+      // always_comb begin
+
+      //   if (is_reduction_q | unit_out_ctrl.mode.fpu.op_reduction) begin
+
+      //     pipe_out_instr_id_o = flushing_q ? flushing_id_q : unit_out_ctrl.id;
+      //     pipe_out_eew_o      = flushing_q ? flushing_eew_q : unit_out_ctrl.eew;
+      //     pipe_out_vaddr_o    = DONT_CARE_ZERO ? '0 : 'x;
+      //     unique case (flushing_q ? flushing_emul_q : unit_out_ctrl.emul)
+      //       EMUL_1:  pipe_out_vaddr_o = base_vaddr;
+      //       EMUL_2:  pipe_out_vaddr_o = base_vaddr | {4'b0, vd_count_d.part.mul[0:0]};
+      //       EMUL_4:  pipe_out_vaddr_o = base_vaddr | {3'b0, vd_count_d.part.mul[1:0]};
+      //       EMUL_8:  pipe_out_vaddr_o = base_vaddr | {2'b0, vd_count_d.part.mul[2:0]};
+      //       default: ;
+      //     endcase
+      //     pipe_out_res_store_o = '0;
+      //     pipe_out_res_valid_o = '0;
+      //     pipe_out_res_flags_o = '{default: pack_flags'('0)};
+      //     pipe_out_res_data_o = '0;
+      //     pipe_out_res_mask_o = '0;
+      //     pipe_out_res_flags_o[0].shift = DONT_CARE_ZERO ? '0 : 'x;
+      //     unique case (flushing_q ? flushing_eew_q : unit_out_ctrl.eew)
+      //       VSEW_8:  pipe_out_res_flags_o[0].shift = vd_count_d.val[$clog2(MAX_RES_W/8)-1:0] == '0;
+      //       VSEW_16: pipe_out_res_flags_o[0].shift = vd_count_d.val[$clog2(MAX_RES_W/8)-1:1] == '0;
+      //       VSEW_32: pipe_out_res_flags_o[0].shift = res_flag_shift_vsew32;
+      //       default: ;
+      //     endcase
+      //     pipe_out_res_flags_o[0].elemwise = 1'b1;
+      //     pipe_out_res_store_o[0] = ((unit_out_valid) | flushing_q) & (vd_count_d.part.low == '1);
+      //     pipe_out_res_valid_o[0] = flushing_q | unit_out_valid;
+      //     pipe_out_res_data_o[0] = unit_out_res;
+      //     pipe_out_res_mask_o[0][3:0] = flushing_q ? '0 : unit_out_mask;
+
+      //     pipe_out_instr_done_o     = (~flushing_q & unit_out_ctrl.last_cycle & ~unit_out_ctrl.requires_flush ) | flushing_last_cycle;
+      //     pipe_out_pend_clear_o     = (~flushing_q & unit_out_ctrl.last_cycle & ~unit_out_ctrl.requires_flush ) | flushing_last_cycle;
+      //     pipe_out_pend_clear_cnt_o = flushing_emul_q; // TODO reductions always have destination EMUL == 1
 
 
-        end
-      end
+      //   end else begin
+      //     //Normal Connections for not reduction operations
+      //     pipe_out_instr_id_o                    = unit_out_ctrl.id;
+      //     pipe_out_eew_o                         = unit_out_ctrl.eew;
+      //     pipe_out_vaddr_o                       = unit_out_ctrl.res_vaddr;
+      //     pipe_out_res_store_o                   = '0;
+      //     pipe_out_res_valid_o                   = '0;
+      //     pipe_out_res_flags_o                   = '{default: pack_flags'('0)};
+      //     pipe_out_res_data_o                    = '0;
+      //     pipe_out_res_mask_o                    = '0;
+      //     pipe_out_res_flags_o[0].shift          = 1'b1;
+      //     pipe_out_res_valid_o[0]                = unit_out_valid;
+      //     pipe_out_res_data_o[0]                 = unit_out_res;
+      //     pipe_out_res_mask_o[0][MAX_OP_W/8-1:0] = unit_out_mask;
+      //     pipe_out_pend_clear_cnt_o              = '0;
+      //     pipe_out_instr_done_o                  = unit_out_ctrl.last_cycle;
+      //     pipe_out_res_flags_o[0].elemwise       = 1'b0;
+
+
+      //   end
+      // end
     end else if (UNIT == UNIT_ZVBB) begin
       CTRL_T                  unit_out_ctrl;
       logic  [MAX_OP_W  -1:0] unit_out_res;
@@ -876,7 +875,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o                    = unit_out_ctrl.id;
+        pipe_out_instr_id_o                    = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                         = unit_out_ctrl.eew;
         pipe_out_vaddr_o                       = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                   = '0;
@@ -916,7 +915,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o                    = unit_out_ctrl.id;
+        pipe_out_instr_id_o                    = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                         = unit_out_ctrl.eew;
         pipe_out_vaddr_o                       = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                   = '0;
@@ -974,7 +973,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                      = unit_out_ctrl.eew;
         pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                = '0;
@@ -1038,7 +1037,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                      = unit_out_ctrl.eew;
         pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                = '0;
@@ -1096,7 +1095,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o                 = unit_out_ctrl.id;
+        pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                      = unit_out_ctrl.eew;
         pipe_out_vaddr_o                    = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                = '0;
@@ -1143,7 +1142,7 @@ module vproc_unit_wrapper
           .pipe_out_mask_o (unit_out_mask)
       );
       always_comb begin
-        pipe_out_instr_id_o                    = unit_out_ctrl.id;
+        pipe_out_instr_id_o                    = unit_out_ctrl.pipe_id;
         pipe_out_eew_o                         = unit_out_ctrl.eew;
         pipe_out_vaddr_o                       = unit_out_ctrl.res_vaddr;
         pipe_out_res_store_o                   = '0;

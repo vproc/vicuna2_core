@@ -208,7 +208,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // VECTOR INSTRUCTION DECODER INTERFACE
 
     typedef struct packed {
-        logic [XIF_ID_W-1:0] id;
+        logic [XIF_ID_W-1:0] xif_id;
+        logic [XIF_ID_W-1:0] pipe_id;
         cfg_vsew             vsew;
         cfg_emul             emul;
         cfg_vxrm             vxrm;
@@ -293,7 +294,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .vl_override_o      ( dec_vl_override                     ),
         .decode_metadata_o  ( dec_data_d.decode_metadata          )
     );
-    assign dec_data_d.id         = xif_issue_if.issue_req.id;
+    assign dec_data_d.xif_id     = xif_issue_if.issue_req.id;
     assign dec_data_d.vl_0       = vl_0 & ~dec_vl_override;
     assign dec_data_d.unit       = instr_unit;
     assign dec_data_d.mode       = instr_mode;
@@ -427,11 +428,24 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     decoder_data pipeline_disp_data;
 
     assign push_pipeline_disp = dec_valid & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_pipeline_disp = ((!pipeline_disp_empty & ((pipeline_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!pipeline_disp_empty & (instr_state_q[pipeline_disp_data.id] != INSTR_SPECULATIVE))) & pipeline_ready;
+    assign pop_pipeline_disp = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!pipeline_disp_empty & (instr_state_q[pipeline_disp_data.xif_id] != INSTR_SPECULATIVE))) & pipeline_ready;
 
     //Signal empty result on sucessful dispatch when not LSU or XRESULT instructions
     assign result_empty_valid = pop_pipeline_disp & (pipeline_disp_data.unit != UNIT_LSU) & (pipeline_disp_data.unit != UNIT_XRESULT);
-    assign result_empty_id = pipeline_disp_data.id;
+    assign result_empty_id = pipeline_disp_data.xif_id;
+
+    //Assign sequential pipeline IDs, decoupled from XIF ID.  This allows for multiple of the same XIF ID to exist in the pipeline, while maintaining strict ordering for accesses
+    logic [XIF_ID_W-1:0] next_id;
+
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_n) begin
+            next_id <= '0;
+        end else begin
+            next_id <= push_pipeline_disp ? next_id + 1: next_id;
+        end
+    end
+
+    assign dec_data_d.pipe_id    = next_id;
 
     fifo_v3 #(
     .FALL_THROUGH (1'b1        ),
@@ -461,7 +475,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     csr_dec_data csr_fifo_input;
 
-    assign csr_fifo_input.id = dec_data_d.id;
+    assign csr_fifo_input.id = dec_data_d.xif_id;
     assign csr_fifo_input.cfg = dec_data_d.mode.cfg;
     assign csr_fifo_input.val = dec_data_d.rs1.r.xval;
     assign csr_fifo_input.dest_addr = dec_data_d.rd.addr;
@@ -953,7 +967,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
         //add new entries when instruction is dispatched (max one per cycle)
         .set_i(arb_set_i),
-        .set_id_i(pipe_instr_data.id),
+        .set_id_i(pipe_instr_data.pipe_id), //Use the pipeline ID for arbitration, NOT XIF ID
 
         //clear entry when instruction is completed (max one per cycle)
         .clear_i(arb_clear_i),  //TODO: Confirm only one instruction is capable of signalling complete at once

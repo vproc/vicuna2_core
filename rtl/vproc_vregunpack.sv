@@ -716,12 +716,12 @@ module vproc_vregunpack
 
         //Standard accesses for other ports, and only allowed when vfu not accessing op 0 due to potentially conflicting IDs
         for (genvar i = 1; i < VPORT_CNT; i++) begin
-            assign vreg_rd_req_o[i] = shift_reg_req[i] & ~metadata_q.pend_wr_map[vreg_rd_addr_o[i]] & (!vfu_vreg_rd_req_i | metadata_q.ctrl.id == vfu_vreg_rd_id_i); //Request signal from shift reg valid if not marked as pending write (not a data hazard) or blocked by access from previous instruction in vfu
+            assign vreg_rd_req_o[i] = shift_reg_req[i] & ~metadata_q.pend_wr_map[vreg_rd_addr_o[i]] & (!vfu_vreg_rd_req_i | metadata_q.ctrl.pipe_id == vfu_vreg_rd_id_i); //Request signal from shift reg valid if not marked as pending write (not a data hazard) or blocked by access from previous instruction in vfu
             assign shift_reg_gnt[i] = vreg_rd_gnt_i[i];
             assign vreg_rd_addr_o[i] = shift_reg_addr[i];
         end
     endgenerate
-    assign vreg_rd_id_o     = vfu_vreg_rd_req_i ? vfu_vreg_rd_id_i : metadata_q.ctrl.id;
+    assign vreg_rd_id_o     = vfu_vreg_rd_req_i ? vfu_vreg_rd_id_i : metadata_q.ctrl.pipe_id;
 
     generate
         for (genvar i = 0; i < VPORT_CNT; i++) begin

@@ -502,7 +502,7 @@ module vproc_lsu #(
         trans_complete_valid_o = pipe_out_ctrl_o.last_cycle & pipe_out_valid_o;
         trans_complete_exc_o = '0; //TODO: Currently, memory system cannot fault
         trans_complete_exccode_o = '0; //TODO: Currently, memory system cannot fault
-        trans_complete_id_o = pipe_out_ctrl_o.id;
+        trans_complete_id_o = pipe_out_ctrl_o.xif_id;
 
     end
 endmodule

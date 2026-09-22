@@ -90,7 +90,7 @@ module vproc_xresult #(
   end
 
   assign state_res_ready    = ~state_res_valid_q | pipe_out_ready_i;
-  assign pipe_out_xreg_id_o = state_res_q.id;
+  assign pipe_out_xreg_id_o = state_res_q.xif_id;
   assign pipe_in_ready_o    = '1;
   assign state_res_valid_d  = pipe_in_valid_i;
   assign state_res_d        = pipe_in_ctrl_i;

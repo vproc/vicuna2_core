@@ -209,7 +209,8 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         count_inc_e                      count_inc;         // counter increment policy
         logic                      [2:0] field_init_count;  // field counter initial value
         logic                            requires_flush;    // whether the instr requires flushing
-        logic        [XIF_ID_W     -1:0] id;
+        logic        [XIF_ID_W     -1:0] pipe_id;
+        logic        [XIF_ID_W     -1:0] xif_id;
         op_unit                          unit;
         op_mode                          mode;
         cfg_vsew                         eew;               // effective element width
@@ -522,7 +523,8 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
 
         state_init.field_init_count = unit_lsu ? pipe_in_data_i.mode.lsu.nfields : '0;
         state_init.requires_flush = (unit_xresult & elem_flush) | (unit_fpu & pipe_in_data_i.mode.fpu.op_reduction);
-        state_init.id             = pipe_in_data_i.id;
+        state_init.xif_id         = pipe_in_data_i.xif_id;
+        state_init.pipe_id        = pipe_in_data_i.pipe_id;
         state_init.unit           = pipe_in_data_i.unit;
         state_init.vxrm           = pipe_in_data_i.vxrm;
         state_init.vl             = pipe_in_data_i.vl;

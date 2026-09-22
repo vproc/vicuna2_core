@@ -177,7 +177,7 @@ module vproc_gather #(
   //TODO: This generates a vector register load for EVERY VALID INDEX (idx < VLMAX).  TODO: add check for idx in currently loaded register
   //TODO: Can also skip any data that is masked out
   assign vreg_rd_req_o = ((state_q == READY) & pipe_in_ctrl_i.first_cycle & !over_vlmax & pipe_in_valid_i & pipe_in_mask_valid_i) | (state_q == INVALID_DATA) | ((state_q == VALID_DATA) & pipe_out_ready_i & !over_vlmax);
-  assign vreg_rd_id_o = pipe_in_ctrl_i.id;
+  assign vreg_rd_id_o = pipe_in_ctrl_i.pipe_id;
   assign vreg_rd_addr_o = vreg_addr;
 
   //Input handshake, same condition for normal arg and mask

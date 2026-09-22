@@ -125,8 +125,8 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
     typedef struct packed {
         logic                            first_cycle;
         logic                            last_cycle;
-
-        logic        [XIF_ID_W     -1:0] id;
+        logic        [XIF_ID_W     -1:0] xif_id;  //xif ID
+        logic        [XIF_ID_W     -1:0] pipe_id; //pipeline ID
         op_unit                          unit;
         op_mode                          mode;
         cfg_vsew                         eew;            // effective element width
@@ -153,7 +153,8 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         metadata_i.first_cycle             = 1'b1; // These should be set in vregunpack
         metadata_i.last_cycle              = 1'b1; // These should be set in vregunpack
 
-        metadata_i.id                      = pipe_in_state_i.id;
+        metadata_i.xif_id                  = pipe_in_state_i.xif_id;
+        metadata_i.pipe_id                 = pipe_in_state_i.pipe_id;
         metadata_i.mode                    = pipe_in_state_i.mode;
 
         metadata_i.eew                     = pipe_in_state_i.eew;
