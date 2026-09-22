@@ -19,7 +19,7 @@ module vproc_csr import vproc_pkg::*; #(
     output logic [CFG_VL_W-1:0]     vl_o,    //TODO: currently passing old vl bytes
     output logic                    vl_0_o,
     output logic [CFG_VL_W:0]       vlmax_o, //TODO: currently passing old vlmax number of elements
-    output cfg_emul                 lmul_o,
+    output cfg_lmul                 lmul_o,
     output cfg_vsew                 sew_o,
     output logic                    illegal_cfg_o,
     output cfg_vxrm                 vxrm_o,

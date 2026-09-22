@@ -225,7 +225,8 @@ module vproc_decoder #(
             // OPCODE SYSTEM:
             7'h73: begin
                 unit_o = UNIT_CFG;
-                instr_illegal = 1'b1; //TODO: Adapt CSR accesses to new framework CSR unit
+                mode_o.cfg.csr    = CSR_VXSAT;
+                //instr_illegal = 1'b1; //TODO: Adapt CSR accesses to new framework CSR unit
                 // select CFG operation based on CSR address (instr_i[31:20]) and CSR instruction's
                 // // funct3 field (instr_i[14:12])
                 // unique case ({instr_i[31:20], instr_i[14:12]})

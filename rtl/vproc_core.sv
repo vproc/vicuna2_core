@@ -252,7 +252,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic [CFG_VL_W-1:0]     vl;
     logic                    vl_0;
     //logic [CFG_VL_W:0]       vlmax; TODO: Currently computed in decode
-    cfg_emul                 lmul;
+    cfg_lmul                 lmul;
     cfg_vsew                 sew;
     cfg_vxrm                 vxrm;
     logic                    illegal_cfg_o;
@@ -427,10 +427,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     decoder_data pipeline_disp_data;
 
     assign push_pipeline_disp = dec_valid & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_pipeline_disp = (((pipeline_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid) | (!pipeline_disp_empty & (instr_state_q[pipeline_disp_data.id] != INSTR_SPECULATIVE)));                       //Pop CSR instruction if csr instruction is committed or killed. CSR unit is always ready to receive an instruction, only need to wait for it to be committed
+    assign pop_pipeline_disp = ((!pipeline_disp_empty & ((pipeline_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!pipeline_disp_empty & (instr_state_q[pipeline_disp_data.id] != INSTR_SPECULATIVE))) & pipeline_ready;
 
     //Signal empty result on sucessful dispatch when not LSU or XRESULT instructions
-    assign result_empty_valid = pop_pipeline_disp & pipeline_ready & (instr_unit != UNIT_LSU) & (instr_unit != UNIT_XRESULT);
+    assign result_empty_valid = pop_pipeline_disp & (pipeline_disp_data.unit != UNIT_LSU) & (pipeline_disp_data.unit != UNIT_XRESULT);
     assign result_empty_id = pipeline_disp_data.id;
 
     fifo_v3 #(
@@ -439,12 +439,12 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     .DEPTH        (4           )
     ) pipeline_dispatch_queue (
         .clk_i,
-        .rst_ni     (sync_rst_ni),
+        .rst_ni     (sync_rst_n),
         .flush_i    (1'b0                          ),
         .data_i     ( dec_data_d                   ),
         .push_i     ( push_pipeline_disp           ),
         .data_o     ( pipeline_disp_data           ),
-        .pop_i      ( pop_pipeline_disp & pipeline_ready ),
+        .pop_i      ( pop_pipeline_disp            ),
         .empty_o    ( pipeline_disp_empty          ),
         .full_o     ( pipeline_disp_full           )
     );
@@ -473,7 +473,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     csr_dec_data csr_disp_data;
 
     assign push_csr_disp = dec_valid & (instr_unit == UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_csr_disp = (((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid) | (!csr_disp_empty & (instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE))) & csr_ready;                       //Pop CSR instruction if csr instruction is committed or killed.
+    assign pop_csr_disp = ((!csr_disp_empty & ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!csr_disp_empty & (instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE))) & csr_ready;                       //Pop CSR instruction if csr instruction is committed or killed.
 
     //TODO: Need to discard killed instructions without signalling + reset ID value
     fifo_v3 #(
@@ -482,7 +482,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     .DEPTH        (1           )   //Likely only needs one slot here?
     ) csr_dispatch_queue (
         .clk_i,
-        .rst_ni     (sync_rst_ni),
+        .rst_ni     (sync_rst_n),
         .flush_i    (1'b0                          ),
         .data_i     ( csr_fifo_input               ),
         .push_i     ( push_csr_disp                ),
@@ -493,8 +493,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     );
 
 
-
+    ////////
     // potential vector register hazards of the currently dequeued instruction
+    ////////
+    logic [31:0] pending_wr_disp;
     vproc_pending_wr #(
         .CFG_VL_W       ( CFG_VL_W                ),
         .VREG_W         ( VREG_W                  ),
@@ -507,7 +509,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .mode_i         ( pipeline_disp_data.mode       ),
         .widenarrow_i   ( pipeline_disp_data.widenarrow ),
         .rd_i           ( pipeline_disp_data.rd         ),
-        .pending_wr_o   ( queue_pending_wr_d      )
+        .pending_wr_o   ( pending_wr_disp               )
     );
 
     ///////////////////////////////////////////////////////////////////////////
@@ -528,10 +530,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .clk_i              ( clk_i              ),
         .async_rst_ni       ( async_rst_n        ),
         .sync_rst_ni        ( sync_rst_n         ),
-        .instr_valid_i      ( pop_pipeline_disp  ),
+        .instr_valid_i      ( !pipeline_disp_empty ),
         .instr_ready_o      ( pipeline_ready     ),
         .instr_data_i       ( pipeline_disp_data ),
-        .instr_vreg_wr_i    ( queue_pending_wr_d ),
+        .instr_vreg_wr_i    ( pending_wr_disp    ),
         .dispatch_valid_o   ( pipe_instr_valid   ),
         .dispatch_ready_i   ( pipe_instr_ready   ),
         .dispatch_data_o    ( pipe_instr_data    ),
@@ -675,8 +677,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .XIF_ID_W(XIF_ID_W)
     ) vproc_csr (
         .clk_i(clk_i),
-        .async_rst_ni(async_rst_ni),
-        .sync_rst_ni(async_rst_ni),
+        .async_rst_ni(async_rst_n),
+        .sync_rst_ni(sync_rst_n),
 
         //Interface to expose csrs to DECODE
 
