@@ -39,11 +39,13 @@ module vproc_csr import vproc_pkg::*; #(
     output  logic [31:0]             result_csr_data_o,
     output  logic                    result_csr_we_o,
 
-    //TODO: Interface to update VCSR for fixed point ops
+    //Interface to update VCSR for fixed point ops
 
-    input   logic                    vx_saturate_i
+    input   logic                    vx_saturate_i,
 
-    //TODO: Interface to update custom performance counter CSRs
+    //Interface to update custom performance counter CSRs
+
+    input   logic [vproc_pkg::UNIT_CNT - 1 : 0] unit_busy_i
 
 );
 
@@ -200,8 +202,30 @@ assign vxrm_o = vcsr[2:1];
 //  Custom CSR Performance Counters
 ////////////
 
-//TODO: Declarations
-//TODO: Assignments
+//Custom counters for utilization.  Read only, updated each cycle if the respective functional unit is busy.  Order based on functional unit declarations in vproc_pkg.  Indexed based on provided scalar val
+//TODO: Optionally declare these to reduce overhead
+logic [vproc_pkg::UNIT_CNT : 0][31:0] util_cntr; //UNIT_CNT + 1 counters for all units + CFG 
+
+generate
+    for (genvar i = 0; i < UNIT_CNT ; i ++) begin
+        always_ff @(posedge clk_i) begin
+            if (~sync_rst_ni) begin
+                util_cntr[i] <= '0;
+            end else begin
+                util_cntr[i] <= unit_busy_i[i] ? util_cntr[i] + 1 : util_cntr[i];
+            end
+        end
+    end
+endgenerate
+
+// CFG unit handled separately.  Counted as busy if valid cfg data is available, even if stalled
+always_ff @(posedge clk_i) begin
+    if (~sync_rst_ni) begin
+        util_cntr[UNIT_CNT] <= '0;
+    end else begin
+        util_cntr[UNIT_CNT] <= valid_i ? util_cntr[UNIT_CNT] + 1 : util_cntr[UNIT_CNT];
+    end
+end
 
 ////////////
 //  Output Interface to Result
@@ -214,8 +238,9 @@ assign result_csr_addr_o = dec_data_i.dest_addr;
 always_comb begin
     case(dec_data_i.cfg.csr)
         CSR_VSETVL: result_csr_data_o = vl_d; //vsetvl result is the new value of vl
-        CSR_VXRM : result_csr_data_o = {{(30){1'b0}}, vcsr[2:1]};
-        CSR_VXSAT : result_csr_data_o = {{(31){1'b0}}, vcsr[0]};
+        CSR_VXRM: result_csr_data_o = {{(30){1'b0}}, vcsr[2:1]};
+        CSR_VXSAT: result_csr_data_o = {{(31){1'b0}}, vcsr[0]};
+        CSR_VPERF: result_csr_data_o = util_cntr[dec_data_i.val];
         default: result_csr_data_o = '0;
     endcase
 end

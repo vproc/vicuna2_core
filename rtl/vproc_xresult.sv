@@ -34,7 +34,9 @@ module vproc_xresult #(
     output logic                    pipe_out_xreg_valid_o,
     output logic  [XIF_ID_W- 1 : 0] pipe_out_xreg_id_o,
     output logic  [   XLEN - 1 : 0] pipe_out_xreg_data_o,
-    output logic  [          4 : 0] pipe_out_xreg_addr_o
+    output logic  [          4 : 0] pipe_out_xreg_addr_o,
+
+    output logic                  unit_busy_o
 );
 
   import vproc_pkg::*;

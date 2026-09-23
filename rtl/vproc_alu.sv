@@ -37,7 +37,9 @@ module vproc_alu #(
         output CTRL_T                 pipe_out_ctrl_o,
         output logic [ALU_OP_W  -1:0] pipe_out_res_alu_o,
         output logic [ALU_OP_W/8-1:0] pipe_out_res_cmp_o,
-        output logic [ALU_OP_W/8-1:0] pipe_out_mask_o
+        output logic [ALU_OP_W/8-1:0] pipe_out_mask_o,
+
+        output logic                  unit_busy_o
     );
 
     import vproc_pkg::*;
@@ -66,6 +68,8 @@ module vproc_alu #(
     logic [ALU_OP_W  /8-1:0] cmp_q,              cmp_d;
     logic [ALU_OP_W  /4-1:0] satval_q,           satval_d;
     logic [ALU_OP_W    -1:0] shift_res_q,        shift_res_d;
+
+    assign unit_busy_o = state_ex1_valid_q | state_ex2_valid_q | state_res_valid_q; //Unit considered busy if any stage has valid data
 
     generate
         if (BUF_OPERANDS) begin

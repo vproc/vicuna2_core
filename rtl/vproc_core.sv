@@ -678,7 +678,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // CSR accesses are performed in parallel to the main pipelines, removing most stalls caused by vsetvl accesses
     // CSR Access Stalls must be generated in two cases:
     //  1. A Speculative VSETVL instruction exists in the dispatch buffer.  Decode must stall in this case
-    //  2. VXSAT is accessed while a fixed point operation is still in progress. Decode can continue in this case
+    //  2. TODO: VXSAT is accessed while a fixed point operation is still in progress. Decode can continue in this case
     ////////////////////
 
     logic csr_valid;
@@ -686,6 +686,19 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     assign csr_valid = !csr_disp_empty | push_csr_disp; //valid input to csr unit when csr dispatch is not empty OR a value is being pushed for fall through
 
     logic [PIPE_CNT-1:0] vx_saturate; //VALU or VMUL can generate a fixed point saturation at the vector pipelines
+
+    //Since each functional unit can only exist once, can OR each pipeline busy signal to create input for csr unit
+    logic [vproc_pkg::UNIT_CNT - 1 : 0]               unit_busy;
+    logic [PIPE_CNT-1:0][vproc_pkg::UNIT_CNT - 1 : 0] unit_busy_pipeline;
+
+    always_comb begin
+        unit_busy = '0;
+        for (int unit = 0; unit < UNIT_CNT; unit++) begin
+            for (int pipe = 0; pipe < PIPE_CNT; pipe++) begin
+                unit_busy[unit] = unit_busy[unit] | unit_busy_pipeline[pipe][unit];
+            end
+        end
+    end
 
     vproc_csr #(
         .VLEN(VREG_W),
@@ -723,8 +736,9 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .result_csr_we_o(result_csr_we),
 
         //Interface to update VCSR for fixed point ops
-        .vx_saturate_i(|vx_saturate)
-        //TODO: Interface to update custom performance counter CSRs
+        .vx_saturate_i(|vx_saturate),
+        //Interface to update custom performance counter CSRs
+        .unit_busy_i(unit_busy)
 
     );
     //////
@@ -851,7 +865,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .xreg_id_o                ( xreg_id                    ),
                 .xreg_addr_o              ( xreg_addr                  ),
                 .xreg_data_o              ( xreg_data                  ),
-                .vx_saturate_o            ( vx_saturate[i]             )
+                .vx_saturate_o            ( vx_saturate[i]             ),
+                .unit_busy_o              ( unit_busy_pipeline[i]      )
             );
             if (PIPE_UNITS[i][UNIT_LSU]) begin
                 assign pending_load_lsu           = pending_load;

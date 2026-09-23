@@ -82,7 +82,9 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         output [XIF_ID_W-1 : 0]                      vreg_rd_id_o,
         input  [VREG_W-1:0]                          vreg_rd_data_i,
 
-        output logic                                 vx_saturate_o
+        output logic                                 vx_saturate_o,
+
+        output logic [vproc_pkg::UNIT_CNT - 1 : 0]   unit_busy_o
     );
 
     // Ready signal
@@ -226,7 +228,9 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                     .vreg_rd_id_o               (vreg_rd_id                 ),
                     .vreg_rd_data_i             (vreg_rd_data               ),
 
-                    .vx_saturate_o              (unit_out_vx_saturate[i]    )
+                    .vx_saturate_o              (unit_out_vx_saturate[i]    ),
+
+                    .unit_busy_o                (unit_busy_o[i])
                 );
 
                 if (op_unit'(i) == UNIT_LSU) begin

@@ -329,7 +329,7 @@ typedef struct packed {
 `endif
 } op_mode_elem;
 
-typedef enum logic [2:0] {
+typedef enum logic [3:0] {
     // vsetvl (modifies vtype and vl)
     CSR_VSETVL,
     // read-only CSR
@@ -340,7 +340,9 @@ typedef enum logic [2:0] {
     CSR_VSTART,
     CSR_VXSAT,
     CSR_VXRM,
-    CSR_VCSR
+    CSR_VCSR,
+    //Custom Performance Counter, read-only
+    CSR_VPERF
     //Any new CSRS added below
 } csr_type;
 
@@ -355,7 +357,7 @@ typedef struct packed {
     logic       c;
     logic       s;
 `ifdef VPROC_OP_MODE_UNION
-    logic [2:0] unused;
+    logic [1:0] unused;
 `endif
 } op_mode_cfg;
 

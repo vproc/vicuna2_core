@@ -235,7 +235,9 @@ module vproc_lsu #(
         output logic                  trans_complete_exc_o,
         output logic [5:0]            trans_complete_exccode_o,
 
-        OBI_BUS.Manager               obi_bus [MEM_PORTS-1:0]
+        OBI_BUS.Manager               obi_bus [MEM_PORTS-1:0],
+
+        output logic                  unit_busy_o
     );
 
 

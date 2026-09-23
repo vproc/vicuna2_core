@@ -81,7 +81,9 @@ module vproc_unit_wrapper
     output [XIF_ID_W-1 : 0]                   vreg_rd_id_o,
     input  [VREG_W-1:0]                       vreg_rd_data_i,
 
-    output logic                              vx_saturate_o
+    output logic                              vx_saturate_o,
+
+    output logic                              unit_busy_o
 );
 
   generate
@@ -148,7 +150,8 @@ module vproc_unit_wrapper
           .trans_complete_id_o     (trans_complete_id_o),
           .trans_complete_exc_o    (trans_complete_exc_o),
           .trans_complete_exccode_o(trans_complete_exccode_o),
-          .obi_bus                 (obi_bus)
+          .obi_bus                 (obi_bus),
+          .unit_busy_o             (unit_busy_o)
       );
       always_comb begin
         pipe_out_eew_o       = unit_out_ctrl.decode_metadata.operands[1].sew;
@@ -228,7 +231,8 @@ module vproc_unit_wrapper
           .pipe_out_ctrl_o     (unit_out_ctrl),
           .pipe_out_res_alu_o  (unit_out_res_alu),
           .pipe_out_res_cmp_o  (unit_out_res_cmp),
-          .pipe_out_mask_o     (unit_out_mask)
+          .pipe_out_mask_o     (unit_out_mask),
+          .unit_busy_o         (unit_busy_o)
       );
       always_comb begin
         pipe_out_instr_id_o = unit_out_ctrl.pipe_id;
@@ -329,7 +333,8 @@ module vproc_unit_wrapper
           .pipe_out_ready_i(pipe_out_ready_i),
           .pipe_out_ctrl_o (unit_out_ctrl),
           .pipe_out_res_o  (unit_out_res),
-          .pipe_out_mask_o (unit_out_mask)
+          .pipe_out_mask_o (unit_out_mask),
+          .unit_busy_o     (unit_busy_o)
       );
       always_comb begin
         pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
@@ -374,7 +379,8 @@ module vproc_unit_wrapper
           .pipe_out_ready_i    (pipe_out_ready_i),
           .pipe_out_ctrl_o     (unit_out_ctrl),
           .pipe_out_res_o      (unit_out_res),
-          .pipe_out_mask_o     (unit_out_mask)
+          .pipe_out_mask_o     (unit_out_mask),
+          .unit_busy_o         (unit_busy_o)
       );
       always_comb begin
         pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
@@ -439,7 +445,8 @@ module vproc_unit_wrapper
           .pipe_out_xreg_valid_o(xreg_valid_o),
           .pipe_out_xreg_id_o   (xreg_id_o),
           .pipe_out_xreg_data_o (xreg_data_o),
-          .pipe_out_xreg_addr_o (xreg_addr_o)
+          .pipe_out_xreg_addr_o (xreg_addr_o),
+          .unit_busy_o          (unit_busy_o)
       );
 
       always_comb begin
@@ -507,7 +514,8 @@ module vproc_unit_wrapper
           .pipe_in_mask_ready_o(unit_mask_ready_o),
           .pipe_out_ctrl_o     (unit_out_ctrl),
           .pipe_out_res_o      (unit_out_res),
-          .pipe_out_mask_o     (unit_out_mask)
+          .pipe_out_mask_o     (unit_out_mask),
+          .unit_busy_o         (unit_busy_o)
       );
 
       always_comb begin
@@ -562,7 +570,8 @@ module vproc_unit_wrapper
           .pipe_out_ctrl_o       (unit_out_ctrl),
           .pipe_out_res_o        (unit_out_res),
           .pipe_out_mask_o       (unit_out_mask),
-          .pipe_out_first_cycle_o(unit_first_cycle)
+          .pipe_out_first_cycle_o(unit_first_cycle),
+          .unit_busy_o           (unit_busy_o)
       );
 
       always_comb begin
@@ -617,7 +626,8 @@ module vproc_unit_wrapper
           .pipe_out_ready_i(pipe_out_ready_i),
           .pipe_out_ctrl_o (unit_out_ctrl),
           .pipe_out_res_o  (unit_out_res),
-          .pipe_out_mask_o (unit_out_mask)
+          .pipe_out_mask_o (unit_out_mask),
+          .unit_busy_o     (unit_busy_o)
       );
 
       always_comb begin
@@ -974,7 +984,8 @@ module vproc_unit_wrapper
           .pipe_out_ready_i(pipe_out_ready_i),
           .pipe_out_ctrl_o (unit_out_ctrl),
           .pipe_out_res_o  (unit_out_res),
-          .pipe_out_mask_o (unit_out_mask)
+          .pipe_out_mask_o (unit_out_mask),
+          .unit_busy_o     (unit_busy_o)
       );
       always_comb begin
         pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
@@ -1038,7 +1049,8 @@ module vproc_unit_wrapper
           .pipe_out_ready_i(pipe_out_ready_i),
           .pipe_out_ctrl_o (unit_out_ctrl),
           .pipe_out_res_o  (unit_out_res),
-          .pipe_out_mask_o (unit_out_mask)
+          .pipe_out_mask_o (unit_out_mask),
+          .unit_busy_o     (unit_busy_o)
       );
       always_comb begin
         pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;
@@ -1096,7 +1108,8 @@ module vproc_unit_wrapper
           .pipe_out_ready_i(pipe_out_ready_i),
           .pipe_out_ctrl_o (unit_out_ctrl),
           .pipe_out_res_o  (unit_out_res),
-          .pipe_out_mask_o (unit_out_mask)
+          .pipe_out_mask_o (unit_out_mask),
+          .unit_busy_o     (unit_busy_o)
       );
       always_comb begin
         pipe_out_instr_id_o                 = unit_out_ctrl.pipe_id;

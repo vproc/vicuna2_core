@@ -43,7 +43,9 @@ module vproc_gather #(
 
     output METADATA_T               pipe_out_ctrl_o,
     output logic [OP_W - 1 : 0]     pipe_out_res_o,
-    output logic [(OP_W/8) - 1 : 0] pipe_out_mask_o
+    output logic [(OP_W/8) - 1 : 0] pipe_out_mask_o,
+
+    output logic                    unit_busy_o
 );
 
   import vproc_pkg::*;

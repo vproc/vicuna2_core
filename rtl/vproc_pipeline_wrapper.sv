@@ -12,16 +12,9 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned          MAX_VPORT_W        = 128,  // max port width
         parameter int unsigned          MAX_VADDR_W        = 5,    // max addr width
         parameter int unsigned          VPORT_CNT          = 1,
-// `ifdef VERILATOR
-//         // Workaround for Verilator due to https://github.com/verilator/verilator/issues/3433
-//         parameter int unsigned          VPORT_OFFSET       = 0,
-//         parameter int unsigned          VREGFILE_VPORT_CNT = 1,
-//         parameter int unsigned          VREGFILE_VPORT_W[VREGFILE_VPORT_CNT] = '{0},
-//         parameter int unsigned          VREGFILE_VADDR_W[VREGFILE_VPORT_CNT] = '{0},
-// `else
-        //parameter int unsigned          VPORT_W[VPORT_CNT] = '{0},
+
         parameter int unsigned          VADDR_W[VPORT_CNT] = '{0},
-//`endif
+
         parameter bit [VPORT_CNT-1:0]   VPORT_BUFFER       = '0,   // buffer port
         parameter bit                   VPORT_V0           = '0,   // use dedicated v0 read port
         parameter int unsigned          MAX_OP_W           = 64,   // operand width in bits
@@ -91,7 +84,9 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         output logic [4:0]              xreg_addr_o,
         output logic [31:0]             xreg_data_o,
 
-        output logic                    vx_saturate_o
+        output logic                    vx_saturate_o,
+
+        output logic [vproc_pkg::UNIT_CNT - 1 : 0] unit_busy_o
     );
     
     import fpnew_pkg::*;
