@@ -107,7 +107,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         input  logic                    xreg_ready_i,
         output logic [XIF_ID_W-1:0]     xreg_id_o,
         output logic [4:0]              xreg_addr_o,
-        output logic [31:0]             xreg_data_o
+        output logic [31:0]             xreg_data_o,
+
+        output logic                    vx_saturate_o
     );
 
     if ((MAX_OP_W & (MAX_OP_W - 1)) != 0 || MAX_OP_W < 32 || MAX_OP_W >= VREG_W) begin
@@ -353,7 +355,9 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .vreg_rd_gnt_i             (vfu_vreg_rd_gnt           ),
         .vreg_rd_addr_o            (vfu_vreg_rd_addr          ),
         .vreg_rd_id_o              (vfu_vreg_rd_id            ),
-        .vreg_rd_data_i            (vreg_rd_data_i[0]         )
+        .vreg_rd_data_i            (vreg_rd_data_i[0]         ),
+
+        .vx_saturate_o             (vx_saturate_o             )
     );
 
     ////////////

@@ -89,7 +89,9 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         input  logic                    xreg_ready_i,
         output logic [XIF_ID_W-1:0]     xreg_id_o,
         output logic [4:0]              xreg_addr_o,
-        output logic [31:0]             xreg_data_o
+        output logic [31:0]             xreg_data_o,
+
+        output logic                    vx_saturate_o
     );
     
     import fpnew_pkg::*;

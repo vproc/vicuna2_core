@@ -80,7 +80,9 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
         input  logic                                 vreg_rd_gnt_i,
         output [4:0]                                 vreg_rd_addr_o,
         output [XIF_ID_W-1 : 0]                      vreg_rd_id_o,
-        input  [VREG_W-1:0]                          vreg_rd_data_i
+        input  [VREG_W-1:0]                          vreg_rd_data_i,
+
+        output logic                                 vx_saturate_o
     );
 
     // Ready signal
@@ -115,6 +117,9 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
     logic      [UNIT_CNT-1:0][1:0]                        unit_out_pend_clear_cnt;
     logic      [UNIT_CNT-1:0]                             unit_out_instr_done;
     logic      [2:0]                                      unit_out_field_counter;
+
+    logic      [UNIT_CNT-1:0][4:0]                        unit_out_vx_saturate;
+    assign vx_saturate_o = |unit_out_vx_saturate;
 
     generate
         for (genvar i = 0; i < UNIT_CNT; i++) begin
@@ -215,11 +220,13 @@ module vproc_unit_mux import vproc_pkg::*, obi_pkg::*; #(
                     .xreg_addr_o               ( xreg_addr                  ),
                     .xreg_data_o               ( xreg_data                  ),
 
-                    .vreg_rd_req_o              (vreg_rd_req),
-                    .vreg_rd_gnt_i              (vreg_rd_gnt),
-                    .vreg_rd_addr_o             (vreg_rd_addr),
-                    .vreg_rd_id_o               (vreg_rd_id),
-                    .vreg_rd_data_i             (vreg_rd_data)
+                    .vreg_rd_req_o              (vreg_rd_req                ),
+                    .vreg_rd_gnt_i              (vreg_rd_gnt                ),
+                    .vreg_rd_addr_o             (vreg_rd_addr               ),
+                    .vreg_rd_id_o               (vreg_rd_id                 ),
+                    .vreg_rd_data_i             (vreg_rd_data               ),
+
+                    .vx_saturate_o              (unit_out_vx_saturate[i]    )
                 );
 
                 if (op_unit'(i) == UNIT_LSU) begin

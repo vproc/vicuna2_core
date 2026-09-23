@@ -79,7 +79,9 @@ module vproc_unit_wrapper
     input  logic                              vreg_rd_gnt_i,
     output [4:0]                              vreg_rd_addr_o,
     output [XIF_ID_W-1 : 0]                   vreg_rd_id_o,
-    input  [VREG_W-1:0]                       vreg_rd_data_i
+    input  [VREG_W-1:0]                       vreg_rd_data_i,
+
+    output logic                              vx_saturate_o
 );
 
   generate
@@ -220,6 +222,7 @@ module vproc_unit_wrapper
           .pipe_in_mask_valid_i(pipe_in_mask_valid_i),
           .pipe_in_mask_ready_o(pipe_in_mask_ready_o),
           .pipe_in_mask_i      (pipe_in_mask_data_i),
+          .vx_saturate_o       (vx_saturate_o),
           .pipe_out_valid_o    (pipe_out_valid_o),
           .pipe_out_ready_i    (pipe_out_ready_i),
           .pipe_out_ctrl_o     (unit_out_ctrl),
@@ -321,6 +324,7 @@ module vproc_unit_wrapper
           .pipe_in_op2_i   (pipe_in_op_data_i[0]),
           .pipe_in_op3_i   (pipe_in_op_data_i[2]),
           .pipe_in_mask_i  (pipe_in_mask_data_i),
+          .vx_saturate_o   (vx_saturate_o),
           .pipe_out_valid_o(pipe_out_valid_o),
           .pipe_out_ready_i(pipe_out_ready_i),
           .pipe_out_ctrl_o (unit_out_ctrl),

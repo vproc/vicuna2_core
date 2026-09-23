@@ -25,6 +25,8 @@ module vproc_mul #(
         input  logic [MUL_OP_W  -1:0] pipe_in_op3_i,
         input  logic [MUL_OP_W/8-1:0] pipe_in_mask_i,
 
+        output logic                  vx_saturate_o,
+
         output logic                  pipe_out_valid_o,
         input  logic                  pipe_out_ready_i,
         output CTRL_T                 pipe_out_ctrl_o,
@@ -407,8 +409,11 @@ module vproc_mul #(
     end
 
     // compose result
+    logic [(MUL_OP_W / 8) - 1 : 0] partial_vx_sat;
+    assign vx_saturate_o = |partial_vx_sat & state_ex3_valid_q;
     always_comb begin
         result_d = DONT_CARE_ZERO ? '0 : 'x;
+        partial_vx_sat = '0;
         unique case (state_ex3_q.mode.mul.op)
 
             // multiplication retaining low part
@@ -450,54 +455,72 @@ module vproc_mul #(
                 endcase
             end
 
-            // multiplication with rounding and saturation //TODO: Currently not connected to the vxsat csr value
+            // multiplication with rounding and saturation
             MUL_VSMUL: begin
                 unique case (state_ex3_q.eew)
                     VSEW_8: begin
                         unique case (state_ex3_q.vxrm)
                             VXRM_RNE : begin
-                                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                                for (int i = 0; i < (MUL_OP_W / 8 ); i++) begin
                                     result_d[8 *i +: 8 ] = (mul_res_rounded[9*i+8] ^ mul_res_rounded[9*i+7]) ?  8'h7f       : mul_res_rounded[9*i  +: 8 ];
+                                    partial_vx_sat[i] = (mul_res_rounded[9*i+8] ^ mul_res_rounded[9*i+7]) & result_mask3_d[i] ;
+                                end
                             end
                             VXRM_ROD : begin
-                                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                                for (int i = 0; i < (MUL_OP_W / 8 ); i++) begin
                                     result_d[8 *i +: 8 ] = (mul_res[33*i+15] ^ mul_res[33*i+14]) ?  8'h7f       : mul_res[33*i+7  +: 8 ] + (!mul_res[33*i + 7] & |mul_res[33*i +: 7]);
+                                    partial_vx_sat[i] = (mul_res[33*i+15] ^ mul_res[33*i+14]) & result_mask3_d[i];
+                                end
                         end
                             default: begin
-                                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                                for (int i = 0; i < (MUL_OP_W / 8 ); i++) begin
                                     result_d[8 *i +: 8 ] = (mul_res[33*i+15] ^ mul_res[33*i+14]) ?  8'h7f       : mul_res[33*i+7  +: 8 ];
+                                    partial_vx_sat[i] = (mul_res[33*i+15] ^ mul_res[33*i+14]) & result_mask3_d[i];
+                                end
                         end
                         endcase
                     end
                     VSEW_16: begin
                         unique case (state_ex3_q.vxrm)
                             VXRM_RNE : begin
-                                for (int i = 0; i < (MUL_OP_W / 16); i++)
+                                for (int i = 0; i < (MUL_OP_W / 16); i++) begin
                                     result_d[16*i +: 16] = (mul_res_rounded[17*i+16] ^ mul_res_rounded[17*i+15]) ? 16'h7fff     : mul_res_rounded[17*i  +: 16 ];
+                                    partial_vx_sat[i] = (mul_res_rounded[17*i+16] ^ mul_res_rounded[17*i+15]) & result_mask3_d[2*i];
+                                end
                             end
                             VXRM_ROD : begin
-                                for (int i = 0; i < (MUL_OP_W / 16); i++)
+                                for (int i = 0; i < (MUL_OP_W / 16); i++) begin
                                     result_d[16*i +: 16] = (mul_res[66*i+31] ^ mul_res[66*i+30]) ? 16'h7fff     : mul_res[66*i+15 +: 16] + (!mul_res[66*i + 15] & |mul_res[66*i +: 15]);
+                                    partial_vx_sat[i] = (mul_res[66*i+31] ^ mul_res[66*i+30]) & result_mask3_d[2*i];
+                                end
                             end
                             default: begin
-                                for (int i = 0; i < (MUL_OP_W / 16); i++)
+                                for (int i = 0; i < (MUL_OP_W / 16); i++) begin
                                     result_d[16*i +: 16] = (mul_res[66*i+31] ^ mul_res[66*i+30]) ? 16'h7fff     : mul_res[66*i+15 +: 16];
+                                    partial_vx_sat[i] = (mul_res[66*i+31] ^ mul_res[66*i+30]) & result_mask3_d[2*i];
+                                end
                             end
                         endcase
                     end
                     VSEW_32: begin
                         unique case (state_ex3_q.vxrm)
                             VXRM_RNE : begin
-                                    for (int i = 0; i < (MUL_OP_W / 32); i++)
+                                    for (int i = 0; i < (MUL_OP_W / 32); i++) begin
                                         result_d[32*i +: 32] = (mul_res_rounded  [33*i+32] ^ mul_res_rounded  [33*i+31]) ? 32'h7fffffff : mul_res_rounded[33*i  +: 32 ];
+                                        partial_vx_sat[i] = (mul_res_rounded  [33*i+32] ^ mul_res_rounded  [33*i+31]) & result_mask3_d[4*i];
+                                    end
                                 end
                             VXRM_ROD : begin
-                                    for (int i = 0; i < (MUL_OP_W / 32); i++)
+                                    for (int i = 0; i < (MUL_OP_W / 32); i++) begin
                                         result_d[32*i +: 32] = (res32  [64*i+63] ^ res32  [64*i+62]) ? 32'h7fffffff : res32  [64*i+31 +: 32] + (!res32[64*i + 31] & |res32[64*i +: 31]);
+                                        partial_vx_sat[i] = (res32  [64*i+63] ^ res32  [64*i+62]) & result_mask3_d[4*i];
+                                    end
                                 end
                             default: begin
-                                    for (int i = 0; i < (MUL_OP_W / 32); i++)
+                                    for (int i = 0; i < (MUL_OP_W / 32); i++) begin
                                         result_d[32*i +: 32] = (res32  [64*i+63] ^ res32  [64*i+62]) ? 32'h7fffffff : res32  [64*i+31 +: 32];
+                                        partial_vx_sat[i] = (res32  [64*i+63] ^ res32  [64*i+62]) & result_mask3_d[4*i];
+                                    end
                             end
                         endcase
                     end

@@ -30,6 +30,8 @@ module vproc_alu #(
         output logic                  pipe_in_mask_ready_o,
         input  logic [ALU_OP_W/8-1:0] pipe_in_mask_i,
 
+        output logic                  vx_saturate_o,
+
         output logic                  pipe_out_valid_o,
         input  logic                  pipe_out_ready_i,
         output CTRL_T                 pipe_out_ctrl_o,
@@ -560,8 +562,11 @@ module vproc_alu #(
     end
 
     // arithmetic result
+    logic [(ALU_OP_W / 8) - 1 : 0] partial_vx_sat;
+    assign vx_saturate_o = |partial_vx_sat & state_ex2_valid_q;
     always_comb begin
         result_alu_d = DONT_CARE_ZERO ? '0 : 'x;
+        partial_vx_sat = '0;
         unique case (state_ex2_q.mode.alu.opx2.res)
             ALU_VADD: begin
                 for (int i = 0; i < ALU_OP_W / 8; i++) begin
@@ -574,6 +579,7 @@ module vproc_alu #(
             ALU_VSADD: begin
                 for (int i = 0; i < ALU_OP_W / 8; i++) begin
                     result_alu_d[8*i +: 8] = cmp_q[i] ? {satval_q[2*i+1], {7{satval_q[2*i]}}} : sum_q[9*i +: 8];
+                    partial_vx_sat[i] = cmp_q[i] & operand_mask_tmp_q[i];
                 end
             end
 
@@ -607,7 +613,7 @@ module vproc_alu #(
                     end
                 end
             end
-            ALU_VSHIFT: result_alu_d = shift_res_q;
+            ALU_VSHIFT: result_alu_d = shift_res_q;  //TODO: vnclip uses VSHIFT, but no check for saturation is performed.
 
             // select either one of the operands based on the register `cmp_q',
             // which holds the result of a comparison for the vmin[u].* and
@@ -689,7 +695,7 @@ module vproc_alu #(
     //Special condition for LMUL1 SEW32 to extend operation
     always_comb begin
         lmul1_cond_d = lmul1_cond_q ? pipe_in_mask_valid_i & !pipe_in_ctrl_i.last_cycle : lmul1_cond_q;
-        if (pipe_in_ctrl_i.mode.alu.cmp & pipe_in_valid_i & pipe_in_ctrl_i.first_cycle & (VLEN==128) & (pipe_in_ctrl_i.eew == VSEW_32) & (pipe_in_ctrl_i.emul == EMUL_1)) begin
+        if (pipe_in_ctrl_i.mode.alu.cmp & pipe_in_valid_i & pipe_in_ctrl_i.first_cycle & (VLEN == 128) & (pipe_in_ctrl_i.eew == VSEW_32) & (pipe_in_ctrl_i.emul == EMUL_1)) begin
             lmul1_cond_d = 1'b1; //only need if EMUL1 and SEW32
         end
     end
