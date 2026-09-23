@@ -45,8 +45,8 @@ module vproc_sld #(
     typedef struct packed {
         METADATA_T                          ctrl;
         logic [$clog2((2*OP_W)/8)-1:0]      input_idx; //byte index to load input from pipeline into slidebuffer
-        logic [$clog2(32)-1:0] setup_cycles; //Maximum setup cycles is total cycles to go through all data in an LMUL8 vector
-        logic [(8*VLEN)/8-1:0] insertion_idx;  // when to begin inserting entires for slidedown or 0's or mask in slideup
+        logic [$clog2(((VLEN - 1) / (OP_W / 8)) + 1)-1:0]          setup_cycles; //Maximum setup cycles is total cycles to go through all data in an LMUL8 vector
+        logic [$clog2(VLEN + 1)-1:0]         insertion_idx; // when to begin inserting entires for slidedown or 0's or mask in slideup
         logic                               valid;
         logic                               input_consumed;
     } slide_meta_t;
@@ -102,22 +102,22 @@ module vproc_sld #(
                         {SLD_UP, 1'b0}: begin
                                 unique case (pipe_in_ctrl_i.eew)            //Select writing index in buffer based on SEW of slide
                                     VSEW_32: begin
-                                        metadata_d.input_idx        = ((pipe_in_ctrl_i.op_xval[1][31:0] << 2) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});  //Input index based on lower bits of xval accomplished with mask
-                                        metadata_d.insertion_idx    = (pipe_in_ctrl_i.op_xval[1][31:0] << 2);                                                             //Slideup inserts 0s in the byte mask below this index
-                                        metadata_d.setup_cycles     = ((pipe_in_ctrl_i.op_xval[1][31:0] << 2) >> $clog2(OP_W/8)) - 1;
-                                        state_d = (((pipe_in_ctrl_i.op_xval[1][31:0] << 2)) >> $clog2(OP_W/8) == '0) ? SLIDING: SLIDEUP_SETUP;                                                               //num cycles in setup is xval(bytes)/(OP_W/8), determined via upper bits
+                                        metadata_d.input_idx     = ((pipe_in_ctrl_i.op_xval[1][31:0] << 2) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});
+                                        metadata_d.insertion_idx = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? (pipe_in_ctrl_i.vlmax << 2) : (pipe_in_ctrl_i.op_xval[1][31:0] << 2);
+                                        metadata_d.setup_cycles  = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? '0 : (((pipe_in_ctrl_i.op_xval[1][31:0] << 2) >> $clog2(OP_W/8)) - 1);
+                                        state_d = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? SLIDING : ((((pipe_in_ctrl_i.op_xval[1][31:0] << 2) >> $clog2(OP_W/8)) == '0) ? SLIDING : SLIDEUP_SETUP);
                                     end
                                     VSEW_16: begin
-                                        metadata_d.input_idx        = ((pipe_in_ctrl_i.op_xval[1][31:0] << 1) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});
-                                        metadata_d.insertion_idx    = (pipe_in_ctrl_i.op_xval[1][31:0] << 1);
-                                        metadata_d.setup_cycles     = ((pipe_in_ctrl_i.op_xval[1][31:0] << 1) >> $clog2(OP_W/8)) - 1;
-                                        state_d = (((pipe_in_ctrl_i.op_xval[1][31:0] << 1)) >> $clog2(OP_W/8) == '0) ? SLIDING: SLIDEUP_SETUP;
+                                        metadata_d.input_idx     = ((pipe_in_ctrl_i.op_xval[1][31:0] << 1) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});
+                                        metadata_d.insertion_idx = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? (pipe_in_ctrl_i.vlmax << 1) : (pipe_in_ctrl_i.op_xval[1][31:0] << 1);
+                                        metadata_d.setup_cycles  = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? '0 : (((pipe_in_ctrl_i.op_xval[1][31:0] << 1) >> $clog2(OP_W/8)) - 1);
+                                        state_d = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? SLIDING : ((((pipe_in_ctrl_i.op_xval[1][31:0] << 1) >> $clog2(OP_W/8)) == '0) ? SLIDING : SLIDEUP_SETUP);
                                     end
                                     VSEW_8 : begin
-                                        metadata_d.input_idx        = ((pipe_in_ctrl_i.op_xval[1][31:0]) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});
-                                        metadata_d.insertion_idx    = (pipe_in_ctrl_i.op_xval[1][31:0]);
-                                        metadata_d.setup_cycles     = ((pipe_in_ctrl_i.op_xval[1][31:0]) >> $clog2(OP_W/8)) - 1;
-                                        state_d = ((pipe_in_ctrl_i.op_xval[1][31:0]) >> $clog2(OP_W/8) == '0) ? SLIDING: SLIDEUP_SETUP;
+                                        metadata_d.input_idx     = ((pipe_in_ctrl_i.op_xval[1][31:0]) & {{(32-$clog2(OP_W/8)){1'b0}}, {($clog2(OP_W/8)){1'b1}}});
+                                        metadata_d.insertion_idx = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? pipe_in_ctrl_i.vlmax : pipe_in_ctrl_i.op_xval[1][31:0];
+                                        metadata_d.setup_cycles  = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? '0 : ((pipe_in_ctrl_i.op_xval[1][31:0] >> $clog2(OP_W/8)) - 1);
+                                        state_d = (pipe_in_ctrl_i.op_xval[1][31:0] >= pipe_in_ctrl_i.vlmax) ? SLIDING : (((pipe_in_ctrl_i.op_xval[1][31:0] >> $clog2(OP_W/8)) == '0) ? SLIDING : SLIDEUP_SETUP);
                                     end
                                 endcase
                         end
