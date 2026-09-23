@@ -249,9 +249,6 @@ module vproc_decoder #(
 
                     default: instr_illegal = 1'b1;
                 endcase
-                mode_o.cfg.w = instr_vs1 != '0; // mark csr write
-                mode_o.cfg.r = 1'b1; //Currently, always reading.  main core ignores value if not requested
-
                 // select either rs1 or immediate value
                 unique case (instr_i[14:12])
                     3'b001,
@@ -260,6 +257,16 @@ module vproc_decoder #(
                     3'b101,
                     3'b110,
                     3'b111: rs1_o.r.xval  = {27'b0, instr_vs1};
+                    default: ;
+                endcase
+
+                unique case (instr_i[14:12])
+                    3'b001,
+                    3'b101: mode_o.cfg.w = 1'b1;
+                    3'b010,
+                    3'b110: mode_o.cfg.s = 1'b1;
+                    3'b011,
+                    3'b111: mode_o.cfg.c = 1'b1;
                     default: ;
                 endcase
             end

@@ -263,7 +263,7 @@ module vproc_result #(
 
         xif_result_if.result.data = csr_res_fifo_out.data;
         xif_result_if.result.rd = csr_res_fifo_out.addr;
-        xif_result_if.result.we = 1'b1; //TODO: currently always writing back?
+        xif_result_if.result.we = 1'b1;
     end
   end
 

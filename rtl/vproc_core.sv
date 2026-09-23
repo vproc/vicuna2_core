@@ -684,6 +684,9 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic csr_valid;
 
     assign csr_valid = !csr_disp_empty | push_csr_disp; //valid input to csr unit when csr dispatch is not empty OR a value is being pushed for fall through
+
+    logic [PIPE_CNT-1:0] vx_saturate; //VALU or VMUL can generate a fixed point saturation at the vector pipelines
+
     vproc_csr #(
         .VLEN(VREG_W),
         .CFG_VL_W($clog2(VREG_W)),
@@ -717,10 +720,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .result_csr_id_o(result_csr_id),
         .result_csr_addr_o(result_csr_addr),
         .result_csr_data_o(result_csr_data),
-        .result_csr_we_o(result_csr_we)
+        .result_csr_we_o(result_csr_we),
 
-        //TODO: Interface to update VCSR for fixed point ops
-
+        //Interface to update VCSR for fixed point ops
+        .vx_saturate_i(|vx_saturate)
         //TODO: Interface to update custom performance counter CSRs
 
     );
@@ -847,7 +850,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .xreg_ready_i             ( xreg_ready                 ),
                 .xreg_id_o                ( xreg_id                    ),
                 .xreg_addr_o              ( xreg_addr                  ),
-                .xreg_data_o              ( xreg_data                  )
+                .xreg_data_o              ( xreg_data                  ),
+                .vx_saturate_o            ( vx_saturate[i]             )
             );
             if (PIPE_UNITS[i][UNIT_LSU]) begin
                 assign pending_load_lsu           = pending_load;

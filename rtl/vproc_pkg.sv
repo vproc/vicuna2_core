@@ -351,10 +351,11 @@ typedef struct packed {
     logic [1:0] agnostic;
     logic       vlmax;
     logic       keep_vl;
-    logic       r;
     logic       w;
+    logic       c;
+    logic       s;
 `ifdef VPROC_OP_MODE_UNION
-    logic [3:0] unused;
+    logic [2:0] unused;
 `endif
 } op_mode_cfg;
 

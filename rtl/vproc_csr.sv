@@ -37,9 +37,11 @@ module vproc_csr import vproc_pkg::*; #(
     output  logic [XIF_ID_W-1:0]     result_csr_id_o,
     output  logic [4:0]              result_csr_addr_o,
     output  logic [31:0]             result_csr_data_o,
-    output  logic                    result_csr_we_o
+    output  logic                    result_csr_we_o,
 
     //TODO: Interface to update VCSR for fixed point ops
+
+    input   logic                    vx_saturate_i
 
     //TODO: Interface to update custom performance counter CSRs
 
@@ -72,12 +74,15 @@ end
 
 assign vlenb = VLEN/8; //Static value for vlenb
 
-always_comb begin //TODO:vcsr special handling, since VXSAT bit can be set by a functional unit in parallel to a csr write
+always_comb begin //vcsr special handling, since VXSAT bit can be set by a functional unit in parallel to a csr write
     vcsr_d = vcsr;
+    vcsr_d[0] = vcsr[0] | vx_saturate_i;
     if (valid_i & ready_o & (dec_data_i.cfg.csr == CSR_VXRM)) begin
-        vcsr_d[2:1] = dec_data_i.val[1:0];
+        vcsr_d[2:1] = dec_data_i.cfg.w ? dec_data_i.val[1:0] : dec_data_i.cfg.s ? vcsr[2:1] | dec_data_i.val[1:0] : vcsr[2:1] & ~dec_data_i.val[1:0];
+    end else if (valid_i & ready_o & (dec_data_i.cfg.csr == CSR_VXSAT)) begin
+        vcsr_d[0] = dec_data_i.cfg.w ? dec_data_i.val[0] : dec_data_i.cfg.s ? vcsr[0] | dec_data_i.val[0] : vcsr[0] & ~dec_data_i.val[0];
     end 
-    //TODO additional condition for writes to vcsr specifically? could override the vxsat flag
+    //TODO additional condition for writes to vcsr specifically? could override the vxrm/vxsat
 end
 
 logic[31:0] vlmax;
@@ -205,7 +210,6 @@ assign vxrm_o = vcsr[2:1];
 assign result_csr_valid_o = valid_i & ready_o; //valid output on successful operation accept
 assign result_csr_id_o = dec_data_i.id;
 assign result_csr_addr_o = dec_data_i.dest_addr;
-assign result_csr_we_o = dec_data_i.cfg.r; //csr reads need to write a value back
 
 always_comb begin
     case(dec_data_i.cfg.csr)
