@@ -39,9 +39,7 @@ module vproc_result #(
         output logic                result_csr_ready_o,
         input  logic [XIF_ID_W-1:0] result_csr_id_i,
         input  logic [4:0]          result_csr_addr_i,
-        input  logic                result_csr_delayed_i,  //TODO: DELAYED SIGNALS GO AWAY WITH NEW CSR INTERFACE
         input  logic [31:0]         result_csr_data_i,
-        input  logic [31:0]         result_csr_data_delayed_i,
 
         output logic                result_fifo_full_stall_o,
 
@@ -210,27 +208,15 @@ module vproc_result #(
     .full_o     (csr_res_fifo_full             )
   );
 
-  assign csr_fifo_push = csr_res_delay_q | (result_csr_valid_i & !result_csr_delayed_i);
+  assign csr_fifo_push = (result_csr_valid_i & !result_csr_delayed_i);
 
-  assign csr_res_fifo_in.id = csr_res_delay_q ? csr_res_delay_id_q : result_csr_id_i;
-  assign csr_res_fifo_in.data = csr_res_delay_q ? result_csr_data_delayed_i : result_csr_data_i;
-  assign csr_res_fifo_in.addr = csr_res_delay_q ? csr_res_delay_addr_q : result_csr_addr_i;
+  assign csr_res_fifo_in.id = result_csr_id_i;
+  assign csr_res_fifo_in.data = result_csr_data_i;
+  assign csr_res_fifo_in.addr = result_csr_addr_i;
 
   assign pop_csr_id = ((csr_res_fifo_out.id == res_id_fifo_out) & xif_result_if.result_ready) & !csr_res_fifo_empty;
 
-  assign result_csr_ready_o = !csr_res_fifo_full & !csr_res_delay_q;
-
-  always_ff @(posedge clk_i) begin
-    if (~sync_rst_ni) begin
-        csr_res_delay_q <= '0;
-        csr_res_delay_addr_q <= '0;
-        csr_res_delay_id_q <= '0;
-    end else begin
-        csr_res_delay_q <= result_csr_delayed_i;
-        csr_res_delay_addr_q <= result_csr_addr_i;
-        csr_res_delay_id_q <= result_csr_id_i;
-    end
-  end
+  assign result_csr_ready_o = !csr_res_fifo_full;
 
   /////////////
   // Mux FIFO outputs to XIF_RESULT

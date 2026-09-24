@@ -393,7 +393,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic                                    result_csr_ready;
     logic [XIF_ID_W-1:0] result_empty_id,    result_csr_id;
     logic [4:0]                              result_csr_addr;
-    logic                                    result_csr_delayed;
     logic [31:0]                             result_csr_data;
     logic                                    result_csr_we;
 
@@ -1041,9 +1040,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .result_csr_ready_o        ( result_csr_ready           ),
         .result_csr_id_i           ( result_csr_id              ),
         .result_csr_addr_i         ( result_csr_addr            ),
-        .result_csr_delayed_i      ( 1'b0                       ),//TODO: delayed result no longer necessary
         .result_csr_data_i         ( result_csr_data            ),
-        .result_csr_data_delayed_i ( csr_vl_o                   ),
         .result_fifo_full_stall_o  (result_fifo_full_stall      ),
         .xif_result_if             ( xif_result_if              ),
         .xif_commit_if             ( xif_commit_if              )
