@@ -104,17 +104,17 @@ typedef enum logic [3:0] {
     UNIT_ALU,
     UNIT_MUL,
     UNIT_DIV,
-    UNIT_FPU,
     UNIT_SLD,
     UNIT_XRESULT,
     UNIT_INDEX,
     UNIT_ELEM,
-    UNIT_ZVBB,
-    UNIT_ZVBC,
     UNIT_REDSUM,
     UNIT_GATHER,
-    UNIT_CUSTOM, //Used for arbitrary custom functional units
     UNIT_REDMINMAX,
+    UNIT_FPU,
+    UNIT_ZVBB,
+    UNIT_ZVBC,
+    UNIT_CUSTOM, //Used for arbitrary custom functional units
     // pseudo-units (used for instructions that require no unit):
     UNIT_CFG
 } op_unit;
@@ -342,7 +342,7 @@ typedef enum logic [3:0] {
     CSR_VXRM,
     CSR_VCSR,
     //Custom Performance Counter, read-only
-    CSR_VPERF
+    CSR_VPERF //This CSR is CSR_HPM_COUNTER_16 from Zihpm.
     //Any new CSRS added below
 } csr_type;
 

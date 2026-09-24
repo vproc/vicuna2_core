@@ -246,7 +246,7 @@ module vproc_decoder #(
                         mode_o.cfg.csr = CSR_VLENB;
                         instr_illegal     = instr_vs1 != '0; // attempt to write to a read-only CSR
                     end
-                    12'hC90: begin //This CSR is CSR_HPM_COUNTER_16 from Zihpm.  Here, used for custom utilization csrs
+                    12'hC10: begin //This CSR is CSR_HPM_COUNTER_16 from Zihpm.  Here, used for custom utilization csrs
                         mode_o.cfg.csr = CSR_VPERF;
                         //These CSRs are read only, but use the xval to select which performance counter (ie which functional unit) to read.  TODO: Validity check so that only valid CSRs are accessed
                     end
