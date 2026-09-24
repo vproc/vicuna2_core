@@ -1082,6 +1082,7 @@ module vproc_unit_wrapper
       //For GATHER, only mask and op2 are required, synchronized inside of the functional unit
 
       vproc_gather #(
+          .VLEN          (VREG_W),
           .OP_W          (MAX_OP_W),
           .METADATA_T        (CTRL_T),
           .DONT_CARE_ZERO(DONT_CARE_ZERO)

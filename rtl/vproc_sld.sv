@@ -47,8 +47,8 @@ module vproc_sld #(
     typedef struct packed {
         METADATA_T                          ctrl;
         logic [$clog2((2*OP_W)/8)-1:0]      input_idx; //byte index to load input from pipeline into slidebuffer
-        logic [$clog2(32)-1:0] setup_cycles; //Maximum setup cycles is total cycles to go through all data in an LMUL8 vector
-        logic [(8*VLEN)/8-1:0] insertion_idx;  // when to begin inserting entires for slidedown or 0's or mask in slideup
+        logic [$clog2(((VLEN * 8) / (OP_W)))-1:0]          setup_cycles; //Maximum setup cycles is total cycles to go through all data in an LMUL8 vector
+        logic [$clog2((8*VLEN))-1:0]        insertion_idx;  // when to begin inserting entires for slidedown or 0's or mask in slideup        logic       
         logic                               valid;
         logic                               input_consumed;
     } slide_meta_t;
