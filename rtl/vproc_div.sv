@@ -1,4 +1,4 @@
-// Copyright 2024 TU Munich
+// Copyright 2026 TU Wien
 // Licensed under the Solderpad Hardware License v2.1, see LICENSE.txt for details
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 
@@ -38,6 +38,8 @@ module vproc_div #(
     logic                   data_valid_i_q;
 
     logic [DIV_OP_W/8-1:0] operand_mask_q;
+
+    assign unit_busy_o = data_valid_i_q; //If div unit has valid data, unit is busy
 
     ///////////////////////////////////////////////////////////////////////////
     // DIV ARITHMETIC Defines

@@ -475,6 +475,8 @@ module vproc_lsu #(
     assign metadata_in[0] = pipe_in_ctrl_i.first_cycle;
     assign metadata_in[1] = pipe_in_ctrl_i.last_cycle;
 
+    logic metadata_empty;
+    assign unit_busy_o = !metadata_empty; //if metadata queue has data, VLSU is processing requests
 
     fifo_v3 #(
     .FALL_THROUGH (1'b0      ),
@@ -488,7 +490,7 @@ module vproc_lsu #(
         .push_i     ( pipe_in_valid_i & pipe_in_ready_o ),
         .data_o     ( metadata_out        ),
         .pop_i      ( pipe_out_valid_o & pipe_out_ready_i),
-        .empty_o    (),
+        .empty_o    ( metadata_empty ),
         .full_o     ()
     );
 

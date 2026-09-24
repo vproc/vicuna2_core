@@ -45,6 +45,31 @@ module vproc_index #(
     FLUSH_OPS = 2'b10
   } index_state_t;
 
+  // --- Signals & assignments
+
+  CTRL_T ctrl_d, ctrl_q;
+  index_state_t index_state_d, index_state_q;
+  assign ctrl_d = pipe_in_ctrl_i;
+  assign pipe_out_ctrl_o = ctrl_q;
+
+  assign unit_busy_o = (index_state_q != ACCEPTING);
+
+  // Some shorthands for input signals
+  logic first_cycle_i, last_cycle_i, masked_i;
+  assign first_cycle_i = pipe_in_ctrl_i.first_cycle;
+  assign last_cycle_i = pipe_in_ctrl_i.last_cycle;
+  assign masked_i = pipe_in_ctrl_i.decode_metadata.masked;
+
+  logic [$clog2(VLEN):0] counter_d, counter_q;
+  logic [$clog2(VLEN)-1:0] counter_inc;
+  logic [OP_W - 1:0] result_d, result_q;
+  logic [(OP_W/8) - 1 : 0] mask_d, mask_q;
+  assign pipe_out_res_o  = result_q;
+  assign pipe_out_mask_o = mask_q;
+
+  logic all_valid_i;
+  assign all_valid_i = pipe_in_valid_i & pipe_in_mask_valid_i;
+
   // --- Sync ---
 
   always_ff @(posedge clk_i or negedge async_rst_ni) begin
@@ -74,29 +99,6 @@ module vproc_index #(
 
     end
   end
-
-  // --- Signals & assignments
-
-  CTRL_T ctrl_d, ctrl_q;
-  index_state_t index_state_d, index_state_q;
-  assign ctrl_d = pipe_in_ctrl_i;
-  assign pipe_out_ctrl_o = ctrl_q;
-
-  // Some shorthands for input signals
-  logic first_cycle_i, last_cycle_i, masked_i;
-  assign first_cycle_i = pipe_in_ctrl_i.first_cycle;
-  assign last_cycle_i = pipe_in_ctrl_i.last_cycle;
-  assign masked_i = pipe_in_ctrl_i.decode_metadata.masked;
-
-  logic [$clog2(VLEN):0] counter_d, counter_q;
-  logic [$clog2(VLEN)-1:0] counter_inc;
-  logic [OP_W - 1:0] result_d, result_q;
-  logic [(OP_W/8) - 1 : 0] mask_d, mask_q;
-  assign pipe_out_res_o  = result_q;
-  assign pipe_out_mask_o = mask_q;
-
-  logic all_valid_i;
-  assign all_valid_i = pipe_in_valid_i & pipe_in_mask_valid_i;
 
   // --- Configuration dependent constants ---
 

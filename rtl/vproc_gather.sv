@@ -76,8 +76,9 @@ module vproc_gather #(
             ctrl_q <= ctrl_d;
             state_q <= state_d;
         end
-    end
+  end
 
+  assign unit_busy_o = (state_q != READY);
   // Index/address calculation
   // Operand[0] contains the data
   // Operand[1] contains the indexes

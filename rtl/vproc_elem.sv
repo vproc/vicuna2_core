@@ -93,6 +93,8 @@ module vproc_elem #(
   assign ctrl_d = pipe_in_ctrl_i;
   assign pipe_out_ctrl_o = ctrl_q;
 
+  assign unit_busy_o = (elem_state_q != ACCEPTING);
+
   // We have to wait to signal first cycle until we actually have a result
   logic first_result_d, first_result_q;
 

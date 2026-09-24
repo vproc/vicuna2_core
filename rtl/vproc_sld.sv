@@ -58,6 +58,7 @@ module vproc_sld #(
 
     logic [2*OP_W - 1:0] slide_buffer_d, slide_buffer_q;  //main buffer for data
 
+    assign unit_busy_o = (state_q != READY);
 
     //Buffers for masks.  Extra buffer needed for slide down, since at least two inputs are required to assemble the first valid output
     logic [OP_W/8 - 1:0] mask_buffer_d, mask_buffer_q;

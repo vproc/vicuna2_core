@@ -161,13 +161,15 @@ module vproc_vredsum import vproc_pkg::*; #(
                 red_cnt_d = red_cnt_q;
                 res_cnt_d = res_cnt_q;
                 complete = 1'b0;
+                unit_busy_o = 1'b0;
                 unique case (state_q)
                     //In this state, a new OP_W set of data arrives each cycle to be summed in parallel
                     PARALLEL_SUM: begin
                         if (pipe_in_ctrl_i.last_cycle & pipe_in_valid_i) begin
                             state_d = WIDE_RED;
                             red_cnt_d = $clog2(OP_W/32) - 1; //# cycles to spend in WIDE_RED state - 1
-                        end 
+                        end
+                        unit_busy_o = pipe_in_valid_i; //in this state, unit busy if input data is valid
                     end
                     //In this state, all data has be received and a sum is performed across acc_q.  Only necessary for OP_W >= 64
                     WIDE_RED: begin
@@ -180,12 +182,14 @@ module vproc_vredsum import vproc_pkg::*; #(
                                 VSEW_32: res_cnt_d = 2'b00; // For SEW_32, output is valid next cycle
                             endcase
                         end
+                        unit_busy_o = 1'b1; //In this state, unit always busy
                     end
                     //In this state, all data exists in one 32 bit wide section of acc_q.  Reduce further based on SEW and signal output
                     RESULT_RED: begin
                         res_cnt_d = res_cnt_q-1;
                         state_d = (res_cnt_q == 2'b00) ? PARALLEL_SUM : RESULT_RED;
                         complete = (res_cnt_q == 2'b00); //only signal complete on last cycle here
+                        unit_busy_o = 1'b1; //In this state, unit always busy
                     end
                 default:
                     state_d = PARALLEL_SUM; 

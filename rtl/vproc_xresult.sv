@@ -91,6 +91,8 @@ module vproc_xresult #(
     end
   end
 
+  assign unit_busy_o = (elem_state_q != ACCEPTING);
+
   assign state_res_ready    = ~state_res_valid_q | pipe_out_ready_i;
   assign pipe_out_xreg_id_o = state_res_q.xif_id;
   assign pipe_in_ready_o    = '1;

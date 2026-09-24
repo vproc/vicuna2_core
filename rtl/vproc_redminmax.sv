@@ -27,6 +27,7 @@ module vproc_vredminmax import vproc_pkg::*; #(
         output logic                    unit_busy_o
     );
 
+    assign unit_busy_o = pipe_in_valid_i; //Unit busy when input data valid
     // Tree parameters 
     localparam int unsigned NLEAF  = OP_W / 8; // worst case, biggest possible tree
     localparam int unsigned LEVELS = $clog2(NLEAF); 

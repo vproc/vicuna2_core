@@ -57,6 +57,8 @@ module vproc_mul #(
     logic [MUL_OP_W/8-1:0] result_mask2_q, result_mask2_d;
     logic [MUL_OP_W/8-1:0] result_mask3_q, result_mask3_d;
 
+    assign unit_busy_o = state_ex1_valid_q | state_ex2_valid_q | state_ex3_valid_q | state_res_valid_q;
+
     generate
         if (BUF_OPERANDS) begin
             always_ff @(posedge clk_i or negedge async_rst_ni) begin : vproc_mul_stage_ex1_valid
