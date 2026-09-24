@@ -238,9 +238,10 @@ assign result_csr_addr_o = dec_data_i.dest_addr;
 always_comb begin
     case(dec_data_i.cfg.csr)
         CSR_VSETVL: result_csr_data_o = vl_d; //vsetvl result is the new value of vl
-        CSR_VXRM: result_csr_data_o = {{(30){1'b0}}, vcsr[2:1]};
-        CSR_VXSAT: result_csr_data_o = {{(31){1'b0}}, vcsr[0]};
-        CSR_VPERF: result_csr_data_o = util_cntr[dec_data_i.val];
+        CSR_VXRM:   result_csr_data_o = {{(30){1'b0}}, vcsr[2:1]};
+        CSR_VXSAT:  result_csr_data_o = {{(31){1'b0}}, vcsr[0]};
+        CSR_VPERF:  result_csr_data_o = util_cntr[dec_data_i.val];
+        CSR_VL:     result_csr_data_o = vl;
         default: result_csr_data_o = '0;
     endcase
 end
