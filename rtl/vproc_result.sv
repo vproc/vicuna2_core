@@ -181,10 +181,6 @@ module vproc_result #(
 
   logic                csr_fifo_push;
 
-  logic                      csr_res_delay_q;
-  logic [               4:0] csr_res_delay_addr_q;
-  logic [XIF_ID_W -     1:0] csr_res_delay_id_q;
-
   typedef struct packed {
     logic [XIF_ID_W -     1:0] id;
     logic [              31:0] data;
@@ -208,7 +204,7 @@ module vproc_result #(
     .full_o     (csr_res_fifo_full             )
   );
 
-  assign csr_fifo_push = (result_csr_valid_i & !result_csr_delayed_i);
+  assign csr_fifo_push = result_csr_valid_i;
 
   assign csr_res_fifo_in.id = result_csr_id_i;
   assign csr_res_fifo_in.data = result_csr_data_i;
