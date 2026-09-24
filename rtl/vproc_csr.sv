@@ -239,7 +239,7 @@ always_comb begin
     case(dec_data_i.cfg.csr)
         CSR_VSETVL: result_csr_data_o = vl_d; //vsetvl result is the new value of vl
         CSR_VL:     result_csr_data_o = vl;
-        CSR_TYPE:   result_csr_data_o = vtype;
+        CSR_VTYPE:  result_csr_data_o = vtype;
         CSR_VCSR:   result_csr_data_o = vcsr;
         CSR_VLENB:  result_csr_data_o = vlenb;
         CSR_VXRM:   result_csr_data_o = {{(30){1'b0}}, vcsr[2:1]};
