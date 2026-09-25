@@ -205,7 +205,7 @@ module vproc_xresult #(
             end
 
             if (!lzc_empty && ((counter + lzc_result) < vl)) begin
-              xresult_d = lzc_result;
+              xresult_d = counter + lzc_result;
             end else begin
               xresult_d = '1;
             end
