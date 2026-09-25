@@ -4,7 +4,7 @@
 import vproc_pkg::*;
 module vproc_mem_port #(
     parameter int unsigned        PORT_WIDTH          = 32,
-    parameter int unsigned        OUTSTANDING_REQ     = 1,
+    parameter int unsigned        OUTSTANDING_REQ     = 2,  //MINIMUM OUTSTANDING REQUESTS is 2, and should always be a power of 2.  TODO: enforce this via assertion
     parameter int unsigned        NUM_PORTS           = 1
 )(
         input  logic                    clk_i,
@@ -43,6 +43,7 @@ module vproc_mem_port #(
     logic[PORT_WIDTH-1:0] data_d, data_q;
     lsu_stride            stride_d, stride_q;
     logic[31:0] stride_val_d, stride_val_q;
+    logic [$clog2(OUTSTANDING_REQ)-1:0] next_id_d, next_id_q;
 
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
@@ -54,6 +55,7 @@ module vproc_mem_port #(
             stride_q <= LSU_UNITSTRIDE;
             stride_val_q <= '0;
             base_addr_q <= '0;
+            next_id_q <= '0;
         end else begin
             req_addr_q <= req_addr_d;
             valid_q <= valid_d;
@@ -63,6 +65,7 @@ module vproc_mem_port #(
             stride_q <= stride_d;
             stride_val_q <= stride_val_d;
             base_addr_q <= base_addr_d;
+            next_id_q <= next_id_d;
         end
     end
 
@@ -74,6 +77,8 @@ module vproc_mem_port #(
         stride_d = stride_q;
         stride_val_d = stride_val_q;
         base_addr_d = base_addr_q;
+
+        next_id_d = obi_bus.req & obi_bus.gnt ? next_id_q + 1 : next_id_q; //Increment on valid request, wrapping back to 0
 
         if (valid_i & ready_o) begin
             mask_d = mask_i;
@@ -102,14 +107,16 @@ module vproc_mem_port #(
 
     typedef struct packed {
         logic[PORT_WIDTH/8-1:0] mask;
-        logic[$bits(obi_bus.rid)-1:0] req_id; //TODO: support out of order response of requests
+        logic[$bits(obi_bus.rid)-1:0] req_id;
     } req_metadata_t;
 
     req_metadata_t req_queue_data_in, req_queue_data_out;
     assign req_queue_data_in.mask = mask_q;
-    assign req_queue_data_in.req_id = '0;
+    assign req_queue_data_in.req_id = next_id_q;
 
-    logic req_queue_full;
+    logic req_queue_pop;
+
+    logic req_queue_full; //TODO: for misaligned requests, this needs to account for a full response buffer while the req queue is not full
     fifo_v3 #(
     .FALL_THROUGH (1'b0      ),
     .dtype        (req_metadata_t),
@@ -121,7 +128,7 @@ module vproc_mem_port #(
         .data_i     ( req_queue_data_in ),
         .push_i     ( obi_bus.req & obi_bus.gnt ),
         .data_o     ( req_queue_data_out        ),
-        .pop_i      ( ((!resp_queue_empty | obi_bus.rvalid)) & (req_queue_data_out.req_id == resp_queue_data_out.req_id) & ready_i),
+        .pop_i      ( req_queue_pop ),
         .empty_o    (),
         .full_o     ( req_queue_full )
     );
@@ -129,57 +136,71 @@ module vproc_mem_port #(
     ///////////
     // Input handshake signals
     //////////
-    assign ready_o = !req_queue_full; //Ready for next input if queue is ready and obi bus is granted
+    assign ready_o = !req_queue_full | req_queue_pop; //Ready if room in outstanding req queue OR popping
 
     ///////////
     // Generation of OBI memory request
     ///////////
 
-    assign obi_bus.req = !req_queue_full & valid_q; //TODO: Suppress requests if past end of vl or completely masked off
-    assign obi_bus.addr = |mask_q ? req_addr_q : '0;               //TODO: For above, adjust this line.  Currently set to force a valid address if masked out access is attempted
-    assign obi_bus.we   = store_q;
-    assign obi_bus.be   = mask_q;
+    assign obi_bus.req   = (!req_queue_full | req_queue_pop) & valid_q;                //TODO: Suppress requests if past end of vl or completely masked off
+    assign obi_bus.addr  = |mask_q ? req_addr_q : '0;                                  //TODO: For above, adjust this line.  Currently set to force a valid address if masked out access is attempted
+    assign obi_bus.we    = store_q;
+    assign obi_bus.be    = mask_q;
     assign obi_bus.wdata = data_q;
-    assign obi_bus.aid = '0; //TODO: Support multiple outstanding requests
+    assign obi_bus.aid   = next_id_q;
 
     //////////
-    // Queue of Responses //TODO: Buffer responses in case they return out of order using IDs
+    // Response Buffer
+    //      Values must be saved until requests which need them are satisfied
+    //      Responses could arrive out of order (due to cache misses).  
+    //      Responses must be saved until requests which require them are satisfied
+    //      Non-word aligned accesses generate two responses per request.  To accelerate the unit-stride case for these accesses, each response is allowed to be re-used once, and only by the request immediately after the one that issued the request
+    //          Because of this potential mismatch between requests and responses, the stall condition is if the RESPONSE BUFFER is full
+    //
     //////////
+
     typedef struct packed {
-        logic[$bits(obi_bus.rid)-1:0] req_id; //TODO: support out of order response of requests
-        logic[PORT_WIDTH-1:0] data;
+        logic[PORT_WIDTH-1:0]         data;
+        logic                         valid;
+        logic                         reuse;
     } resp_data_t;
 
-    resp_data_t resp_queue_data_in, resp_queue_data_out;
+    resp_data_t [OUTSTANDING_REQ-1:0] resp_buffer_d, resp_buffer_q;
 
-    assign resp_queue_data_in.req_id = obi_bus.rid;
-    assign resp_queue_data_in.data = obi_bus.rdata;
+    always_ff @(posedge clk_i) begin
+        if (~sync_rst_ni) begin
+            resp_buffer_q <= '0;
+        end else begin
+            resp_buffer_q <= resp_buffer_d;
+        end
+    end
 
-    logic resp_queue_push, resp_queue_pop, resp_queue_empty;
+    assign req_queue_pop = resp_buffer_q[req_queue_data_out.req_id].valid; //Pop from req queue when correct resp ID is valid TODO: Account for case when two IDs must be checked
 
-    fifo_v3 #(
-    .FALL_THROUGH (1'b1      ),  //Fallthrough mode allowed for responses?
-    .dtype        (resp_data_t),
-    .DEPTH        (OUTSTANDING_REQ)
-    ) response_queue (
-        .clk_i,
-        .rst_ni     (sync_rst_ni),
-        .flush_i    (1'b0       ),
-        .data_i     ( resp_queue_data_in ),
-        .push_i     ( obi_bus.rvalid ),
-        .data_o     ( resp_queue_data_out        ),
-        .pop_i      ( (!resp_queue_empty | obi_bus.rvalid) & (req_queue_data_out.req_id == resp_queue_data_out.req_id) & ready_i),
-        .empty_o    ( resp_queue_empty ),
-        .full_o     ( )
-    );
+    always_comb begin
+        resp_buffer_d = resp_buffer_q;
+
+        //update resp_buffer based on incoming responses
+        if (obi_bus.rvalid) begin
+            resp_buffer_d[obi_bus.rid[0]].data = obi_bus.rdata;
+            resp_buffer_d[obi_bus.rid[0]].valid = 1'b1;
+        end
+
+        //update resp_buffer based on fulfilled requests
+        if (req_queue_pop) begin
+            resp_buffer_d[req_queue_data_out.req_id].valid = resp_buffer_q[req_queue_data_out.req_id].reuse; //Only set to invalid if entry not reused
+            resp_buffer_d[req_queue_data_out.req_id].reuse = 1'b0;                                           //Clear reuse bit
+            //TODO: If misalgined, update other entry
+        end
+    end
 
     //////////
     // Output assignments
     //////////
 
-    assign valid_o = (!resp_queue_empty | obi_bus.rvalid) & (req_queue_data_out.req_id == resp_queue_data_out.req_id);
+    assign valid_o = req_queue_pop;
     assign mask_o = req_queue_data_out.mask;
-    assign data_o = resp_queue_data_out.data;
+    assign data_o = resp_buffer_q[req_queue_data_out.req_id].data; //TODO: Handle misaligned data case
 
 endmodule
 
