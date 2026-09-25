@@ -69,7 +69,7 @@ module vproc_alu #(
     logic [ALU_OP_W  /4-1:0] satval_q,           satval_d;
     logic [ALU_OP_W    -1:0] shift_res_q,        shift_res_d;
 
-    assign unit_busy_o = state_ex1_valid_q | state_ex2_valid_q | state_res_valid_q; //Unit considered busy if any stage has valid data
+    assign unit_busy_o = state_ex1_valid_q & state_ex1_ready; //Unit considered busy if accepting new data
 
     generate
         if (BUF_OPERANDS) begin
