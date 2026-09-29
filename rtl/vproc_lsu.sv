@@ -32,10 +32,12 @@ module vproc_mem_port #(
 );
     //////////
     // Input Buffer and Calculation of the request addr
-    //TODO: Generation of multiple requests to enforce word aligment for reads/writes
     //////////
     //TODO: Combine these into a metadata struct
-    logic[31:0] req_addr_d, req_addr_q;
+    //request address split into two for misaligned case.  Aligned accesses will only use the lower request
+    logic[31:0] req_addr;
+    logic[31:0] req_addr_lower_d, req_addr_lower_q;
+    logic[31:0] req_addr_upper_d, req_addr_upper_q;
     logic[31:0] base_addr_d, base_addr_q;
     logic       valid_d, valid_q;
     logic[PORT_WIDTH/8-1:0] mask_d, mask_q;
@@ -44,10 +46,18 @@ module vproc_mem_port #(
     lsu_stride            stride_d, stride_q;
     logic[31:0] stride_val_d, stride_val_q;
     logic [$clog2(OUTSTANDING_REQ)-1:0] next_id_d, next_id_q;
+    logic [$clog2(OUTSTANDING_REQ):0] current_outstanding_d, current_outstanding_q;
+
+    // If a non-word aligned request is needed, it needs to be split into two requests:
+    // In this case, the input should be blocked from accepting the next transaction until both requests for the misaligned access have been sent
+    // TODO: Possible optimization - if data is not needed in both requests (can tell from input mask), can only send one.  Currently not implemented.
+    logic [1:0] alignment_d, alignment_q;
+    logic       second_req_d, second_req_q;
 
     always_ff @(posedge clk_i) begin
         if (~sync_rst_ni) begin
-            req_addr_q <= '0;
+            req_addr_lower_q <= '0;
+            req_addr_upper_q <= '0;
             valid_q <= '0;
             mask_q <= '0;
             store_q <= '0;
@@ -56,8 +66,12 @@ module vproc_mem_port #(
             stride_val_q <= '0;
             base_addr_q <= '0;
             next_id_q <= '0;
+            alignment_q <= '0;
+            second_req_q <= '0;
+            current_outstanding_q <= '0;
         end else begin
-            req_addr_q <= req_addr_d;
+            req_addr_lower_q <= req_addr_lower_d;
+            req_addr_upper_q <= req_addr_upper_d;
             valid_q <= valid_d;
             mask_q <= mask_d;
             store_q <= store_d;
@@ -66,11 +80,29 @@ module vproc_mem_port #(
             stride_val_q <= stride_val_d;
             base_addr_q <= base_addr_d;
             next_id_q <= next_id_d;
+            alignment_q = alignment_d;
+            second_req_q <= second_req_d;
+            current_outstanding_q <= current_outstanding_d;
         end
     end
 
+    //Compute request address to determine alignment
+    always_comb begin
+        if (first_cycle_i) begin
+                req_addr = (stride_i == LSU_INDEXED) ? (base_addr_i + stride_val_i): base_addr_i;
+        end else begin
+            unique case (stride_q)
+                LSU_UNITSTRIDE: req_addr = base_addr_q + PORT_WIDTH/8 * NUM_PORTS; //Stride between requests split between number of ports
+                LSU_STRIDED:    req_addr = base_addr_q + stride_val_q * NUM_PORTS;
+                LSU_INDEXED:    req_addr = base_addr_q + stride_val_i;             //Indexed ops use stride input as an offset
+            endcase
+        end  
+    end
+
+    //Latch inputs on complete handshake from pipeline
     always_comb begin 
-        req_addr_d = req_addr_q;
+        req_addr_lower_d = req_addr_lower_q;
+        req_addr_upper_d = req_addr_upper_q;
         mask_d = mask_q;
         store_d = store_q;
         data_d = data_q;
@@ -80,25 +112,38 @@ module vproc_mem_port #(
 
         next_id_d = obi_bus.req & obi_bus.gnt ? next_id_q + 1 : next_id_q; //Increment on valid request, wrapping back to 0
 
+        alignment_d = alignment_q;
+
         if (valid_i & ready_o) begin
             mask_d = mask_i;
             data_d = data_i;
+            req_addr_lower_d = req_addr & 32'hFFFFFFC;
+            //req_addr_lower_d = req_addr & 32'hFFFFFFF;
+            req_addr_upper_d = (req_addr & 32'hFFFFFFC) + PORT_WIDTH/8;
+            alignment_d = req_addr[1:0]; //bottom two bits are # bytes misaligned
+            //alignment_d = 2'b00; //bottom two bits are # bytes misaligned
             if (first_cycle_i) begin
-                req_addr_d = (stride_i == LSU_INDEXED) ? base_addr_i + stride_val_i: base_addr_i;
                 base_addr_d = base_addr_i;
                 store_d = store_i;
                 stride_d = stride_i;
                 stride_val_d = stride_val_i;
-            end else begin
-                unique case (stride_q)
-                    LSU_UNITSTRIDE: req_addr_d = req_addr_q + PORT_WIDTH/8 * NUM_PORTS; //Stride between requests split between number of ports
-                    LSU_STRIDED:    req_addr_d = req_addr_q + stride_val_q * NUM_PORTS;
-                    LSU_INDEXED:    req_addr_d = base_addr_q + stride_val_i;                //Indexed ops use stride input as an offset
-                endcase
+            end else if (stride_q != LSU_INDEXED) begin
+                base_addr_d = req_addr; //unitstride/constantstride need to keep track of the previous address, use the base address register
             end
         end
 
-        valid_d = valid_i;
+        valid_d = valid_i | second_req_q; //request is valid when accepting a valid input OR handling a misaligned access
+    end
+
+    //Check for misaligned access
+    
+    always_comb begin
+        second_req_d = second_req_q;
+        if (obi_bus.req & obi_bus.gnt & second_req_q) begin
+            second_req_d = 1'b0; //clear bit if second request sent
+        end else if (obi_bus.req & obi_bus.gnt & |alignment_q & !second_req_d) begin
+            second_req_d = 1'b1; // if misaligned request sent, mark next request as second request
+        end
     end
 
     ///////////
@@ -106,15 +151,21 @@ module vproc_mem_port #(
     ///////////
 
     typedef struct packed {
-        logic[PORT_WIDTH/8-1:0] mask;
+        logic[PORT_WIDTH/8-1:0]       mask;
         logic[$bits(obi_bus.rid)-1:0] req_id;
+        logic[1:0]                    alignment;
     } req_metadata_t;
 
     req_metadata_t req_queue_data_in, req_queue_data_out;
     assign req_queue_data_in.mask = mask_q;
     assign req_queue_data_in.req_id = next_id_q;
+    assign req_queue_data_in.alignment = alignment_q;
 
     logic req_queue_pop;
+
+    //For mutliple outstanding requests, truncate req id + 1 to size of outstanding requests
+    logic [$clog2(OUTSTANDING_REQ)-1:0] req_id_plus_1;
+    assign req_id_plus_1 = req_queue_data_out.req_id + 1; 
 
     logic req_queue_full; //TODO: for misaligned requests, this needs to account for a full response buffer while the req queue is not full
     fifo_v3 #(
@@ -126,7 +177,7 @@ module vproc_mem_port #(
         .rst_ni     (sync_rst_ni),
         .flush_i    (1'b0       ),
         .data_i     ( req_queue_data_in ),
-        .push_i     ( obi_bus.req & obi_bus.gnt ),
+        .push_i     ( obi_bus.req & obi_bus.gnt & !second_req_q),
         .data_o     ( req_queue_data_out        ),
         .pop_i      ( req_queue_pop ),
         .empty_o    (),
@@ -136,14 +187,14 @@ module vproc_mem_port #(
     ///////////
     // Input handshake signals
     //////////
-    assign ready_o = !req_queue_full | req_queue_pop; //Ready if room in outstanding req queue OR popping
+    assign ready_o = ((current_outstanding_q < OUTSTANDING_REQ) | req_queue_pop) & !(|alignment_q & !second_req_q); //Ready if (room in outstanding req queue OR popping) AND not handling a misaligned request
 
     ///////////
     // Generation of OBI memory request
     ///////////
 
-    assign obi_bus.req   = (!req_queue_full | req_queue_pop) & valid_q;                //TODO: Suppress requests if past end of vl or completely masked off
-    assign obi_bus.addr  = |mask_q ? req_addr_q : '0;                                  //TODO: For above, adjust this line.  Currently set to force a valid address if masked out access is attempted
+    assign obi_bus.req   = ((current_outstanding_q < OUTSTANDING_REQ) | req_queue_pop) & valid_q;                //TODO: Suppress requests if past end of vl or completely masked off
+    assign obi_bus.addr  = 1'b1 ? (second_req_q) ? req_addr_upper_q : req_addr_lower_q : '0;                                  //TODO: For above, adjust this line.  Currently set to force a valid address if masked out access is attempted
     assign obi_bus.we    = store_q;
     assign obi_bus.be    = mask_q;
     assign obi_bus.wdata = data_q;
@@ -155,6 +206,7 @@ module vproc_mem_port #(
     //      Responses could arrive out of order (due to cache misses).  
     //      Responses must be saved until requests which require them are satisfied
     //      Non-word aligned accesses generate two responses per request.  To accelerate the unit-stride case for these accesses, each response is allowed to be re-used once, and only by the request immediately after the one that issued the request
+    //      TODO: implement reuse of responses
     //          Because of this potential mismatch between requests and responses, the stall condition is if the RESPONSE BUFFER is full
     //
     //////////
@@ -174,8 +226,19 @@ module vproc_mem_port #(
             resp_buffer_q <= resp_buffer_d;
         end
     end
+    //Pop from req queue when correct resp ID is valid.  In the case of a misaligned request, two IDs must be valid and output data must be re-assembled
+    assign req_queue_pop = ready_i & resp_buffer_q[req_queue_data_out.req_id].valid & ((req_queue_data_out.alignment == 2'b00) | resp_buffer_q[(req_id_plus_1)].valid);
 
-    assign req_queue_pop = resp_buffer_q[req_queue_data_out.req_id].valid & ready_i; //Pop from req queue when correct resp ID is valid TODO: Account for case when two IDs must be checked
+
+    logic test_valid_0, test_valid_1;
+
+    logic buffer_out_valid_0, buffer_out_valid_1;
+
+    assign test_valid_0 = resp_buffer_q[0].valid;
+    assign test_valid_1 = resp_buffer_q[1].valid;
+
+    assign buffer_out_valid_0 = resp_buffer_q[req_queue_data_out.req_id].valid;
+    assign buffer_out_valid_1 = resp_buffer_q[req_id_plus_1].valid;
 
     always_comb begin
         resp_buffer_d = resp_buffer_q;
@@ -190,8 +253,27 @@ module vproc_mem_port #(
         if (req_queue_pop) begin
             resp_buffer_d[req_queue_data_out.req_id].valid = resp_buffer_q[req_queue_data_out.req_id].reuse; //Only set to invalid if entry not reused
             resp_buffer_d[req_queue_data_out.req_id].reuse = 1'b0;                                           //Clear reuse bit
-            //TODO: If misalgined, update other entry
+            //If misalgined, update other entry
+            if (req_queue_data_out.alignment != 2'b00) begin
+                resp_buffer_d[req_id_plus_1].valid = resp_buffer_q[req_id_plus_1].reuse; //Only set to invalid if entry not reused
+                resp_buffer_d[req_id_plus_1].reuse = 1'b0;                                               //Clear reuse bit
+            end
         end
+    end
+
+    // Tracking for number outstanding requests.  Necessary since misaligned requests generate multiple data transactions
+    // Increase number when successful OBI handshake is performed.  Decrease when outstanding req queue is popped 
+    always_comb begin
+        current_outstanding_d = current_outstanding_q;
+        if ((obi_bus.req & obi_bus.gnt) & req_queue_pop) begin
+            //
+            current_outstanding_d = req_queue_data_out.alignment == 2'b00 ? current_outstanding_q : current_outstanding_q - 1;
+        end else if (req_queue_pop) begin
+            current_outstanding_d = req_queue_data_out.alignment == 2'b00 ? current_outstanding_q - 1 : current_outstanding_q - 2;
+        end else if (obi_bus.req & obi_bus.gnt) begin
+            current_outstanding_d = current_outstanding_q + 1;
+        end
+        
     end
 
     //////////
@@ -200,7 +282,16 @@ module vproc_mem_port #(
 
     assign valid_o = req_queue_pop;
     assign mask_o = req_queue_data_out.mask;
-    assign data_o = resp_buffer_q[req_queue_data_out.req_id].data; //TODO: Handle misaligned data case
+
+    //assemble 
+    always_comb begin
+        unique case (req_queue_data_out.alignment)
+            2'b00 : data_o = resp_buffer_q[req_queue_data_out.req_id].data;
+            2'b01 : data_o = {resp_buffer_q[req_id_plus_1].data[7 : 0]  , resp_buffer_q[req_queue_data_out.req_id].data[PORT_WIDTH-1 : 8]};
+            2'b10 : data_o = {resp_buffer_q[req_id_plus_1].data[15 : 0] , resp_buffer_q[req_queue_data_out.req_id].data[PORT_WIDTH-1 : 16]};
+            2'b11 : data_o = {resp_buffer_q[req_id_plus_1].data[23 : 0] , resp_buffer_q[req_queue_data_out.req_id].data[PORT_WIDTH-1 : 24]};
+        endcase
+    end
 
 endmodule
 
