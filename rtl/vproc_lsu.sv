@@ -175,7 +175,7 @@ module vproc_mem_port #(
         end
     end
 
-    assign req_queue_pop = resp_buffer_q[req_queue_data_out.req_id].valid; //Pop from req queue when correct resp ID is valid TODO: Account for case when two IDs must be checked
+    assign req_queue_pop = resp_buffer_q[req_queue_data_out.req_id].valid & ready_i; //Pop from req queue when correct resp ID is valid TODO: Account for case when two IDs must be checked
 
     always_comb begin
         resp_buffer_d = resp_buffer_q;
