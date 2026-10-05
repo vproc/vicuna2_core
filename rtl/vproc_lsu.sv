@@ -202,7 +202,7 @@ module vproc_mem_port #(
     ///////////
 
     assign obi_bus.req   = ((current_outstanding_q < OUTSTANDING_REQ) | req_queue_pop) & valid_q;           //TODO: Suppress requests if past end of vl or completely masked off
-    assign obi_bus.addr  = 1'b1 ? (second_req_q) ? req_addr_upper_q : req_addr_lower_q & 32'hFFFFFFFC : '0; //TODO: For above, adjust this line.  Currently set to force a valid address if masked out access is attempted
+    assign obi_bus.addr  = (|mask_q) ? ((second_req_q) ? req_addr_upper_q : req_addr_lower_q & 32'hFFFFFFFC) : '0; //TODO: For above, adjust this line.  Currently set to force a valid address if masked out access is attempted
     assign obi_bus.we    = store_q;
     
     assign obi_bus.aid   = next_id_q;
@@ -619,19 +619,28 @@ module vproc_lsu #(
 
 
 
+    typedef struct packed {
+    logic                   first_cycle;
+    logic                   last_cycle;
+    logic                   store;
+    logic [XIF_ID_W   -1:0] xif_id;  //xif ID
+    } vlsu_metadata;
+
 
     // Buffer for first/last cycle signals
-    logic[1:0] metadata_in, metadata_out;
+    vlsu_metadata metadata_in, metadata_out;
 
-    assign metadata_in[0] = pipe_in_ctrl_i.first_cycle;
-    assign metadata_in[1] = pipe_in_ctrl_i.last_cycle;
+    assign metadata_in.first_cycle = pipe_in_ctrl_i.first_cycle;
+    assign metadata_in.last_cycle = pipe_in_ctrl_i.last_cycle;
+    assign metadata_in.store = pipe_in_ctrl_i.mode.lsu.store;
+    assign metadata_in.xif_id = pipe_in_ctrl_i.xif_id;
 
     logic metadata_empty;
     assign unit_busy_o = !metadata_empty; //if metadata queue has data, VLSU is processing requests
 
     fifo_v3 #(
     .FALL_THROUGH (1'b0      ),
-    .dtype        (logic[1:0]), //TODO: Likely only need to buffer first/last_cycle signals
+    .dtype        (vlsu_metadata),
     .DEPTH        (OUTSTANDING_REQ + 1) //due to latching of addresses in each port, an extra entry of metadata storage is required
     ) metadata_queue (
         .clk_i,
@@ -648,8 +657,10 @@ module vproc_lsu #(
 
     always_comb begin
         pipe_out_ctrl_o = metadata_q;
-        pipe_out_ctrl_o.first_cycle = metadata_out[0];
-        pipe_out_ctrl_o.last_cycle = metadata_out[1];
+        pipe_out_ctrl_o.first_cycle = metadata_out.first_cycle;
+        pipe_out_ctrl_o.last_cycle = metadata_out.last_cycle;
+        pipe_out_ctrl_o.mode.lsu.store = metadata_out.store;
+        pipe_out_ctrl_o.xif_id = metadata_out.xif_id;
     end
 
     //Transaction complete signalling for the result interface
@@ -657,7 +668,7 @@ module vproc_lsu #(
         trans_complete_valid_o = pipe_out_ctrl_o.last_cycle & pipe_out_valid_o;
         trans_complete_exc_o = '0; //TODO: Currently, memory system cannot fault
         trans_complete_exccode_o = '0; //TODO: Currently, memory system cannot fault
-        trans_complete_id_o = pipe_out_ctrl_o.xif_id;
+        trans_complete_id_o = metadata_out.xif_id;
 
     end
 endmodule
