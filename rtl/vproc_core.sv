@@ -199,11 +199,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // Total count of instruction IDs used by the extension interface
     localparam int unsigned XIF_ID_CNT = 1 << XIF_ID_W;
 
-    // define asynchronous and synchronous reset signals
-    logic async_rst_n, sync_rst_n;
-    assign async_rst_n = ASYNC_RESET ? rst_ni : 1'b1  ;
-    assign sync_rst_n  = ASYNC_RESET ? 1'b1   : rst_ni;
-
     ///////////////////////////////////////////////////////////////////////////
     // VECTOR INSTRUCTION DECODER INTERFACE
 
@@ -230,7 +225,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     // signals for decoder and for decoder buffer
     logic        dec_ready,       dec_valid,       dec_clear;
-    logic        dec_buf_valid_q, dec_buf_valid_d;
     decoder_data dec_data_q,      dec_data_d;
 
     assign dec_buf_valid_d = (~dec_ready | dec_valid) & ~dec_clear;
@@ -308,8 +302,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // the new configuration.
 
     logic result_fifo_full_stall; //Stall issue in case another committed instruction cannot be accepted since commit cannot stall
+    logic csr_access_stall;       //Stall in case of a pending CSR access (i.e. speculative vsetvli)
 
-    assign xif_issue_if.issue_ready          = dec_ready & ~issue_id_used & source_xreg_valid & !result_fifo_full_stall;
+    assign xif_issue_if.issue_ready          = ~issue_id_used & source_xreg_valid & !result_fifo_full_stall & !csr_access_stall;
+    assign dec_ready                         = xif_issue_if.issue_ready;
 
     assign xif_issue_if.issue_resp.accept    = dec_valid;
     assign xif_issue_if.issue_resp.writeback = dec_valid & (((instr_unit == UNIT_XRESULT) & instr_mode.elem.xreg) | (instr_unit == UNIT_CFG));
@@ -338,11 +334,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // ID of a new instruction is still valid.
     instr_state [XIF_ID_CNT-1:0] instr_state_q,     instr_state_d;     // instruction state
     logic       [XIF_ID_CNT-1:0] instr_empty_res_q, instr_empty_res_d; // empty result mask
-    always_ff @(posedge clk_i or negedge async_rst_n) begin : vproc_commit_buf
-        if (~async_rst_n) begin
-            instr_state_q    <= '{default: INSTR_INVALID};
-        end
-        else if (~sync_rst_n) begin
+    always_ff @(posedge clk_i) begin : vproc_commit_buf
+        if (~rst_ni) begin
             instr_state_q    <= '{default: INSTR_INVALID};
         end else begin
             instr_state_q    <= instr_state_d;
@@ -396,15 +389,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic [31:0]                             result_csr_data;
     logic                                    result_csr_we;
 
-    logic queue_ready, queue_push; // instruction queue ready and push signals (enqueue handshake)
-    assign queue_push = dec_buf_valid_q & (dec_data_q.unit != UNIT_CFG);
-
-    // decode buffer is vacated either by enqueueing an instruction or for
-    // vset[i]vl[i] once the instruction has been committed; for vset[i]vl[i]
-    // it will take an additional cycle until the CSR values are updated, hence
-    // the decode buffer is cleared without asserting dec_ready
-    assign dec_ready = ~dec_buf_valid_q | (queue_ready & queue_push);
-
     // XIF instruction successfully offloaded
     logic instr_offload;
     assign instr_offload = xif_issue_if.issue_valid & xif_issue_if.issue_ready &
@@ -414,20 +398,24 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     // DISPATCH QUEUES
     //
     // TODO: Instructions are dispatched to the pipeline strictly in order, only after they are committed, or eliminated from the queue when killed
-    // TODO: Separate queue for CSR operations, since these go to the TODO: CSR unit and not the pipeline
-    // TODO: Fallthrough mode enabled to improve performance in the case where offloaded instructions are non-speculative (i.e. committed immediately as in the CVA6).  TODO: Confirm this has no effect on FMAX
-    // TODO: For improved performance, a new ID (pipeline ID) is assigned for regfile arbitration purposes to prevent unneccesary stalls from instructions having the same XIF ID
+    // Separate queue for CSR operations, since these go to the CSR unit and not the pipeline
+    // Fallthrough mode enabled to improve performance in the case where offloaded instructions are non-speculative (i.e. committed immediately as in the CVA6).
+    // For improved performance, a new ID (pipeline ID) is assigned for regfile arbitration purposes to prevent unneccesary stalls from instructions having the same XIF ID
     ///////////////////////////////
 
     logic push_pipeline_disp, pop_pipeline_disp;
     logic pipeline_disp_full, pipeline_disp_empty;
 
+    //Handshake with dispatch unit and pipelines
     logic pipeline_ready;
+    logic pipeline_valid;
+
+    assign pipeline_valid = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!pipeline_disp_empty & ((instr_state_q[pipeline_disp_data.xif_id] != INSTR_SPECULATIVE) & (instr_state_q[pipeline_disp_data.xif_id] != INSTR_INVALID))));
 
     decoder_data pipeline_disp_data;
 
-    assign push_pipeline_disp = dec_valid & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_pipeline_disp = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!pipeline_disp_empty & (instr_state_q[pipeline_disp_data.xif_id] != INSTR_SPECULATIVE))) & pipeline_ready;
+    assign push_pipeline_disp = dec_valid & dec_ready & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
+    assign pop_pipeline_disp = pipeline_valid & pipeline_ready; //Only pop on successful handshake with pipelines
 
     //Signal empty result on sucessful dispatch when not LSU or XRESULT instructions
     assign result_empty_valid = pop_pipeline_disp & (pipeline_disp_data.unit != UNIT_LSU) & (pipeline_disp_data.unit != UNIT_XRESULT);
@@ -437,14 +425,14 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic [XIF_ID_W-1:0] next_id;
 
     always_ff @(posedge clk_i) begin
-        if (~sync_rst_n) begin
+        if (~rst_ni) begin
             next_id <= '0;
         end else begin
             next_id <= push_pipeline_disp ? next_id + 1: next_id;
         end
     end
 
-    assign dec_data_d.pipe_id    = next_id;
+    assign dec_data_d.pipe_id  = next_id;
 
     fifo_v3 #(
     .FALL_THROUGH (1'b1        ),
@@ -452,8 +440,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     .DEPTH        (4           )
     ) pipeline_dispatch_queue (
         .clk_i,
-        .rst_ni     (sync_rst_n),
-        .flush_i    (1'b0                          ),
+        .rst_ni     ( rst_ni                       ),
+        .flush_i    ( 1'b0                         ),
         .data_i     ( dec_data_d                   ),
         .push_i     ( push_pipeline_disp           ),
         .data_o     ( pipeline_disp_data           ),
@@ -485,9 +473,12 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     csr_dec_data csr_disp_data;
 
-    assign push_csr_disp = dec_valid & (instr_unit == UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_csr_disp = ((!csr_disp_empty & ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!csr_disp_empty & (instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE))) & csr_ready;                       //Pop CSR instruction if csr instruction is committed or killed.
 
+    assign push_csr_disp = dec_valid & dec_ready & (instr_unit == UNIT_CFG); //Push on valid instruction decode for vector pipeline
+    assign pop_csr_disp = ((!csr_disp_empty & ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!csr_disp_empty & ((instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE) & (instr_state_q[csr_disp_data.id] != INSTR_INVALID)))) & csr_ready;                       //Pop CSR instruction if csr instruction is committed or killed.
+
+    assign csr_access_stall = (!csr_disp_empty) & !push_csr_disp; //stall for CSR access 
+    
     //TODO: Need to discard killed instructions without signalling + reset ID value
     fifo_v3 #(
     .FALL_THROUGH (1'b1        ),
@@ -495,7 +486,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     .DEPTH        (1           )   //Likely only needs one slot here?
     ) csr_dispatch_queue (
         .clk_i,
-        .rst_ni     (sync_rst_n),
+        .rst_ni     ( rst_ni                  ),
         .flush_i    (1'b0                          ),
         .data_i     ( csr_fifo_input               ),
         .push_i     ( push_csr_disp                ),
@@ -541,9 +532,9 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .DONT_CARE_ZERO     ( DONT_CARE_ZERO     )
     ) dispatcher (
         .clk_i              ( clk_i              ),
-        .async_rst_ni       ( async_rst_n        ),
-        .sync_rst_ni        ( sync_rst_n         ),
-        .instr_valid_i      ( !pipeline_disp_empty ),
+        .async_rst_ni       ( rst_ni        ),
+        .sync_rst_ni        ( rst_ni         ),
+        .instr_valid_i      ( pipeline_valid  ),
         .instr_ready_o      ( pipeline_ready     ),
         .instr_data_i       ( pipeline_disp_data ),
         .instr_vreg_wr_i    ( pending_wr_disp    ),
@@ -590,8 +581,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .VREG_TYPE    ( VREG_TYPE          )
     ) vregfile (
         .clk_i        ( clk_i              ),
-        .async_rst_ni ( async_rst_n        ),
-        .sync_rst_ni  ( sync_rst_n         ),
+        .async_rst_ni ( rst_ni        ),
+        .sync_rst_ni  ( rst_ni         ),
         .wr_addr_i    ( vregfile_wr_addr_q ),
         .wr_data_i    ( vregfile_wr_data_q ),
         .wr_be_i      ( vregfile_wr_mask_q ),
@@ -682,7 +673,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     logic csr_valid;
 
-    assign csr_valid = !csr_disp_empty | push_csr_disp; //valid input to csr unit when csr dispatch is not empty OR a value is being pushed for fall through
+    assign csr_valid = pop_csr_disp; //valid input to csr unit when csr dispatch pops instruction
 
     logic [PIPE_CNT-1:0] vx_saturate; //VALU or VMUL can generate a fixed point saturation at the vector pipelines
 
@@ -706,8 +697,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .XIF_ID_W(XIF_ID_W)
     ) vproc_csr (
         .clk_i(clk_i),
-        .async_rst_ni(async_rst_n),
-        .sync_rst_ni(sync_rst_n),
+        .async_rst_ni(rst_ni),
+        .sync_rst_ni(rst_ni),
 
         //Interface to expose csrs to DECODE
 
@@ -822,8 +813,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .DONT_CARE_ZERO           ( DONT_CARE_ZERO             )
             ) pipe (
                 .clk_i                    ( clk_i                      ),
-                .async_rst_ni             ( async_rst_n                ),
-                .sync_rst_ni              ( sync_rst_n                 ),
+                .async_rst_ni             ( rst_ni                ),
+                .sync_rst_ni              ( rst_ni                 ),
                 .pipe_in_valid_i          ( pipe_instr_valid[i]        ),
                 .pipe_in_ready_o          ( pipe_instr_ready[i]        ),
                 .pipe_in_data_i           ( pipe_instr_data            ),
@@ -923,8 +914,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .DONT_CARE_ZERO     ( DONT_CARE_ZERO                      )
     ) vreg_wr_mux (
         .clk_i              ( clk_i                               ),
-        .async_rst_ni       ( async_rst_n                         ),
-        .sync_rst_ni        ( sync_rst_n                          ),
+        .async_rst_ni       ( rst_ni                         ),
+        .sync_rst_ni        ( rst_ni                          ),
         .vreg_wr_valid_i    ( pipe_vreg_wr_valid                  ),
         .vreg_wr_ready_o    ( pipe_vreg_wr_ready                  ),
         .vreg_wr_addr_i     ( pipe_vreg_wr_addr                   ),
@@ -1016,8 +1007,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .DONT_CARE_ZERO            ( DONT_CARE_ZERO             )
     ) result_if (
         .clk_i                     ( clk_i                      ),
-        .async_rst_ni              ( async_rst_n                ),
-        .sync_rst_ni               ( sync_rst_n                 ),
+        .async_rst_ni              ( rst_ni                ),
+        .sync_rst_ni               ( rst_ni                 ),
         .result_empty_valid_i      ( result_empty_valid         ),
         .result_empty_id_i         ( result_empty_id            ),
         .result_lsu_valid_i        ( lsu_trans_complete_valid   ),
