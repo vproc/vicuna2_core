@@ -533,7 +533,6 @@ module vproc_vregunpack
         parameter int unsigned                        MAX_OP_W           = 64,   // max op width
         parameter int unsigned                        MEM_W              = 0,
         parameter int unsigned                        MEM_PORTS          = 1,
-        parameter int unsigned                        OP_W    [VPORT_CNT]   = '{0}, // op widths
         parameter int unsigned                        OP_DYN_ADDR_SRC    = 0,    // dyn addr src idx
         parameter bit [VPORT_CNT-1:0]                    OP_DYN_ADDR        = '0,   // dynamic addr
         parameter bit [VPORT_CNT-1:0]                    OP_MASK            = '0,   // op is a mask

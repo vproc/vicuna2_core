@@ -18,7 +18,6 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned          MAX_OP_W            = 64,
         parameter int unsigned          MEM_W               = 0,
         parameter int unsigned          OP_CNT              = 1,
-        parameter int unsigned          OP_W    [OP_CNT   ] = '{0}, // op widths
         // parameter int unsigned          OP_STAGE[OP_CNT   ] = '{0}, // op load stage
         // parameter int unsigned          OP_SRC  [OP_CNT   ] = '{0}, // op port index
         parameter int unsigned          OP_DYN_ADDR_SRC     = 0,    // dyn addr src idx
@@ -208,7 +207,6 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .MAX_OP_W             ( MAX_OP_W                     ),
         .MEM_W                ( MEM_W                        ),
         .MEM_PORTS            ( MEM_PORTS                    ),
-        .OP_W                 ( OP_W                         ),
         .CFG_VL_W             ( CFG_VL_W                     ),
         .OP_DYN_ADDR_SRC      ( OP_DYN_ADDR_SRC              ),
         .OP_DYN_ADDR          ( OP_DYN_ADDR                  ),

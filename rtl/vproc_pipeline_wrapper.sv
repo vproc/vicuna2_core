@@ -681,7 +681,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
 
     generate
         if (OP_CNT == 2 && RES_CNT == 1) begin
-            localparam int unsigned OP_W           [2] = '{MAX_OP_W, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [2] = '{OP0_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [2] = '{OP0_SRC  , VPORT_CNT};
             localparam bit [1:0]    OP_DYN_ADDR        = '0;
@@ -716,7 +715,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -755,7 +753,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 1) begin
-            localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [3] = '{OP0_STAGE, OP1_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [3] = '{OP0_SRC  , OP1_SRC  , VPORT_CNT};
             localparam bit [2:0]    OP_DYN_ADDR        = '0;
@@ -790,7 +787,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -829,7 +825,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 2) begin
-            localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [3] = '{OP0_STAGE, OP1_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [3] = '{OP0_SRC  , OP1_SRC  , VPORT_CNT};
             localparam bit [2:0]    OP_DYN_ADDR        = '0;
@@ -864,7 +859,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -903,7 +897,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 3 && RES_CNT == 8) begin
-            localparam int unsigned OP_W           [3] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [3] = '{OP0_STAGE, OP1_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [3] = '{OP0_SRC  , OP1_SRC  , VPORT_CNT};
             localparam bit [2:0]    OP_DYN_ADDR        = '0;
@@ -938,7 +931,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -976,7 +968,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             );
         end
         else if (OP_CNT == 4 && RES_CNT == 1) begin
-            localparam int unsigned OP_W           [4] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [4] = '{OP0_STAGE, OP1_STAGE, OP2_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [4] = '{OP0_SRC  , OP1_SRC  , OP2_SRC  , VPORT_CNT};
             localparam bit [3:0]    OP_DYN_ADDR        = '0;
@@ -1011,7 +1002,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -1050,7 +1040,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 4 && RES_CNT == 2) begin
-            localparam int unsigned OP_W           [4] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [4] = '{OP0_STAGE, OP1_STAGE, OP2_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [4] = '{OP0_SRC  , OP1_SRC  , OP2_SRC  , VPORT_CNT};
             localparam bit [3:0]    OP_DYN_ADDR        = '0;
@@ -1085,7 +1074,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -1124,7 +1112,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 5 && RES_CNT == 1) begin
-            localparam int unsigned OP_W           [5] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [5] = '{OP0_STAGE, OP1_STAGE, OP0_STAGE, OP0_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [5] = '{OP0_SRC  , OP1_SRC  , OP0_SRC  , OP0_SRC  , VPORT_CNT};
             localparam bit [4:0]    OP_DYN_ADDR        = OP_DYN_ADDR_OFFSET ? 5'b00100 : '0;
@@ -1159,7 +1146,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -1198,7 +1184,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 5 && RES_CNT == 2) begin
-            localparam int unsigned OP_W           [5] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [5] = '{OP0_STAGE, OP1_STAGE, OP0_STAGE, OP0_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [5] = '{OP0_SRC  , OP1_SRC  , OP0_SRC  , OP0_SRC  , VPORT_CNT};
             localparam bit [4:0]    OP_DYN_ADDR        = OP_DYN_ADDR_OFFSET ? 5'b00100 : '0;
@@ -1233,7 +1218,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -1272,7 +1256,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 6 && RES_CNT == 1) begin
-            localparam int unsigned OP_W           [6] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [6] = '{OP0_STAGE, OP1_STAGE, OP2_STAGE, OP0_STAGE, OP0_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [6] = '{OP0_SRC  , OP1_SRC  , OP2_SRC  , OP0_SRC  , OP0_SRC  , VPORT_CNT};
             localparam bit [5:0]    OP_DYN_ADDR        = OP_DYN_ADDR_OFFSET ? 6'b001000 : '0;
@@ -1307,7 +1290,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 // .OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
@@ -1346,7 +1328,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
             OBI_BUS obi_unused [1]();
         end
         else if (OP_CNT == 6 && RES_CNT == 2) begin
-            localparam int unsigned OP_W           [6] = '{MAX_OP_W, MAX_OP_W, MAX_OP_W, MAX_OP_W, 1, MAX_OP_W/8};
             //localparam int unsigned OP_STAGE       [6] = '{OP0_STAGE, OP1_STAGE, OP2_STAGE, OP0_STAGE, OP0_STAGE, UNPACK_STAGES-1};
             //localparam int unsigned OP_SRC         [6] = '{OP0_SRC  , OP1_SRC  , OP2_SRC  , OP0_SRC  , OP0_SRC  , VPORT_CNT};
             localparam bit [5:0]    OP_DYN_ADDR        = OP_DYN_ADDR_OFFSET ? 6'b001000 : '0;
@@ -1381,7 +1362,6 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_OP_W            ( MAX_OP_W            ),
                 .MEM_W               ( MEM_W               ),
                 .OP_CNT              ( OP_CNT              ),
-                .OP_W                ( OP_W                ),
                 //.OP_STAGE            ( OP_STAGE            ),
                 // .OP_SRC              ( OP_SRC              ),
                 .OP_DYN_ADDR_SRC     ( 1                   ),
