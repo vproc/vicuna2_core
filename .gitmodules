@@ -3,4 +3,4 @@
 	url = https://github.com/openhwgroup/cvfpu.git
 [submodule "pulp_common_cells"]
 	path = pulp_common_cells
-	url = https://github.com/pulp-platform/common_cells.git
+	url = https://github.com/ParkerJones567/common_cells
