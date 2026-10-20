@@ -348,7 +348,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     //Update issue/commit status
     always_comb begin
         instr_state_d = instr_state_q;
-        if ((xif_commit_if.commit.id == xif_issue_if.issue_req.id) & xif_commit_if.commit_valid & xif_issue_if.issue_valid) begin //If the same instruction is committed and issued in the same cycle
+        if ((xif_commit_if.commit.id == xif_issue_if.issue_req.id) & xif_commit_if.commit_valid & xif_issue_if.issue_valid & xif_issue_if.issue_resp.accept) begin //If the same instruction is committed and issued in the same cycle
             //Mark offloaded and comitted instructions as comitted (in this mode, instructions are offloaded non-speculatively and cannot be killed)
             if (xif_issue_if.issue_valid & xif_issue_if.issue_ready & xif_commit_if.commit_valid) begin
                 instr_state_d[xif_issue_if.issue_req.id] = INSTR_COMMITTED;
@@ -358,10 +358,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 instr_state_d[xif_result_if.result.id] = INSTR_INVALID;
             end
         end else begin
-            if (xif_issue_if.issue_valid & xif_issue_if.issue_ready) begin
+            if (xif_issue_if.issue_valid & xif_issue_if.issue_ready & xif_issue_if.issue_resp.accept) begin
                 instr_state_d[xif_issue_if.issue_req.id] = INSTR_SPECULATIVE;
             end
-            if (xif_commit_if.commit_valid) begin
+            if (xif_commit_if.commit_valid & instr_state_d[xif_commit_if.commit.id] == INSTR_SPECULATIVE) begin
                 if (xif_commit_if.commit.commit_kill) begin
                     instr_state_d[xif_commit_if.commit.id] = INSTR_KILLED;
                 end else begin
@@ -370,6 +370,14 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
             end
             if (xif_result_if.result_valid & xif_result_if.result_ready) begin
                 instr_state_d[xif_result_if.result.id] = INSTR_INVALID;
+            end
+            //If instruction in CSR queue is killed, mark invalid
+            if (pop_csr_disp & ((instr_state_q[csr_disp_data.id] == INSTR_KILLED) | (csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & xif_commit_if.commit.commit_kill)) begin
+                instr_state_d[csr_disp_data.id] = INSTR_INVALID;
+            end
+            //If instruction in pipeline queue is killed, mark invalid
+            if (pop_csr_disp & ((instr_state_q[pipeline_disp_data.xif_id] == INSTR_KILLED) | (pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & xif_commit_if.commit.commit_kill)) begin
+                instr_state_d[pipeline_disp_data.xif_id] = INSTR_INVALID;
             end
         end
     end
@@ -397,7 +405,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     ///////////////////////////////
     // DISPATCH QUEUES
     //
-    // TODO: Instructions are dispatched to the pipeline strictly in order, only after they are committed, or eliminated from the queue when killed
+    // Instructions are dispatched to the pipeline strictly in order, only after they are committed, or eliminated from the queue when killed
     // Separate queue for CSR operations, since these go to the CSR unit and not the pipeline
     // Fallthrough mode enabled to improve performance in the case where offloaded instructions are non-speculative (i.e. committed immediately as in the CVA6).
     // For improved performance, a new ID (pipeline ID) is assigned for regfile arbitration purposes to prevent unneccesary stalls from instructions having the same XIF ID
@@ -410,12 +418,12 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic pipeline_ready;
     logic pipeline_valid;
 
-    assign pipeline_valid = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!pipeline_disp_empty & ((instr_state_q[pipeline_disp_data.xif_id] != INSTR_SPECULATIVE) & (instr_state_q[pipeline_disp_data.xif_id] != INSTR_INVALID))));
+    assign pipeline_valid = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & !xif_commit_if.commit.commit_kill)) | (!pipeline_disp_empty & ((instr_state_q[pipeline_disp_data.xif_id] == INSTR_COMMITTED))));
 
     decoder_data pipeline_disp_data;
 
     assign push_pipeline_disp = dec_valid & dec_ready & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_pipeline_disp = pipeline_valid & pipeline_ready; //Only pop on successful handshake with pipelines
+    assign pop_pipeline_disp = (pipeline_valid & pipeline_ready) | (!pipeline_disp_empty & (((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & xif_commit_if.commit.commit_kill) | (instr_state_q[pipeline_disp_data.xif_id] == INSTR_KILLED))); //Only pop on successful handshake with pipelines or killed instruction
 
     //Signal empty result on sucessful dispatch when not LSU or XRESULT instructions
     assign result_empty_valid = pop_pipeline_disp & (pipeline_disp_data.unit != UNIT_LSU) & (pipeline_disp_data.unit != UNIT_XRESULT);
@@ -454,7 +462,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     //Reduced struct just for csr accesses
     typedef struct packed {
-        logic [XIF_ID_W-1:0]   id;
+        logic [XIF_ID_W-1:0]  id;
         logic[31:0]           val;
         op_mode_cfg           cfg;
         logic[4:0]            dest_addr;
@@ -475,11 +483,10 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
 
     assign push_csr_disp = dec_valid & dec_ready & (instr_unit == UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_csr_disp = ((!csr_disp_empty & ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!csr_disp_empty & ((instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE) & (instr_state_q[csr_disp_data.id] != INSTR_INVALID)))) & csr_ready;                       //Pop CSR instruction if csr instruction is committed or killed.
+    assign pop_csr_disp = ((!csr_disp_empty & ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!csr_disp_empty & ((instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE) & (instr_state_q[csr_disp_data.id] != INSTR_INVALID)))) & csr_ready; //Pop CSR instruction if csr instruction is committed or killed.
 
     assign csr_access_stall = (!csr_disp_empty) & !push_csr_disp; //stall for CSR access 
-    
-    //TODO: Need to discard killed instructions without signalling + reset ID value
+
     fifo_v3 #(
     .FALL_THROUGH (1'b1        ),
     .dtype        (csr_dec_data),
@@ -628,40 +635,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
             end
         end
     endgenerate
-    /////////////////////  Why does this exist
-    // Pending reads
-    logic [PIPE_CNT-1:0][31:0] pipe_vreg_pend_rd_by_q, pipe_vreg_pend_rd_by_d;
-    logic [PIPE_CNT-1:0][31:0] pipe_vreg_pend_rd_to_q, pipe_vreg_pend_rd_to_d;
-    generate
-        if (BUF_FLAGS[BUF_VREG_PEND]) begin
-            // Note: A vreg write cannot happen within the first two cycles of
-            // an instruction, hence delaying the pending vreg reads signals by
-            // two cycles should cause no issues. This adds two unnecessary
-            // extra stall cycles in case a write is blocked by a pending read
-            // but that should happen rarely anyways.
-            // TODO: This should be unecessary
-            always_ff @(posedge clk_i) begin
-                pipe_vreg_pend_rd_by_q <= pipe_vreg_pend_rd_by_d;
-                pipe_vreg_pend_rd_to_q <= pipe_vreg_pend_rd_to_d;
-            end
-        end else begin
-            assign pipe_vreg_pend_rd_by_q = pipe_vreg_pend_rd_by_d;
-            assign pipe_vreg_pend_rd_to_q = pipe_vreg_pend_rd_to_d;
-        end
-    endgenerate
-    logic [PIPE_CNT-1:0][31:0] pipe_vreg_pend_rd_in, pipe_vreg_pend_rd_out;
-    always_comb begin
-        pipe_vreg_pend_rd_in   = pipe_vreg_pend_rd_to_q;
-        pipe_vreg_pend_rd_by_d = pipe_vreg_pend_rd_out;
-        pipe_vreg_pend_rd_to_d = '0;
-        for (int i = 0; i < PIPE_CNT; i++) begin
-            for (int j = 0; j < PIPE_CNT; j++) begin
-                if (i != j) begin
-                    pipe_vreg_pend_rd_to_d[i] |= pipe_vreg_pend_rd_by_q[j];
-                end
-            end
-        end
-    end
 
     ////////////////////
     // CSR Unit
@@ -673,7 +646,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     logic csr_valid;
 
-    assign csr_valid = pop_csr_disp; //valid input to csr unit when csr dispatch pops instruction
+    assign csr_valid = pop_csr_disp & (((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & !xif_commit_if.commit.commit_kill) | (instr_state_q[csr_disp_data.id] != INSTR_KILLED)); //valid input to csr unit when csr dispatch pops instruction that is not killed
 
     logic [PIPE_CNT-1:0] vx_saturate; //VALU or VMUL can generate a fixed point saturation at the vector pipelines
 
@@ -819,8 +792,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .pipe_in_ready_o          ( pipe_instr_ready[i]        ),
                 .pipe_in_data_i           ( pipe_instr_data            ),
                 .vreg_pend_wr_i           ( pend_vreg_wr_map           ),
-                .vreg_pend_rd_o           ( pipe_vreg_pend_rd_out[i]   ),
-                .vreg_pend_rd_i           ( pipe_vreg_pend_rd_in [i]   ),
                 .instr_state_i            ( instr_state_q              ),
                 .instr_done_valid_o       ( instr_complete_valid[i]    ),
                 .instr_done_id_o          ( instr_complete_id   [i]    ),
