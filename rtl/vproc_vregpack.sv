@@ -120,13 +120,13 @@ module vproc_vregpack #(
                 ctrl_d.frac       = pipe_in_res_flags_i[0].dest_frac;
                 unique case({pipe_in_res_flags_i[0].shift_rate, pipe_in_res_flags_i[0].dest_frac})
                     {RES_FULL_WIDTH, FULL_REG}: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1;      //Standard case when functional units produce full datapath per cycle
-                    {RES_FULL_WIDTH, MF2}:      ctrl_d.shifts_remaining = (VPORT_W / 2) / MAX_RES_W - 1;
-                    {RES_FULL_WIDTH, MF4}:      ctrl_d.shifts_remaining = (VPORT_W / 4) / MAX_RES_W - 1;
-                    {RES_FULL_WIDTH, MF8}:      ctrl_d.shifts_remaining = (VPORT_W / 8) / MAX_RES_W - 1;
+                    {RES_FULL_WIDTH, MF2}:      ctrl_d.shifts_remaining = (MAX_RES_W < VPORT_W/2) ? (VPORT_W / 2) / MAX_RES_W - 1 : 0;
+                    {RES_FULL_WIDTH, MF4}:      ctrl_d.shifts_remaining = (MAX_RES_W < VPORT_W/4) ? (VPORT_W / 4) / MAX_RES_W - 1 : 0;
+                    {RES_FULL_WIDTH, MF8}:      ctrl_d.shifts_remaining = (MAX_RES_W < VPORT_W/8) ? (VPORT_W / 8) / MAX_RES_W - 1 : 0;
                     {RES_NARROW_WIDTH, FULL_REG}: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
                     {RES_NARROW_WIDTH, MF2}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/2) / MAX_RES_W - 1;
-                    {RES_NARROW_WIDTH, MF4}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/4) / MAX_RES_W - 1; 
-                    {RES_NARROW_WIDTH, MF8}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/8) / MAX_RES_W - 1; 
+                    {RES_NARROW_WIDTH, MF4}:      ctrl_d.shifts_remaining = (MAX_RES_W < (VPORT_W*2)/4) ? ((VPORT_W*2)/4) / MAX_RES_W - 1 : 0; 
+                    {RES_NARROW_WIDTH, MF8}:      ctrl_d.shifts_remaining = (MAX_RES_W < (VPORT_W*2)/8) ? ((VPORT_W*2)/8) / MAX_RES_W - 1 : 0;
                     {RES_ELEMWISE_WIDTH, FULL_REG}: begin                                                     //Elemwise result shifts depends on SEW of result
                                         unique case(cur_sew)
                                             VSEW_32: ctrl_d.shifts_remaining = (VPORT_W/32)-1;
@@ -164,13 +164,13 @@ module vproc_vregpack #(
                     // only reset counter here if write can be performed this cycle
                     unique case({ctrl_q.shift_rate, ctrl_q.frac})
                         {RES_FULL_WIDTH, FULL_REG}: ctrl_d.shifts_remaining = VPORT_W / MAX_RES_W - 1;      //Standard case when functional units produce full datapath per cycle
-                        {RES_FULL_WIDTH, MF2}:      ctrl_d.shifts_remaining = (VPORT_W / 2) / MAX_RES_W - 1;
-                        {RES_FULL_WIDTH, MF4}:      ctrl_d.shifts_remaining = (VPORT_W / 4) / MAX_RES_W - 1;
-                        {RES_FULL_WIDTH, MF8}:      ctrl_d.shifts_remaining = (VPORT_W / 8) / MAX_RES_W - 1;
+                        {RES_FULL_WIDTH, MF2}:      ctrl_d.shifts_remaining = (MAX_RES_W < VPORT_W/2) ? (VPORT_W / 2) / MAX_RES_W - 1 : 0;
+                        {RES_FULL_WIDTH, MF4}:      ctrl_d.shifts_remaining = (MAX_RES_W < VPORT_W/4) ? (VPORT_W / 4) / MAX_RES_W - 1 : 0;
+                        {RES_FULL_WIDTH, MF8}:      ctrl_d.shifts_remaining = (MAX_RES_W < VPORT_W/8) ? (VPORT_W / 8) / MAX_RES_W - 1 : 0;
                         {RES_NARROW_WIDTH, FULL_REG}: ctrl_d.shifts_remaining = VPORT_W*2 / MAX_RES_W - 1;  //Narrowing ops require twice as many cycles to fill the register
                         {RES_NARROW_WIDTH, MF2}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/2) / MAX_RES_W - 1;
-                        {RES_NARROW_WIDTH, MF4}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/4) / MAX_RES_W - 1; 
-                        {RES_NARROW_WIDTH, MF8}:      ctrl_d.shifts_remaining = ((VPORT_W*2)/8) / MAX_RES_W - 1; 
+                        {RES_NARROW_WIDTH, MF4}:      ctrl_d.shifts_remaining = (MAX_RES_W < (VPORT_W*2)/4) ? ((VPORT_W*2)/4) / MAX_RES_W - 1 : 0; 
+                        {RES_NARROW_WIDTH, MF8}:      ctrl_d.shifts_remaining = (MAX_RES_W < (VPORT_W*2)/8) ? ((VPORT_W*2)/8) / MAX_RES_W - 1 : 0;
                         {RES_ELEMWISE_WIDTH, FULL_REG}: begin                                                     //Elemwise result shifts depends on SEW of result
                                             unique case(cur_sew)
                                                 VSEW_32: ctrl_d.shifts_remaining = (VPORT_W/32)-1;

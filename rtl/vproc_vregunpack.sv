@@ -117,21 +117,21 @@ module vreg_shift_register
                     end else begin
                         vreg_rd_req_o = !use_xval_i; //only issue read if using vector arg
                         if (vreg_rd_gnt_i | use_xval_i) begin //On successful load, set shift counter
-                            unique case ({ctrl_q.frac, ctrl_q.shift_rate})  //Set number of shifts per register based on rate and fractional settings
+                            unique case ({ctrl_q.frac, ctrl_q.shift_rate})  //Set number of shifts per register based on rate and fractional settings.  Ensure minimum value of 0 for fractional cases (no wraparound)
                                 {FULL_REG, SHIFT_FULL_WIDTH}: ctrl_d.shifts_remaining = VREG_PORT_W/PIPE_OP_W-1;// standard shift case
-                                {MF2, SHIFT_FULL_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W/2)/PIPE_OP_W-1;// half register
-                                {MF4, SHIFT_FULL_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W/4)/PIPE_OP_W-1;// quarter register
-                                {MF8, SHIFT_FULL_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W/8)/PIPE_OP_W-1;// eighth register
+                                {MF2, SHIFT_FULL_WIDTH}:      ctrl_d.shifts_remaining = (PIPE_OP_W < VREG_PORT_W/2) ? (VREG_PORT_W/2)/PIPE_OP_W-1 : 0;// half register
+                                {MF4, SHIFT_FULL_WIDTH}:      ctrl_d.shifts_remaining = (PIPE_OP_W < VREG_PORT_W/4) ? (VREG_PORT_W/4)/PIPE_OP_W-1 : 0;// quarter register
+                                {MF8, SHIFT_FULL_WIDTH}:      ctrl_d.shifts_remaining = (PIPE_OP_W < VREG_PORT_W/8) ? (VREG_PORT_W/8)/PIPE_OP_W-1 : 0;// eighth register
 
                                 {FULL_REG, SHIFT_HALF_WIDTH}: ctrl_d.shifts_remaining = (VREG_PORT_W*2)/PIPE_OP_W-1;// standard shift case
                                 {MF2, SHIFT_HALF_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W)/PIPE_OP_W-1;// half register
-                                {MF4, SHIFT_HALF_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W/2)/PIPE_OP_W-1;// quarter register
-                                {MF8, SHIFT_HALF_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W/4)/PIPE_OP_W-1;// eighth register
+                                {MF4, SHIFT_HALF_WIDTH}:      ctrl_d.shifts_remaining = (PIPE_OP_W < VREG_PORT_W/2) ? (VREG_PORT_W/2)/PIPE_OP_W-1 : 0;// quarter register
+                                {MF8, SHIFT_HALF_WIDTH}:      ctrl_d.shifts_remaining = (PIPE_OP_W < VREG_PORT_W/4) ? (VREG_PORT_W/4)/PIPE_OP_W-1 : 0;// eighth register
 
                                 {FULL_REG, SHIFT_QUARTER_WIDTH}: ctrl_d.shifts_remaining = (VREG_PORT_W*4)/PIPE_OP_W-1;// standard shift case
                                 {MF2, SHIFT_QUARTER_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W*2)/PIPE_OP_W-1;// half register
                                 {MF4, SHIFT_QUARTER_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W)/PIPE_OP_W-1;// quarter register
-                                {MF8, SHIFT_QUARTER_WIDTH}:      ctrl_d.shifts_remaining = (VREG_PORT_W/2)/PIPE_OP_W-1;// eighth register
+                                {MF8, SHIFT_QUARTER_WIDTH}:      ctrl_d.shifts_remaining = (PIPE_OP_W < VREG_PORT_W/2) ? (VREG_PORT_W/2)/PIPE_OP_W-1 : 0;// eighth register
 
                                 {FULL_REG, SHIFT_ELEMWISE}: begin
                                                                 unique case(ctrl_q.eew)
@@ -207,6 +207,7 @@ module vreg_shift_register
                             endcase
                         end 
                         VSEW_8:  shift_reg_d = {(VREG_PORT_W/8){xval_i[7:0]}};
+                        default; //TODO: Why are these default cases necessary
                 endcase
             end else begin
                 shift_reg_d = vreg_rd_data_i;
@@ -248,6 +249,7 @@ module vreg_shift_register
                                                 vfu_data_o[16*i +: 16] = {{(8){ctrl_d.sign & shift_reg_q[8*i + 7]}}, shift_reg_q[8 * i +: 8]};
                                             end
                                         end
+                                        default; //TODO: Why are these default cases necessary
                                     endcase
             end
             SHIFT_QUARTER_WIDTH:begin
@@ -257,6 +259,7 @@ module vreg_shift_register
                                                 vfu_data_o[32*i +: 32] = {{(24){ctrl_d.sign & shift_reg_q[8*i + 7]}}, shift_reg_q[8 * i +: 8]};
                                             end
                                         end
+                                        default; //TODO: Why are these default cases necessary
                                     endcase
             end
         endcase
@@ -415,9 +418,9 @@ module mask_reg_shift_register
                                             EMUL_1: begin
                                                 unique case (ctrl_q.frac) //Fractional only applies to EMUL1
                                                     FULL_REG: ctrl_d.shifts_remaining      = (    VREG_PORT_W)/PIPE_OP_W - 1;
-                                                    MF2:      ctrl_d.shifts_remaining      = (  VREG_PORT_W/2)/PIPE_OP_W - 1;
-                                                    MF4:      ctrl_d.shifts_remaining      = (  VREG_PORT_W/4)/PIPE_OP_W - 1;
-                                                    MF8:      ctrl_d.shifts_remaining      = (  VREG_PORT_W/8)/PIPE_OP_W - 1;
+                                                    MF2:      ctrl_d.shifts_remaining      = (PIPE_OP_W < VREG_PORT_W/2) ? (  VREG_PORT_W/2)/PIPE_OP_W - 1 : 0;
+                                                    MF4:      ctrl_d.shifts_remaining      = (PIPE_OP_W < VREG_PORT_W/4) ? (  VREG_PORT_W/4)/PIPE_OP_W - 1 : 0;
+                                                    MF8:      ctrl_d.shifts_remaining      = (PIPE_OP_W < VREG_PORT_W/8) ? (  VREG_PORT_W/8)/PIPE_OP_W - 1 : 0;
                                                 endcase
                                             end
                                             EMUL_2: ctrl_d.shifts_remaining     = (2 * VREG_PORT_W)/PIPE_OP_W - 1;
