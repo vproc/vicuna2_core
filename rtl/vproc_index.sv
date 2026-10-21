@@ -182,17 +182,17 @@ module vproc_index #(
           // Subsequent elements are connected to previous elements + the relevant mask bit
           /* verilator lint_off ALWCOMBORDER */
           VSEW_8: begin
-            viota_mux_result[i*32+8-1 : i*32]       = i > 0 ? viota_mux_result[i*32-1 : (i-1)*32+24]  + viota_mask[4*i + 3] : viota_sum_q;
+            viota_mux_result[i*32+8-1 : i*32]       = i > 0 ? viota_mux_result[i*32-1 : (i-1)*32+24]  + viota_mask[4*i - 1] : viota_sum_q;
             viota_mux_result[i*32+16-1 : i*32+8]    =         viota_mux_result[i*32+8-1 : i*32]       + viota_mask[4*i];
             viota_mux_result[i*32+24-1 : i*32+16]   =         viota_mux_result[i*32+16-1 : i*32+8]    + viota_mask[4*i + 1];
             viota_mux_result[(i+1)*32-1 : i*32+24]  =         viota_mux_result[i*32+24-1 : i*32+16]   + viota_mask[4*i + 2];
           end
           VSEW_16: begin
-            viota_mux_result[i*32+16-1 : i*32]      = i > 0 ? viota_mux_result[i*32-1 : (i-1)*32+16]  + viota_mask[2*i + 1] : viota_sum_q;
+            viota_mux_result[i*32+16-1 : i*32]      = i > 0 ? viota_mux_result[i*32-1 : (i-1)*32+16]  + viota_mask[2*i - 1] : viota_sum_q;
             viota_mux_result[(i+1)*32-1 : i*32+16]  =         viota_mux_result[i*32+16-1 : i*32]      + viota_mask[2*i];
           end
           VSEW_32: begin
-            viota_mux_result[(i+1)*32-1 : i*32]     = i > 0 ? viota_mux_result[i*32-1 :(i-1)*32]      + viota_mask[i] : viota_sum_q;
+            viota_mux_result[(i+1)*32-1 : i*32]     = i > 0 ? viota_mux_result[i*32-1 :(i-1)*32]      + viota_mask[i - 1] : viota_sum_q;
           end
           /* verilator lint_on ALWCOMBORDER */
           default: ;
