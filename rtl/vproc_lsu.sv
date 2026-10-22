@@ -160,7 +160,7 @@ module vproc_mem_port #(
 
     typedef struct packed {
         logic[PORT_WIDTH/8-1:0]       mask;
-        logic[$bits(obi_bus.rid)-1:0] req_id;
+        logic[$clog2(OUTSTANDING_REQ):0] req_id;
         logic[1:0]                    alignment;
     } req_metadata_t;
 
