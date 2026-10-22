@@ -193,10 +193,10 @@ always_comb begin
     endcase
 end
 
-assign lmul_o = vtype[5:3];
-assign sew_o = vtype[1:0];
+assign lmul_o = cfg_lmul'(vtype[5:3]);
+assign sew_o = cfg_vsew'(vtype[1:0]);
 assign illegal_cfg_o = vtype[31];
-assign vxrm_o = vcsr[2:1];
+assign vxrm_o = cfg_vxrm'(vcsr[2:1]);
 
 ////////////
 //  Custom CSR Performance Counters
