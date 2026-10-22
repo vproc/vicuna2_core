@@ -220,7 +220,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         op_regd              rd;
         logic                pend_load;
         logic                pend_store;
-        decode_metadata      decode_metadata; //TODO: This struct should encompass all relevant signals from decoder_data and replace it
+        decoder_metadata      decode_metadata; //TODO: This struct should encompass all relevant signals from decoder_data and replace it
     } decoder_data;
 
     // signals for decoder and for decoder buffer
@@ -732,7 +732,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     generate
         for (genvar i = 0; i < PIPE_CNT; i++) begin
 
-            localparam int unsigned PIPE_VADDR_W[PIPE_VPORT_CNT[i]]  = VADDR_RD_W[PIPE_VPORT_IDX[i] +: PIPE_VPORT_CNT[i]];
             localparam int unsigned PIPE_MAX_VPORT_W = MAX_VPORT_RD_SLICE(VPORT_RD_W, PIPE_VPORT_IDX[i], PIPE_VPORT_CNT[i]);
             localparam int unsigned PIPE_MAX_VADDR_W = MAX_VPORT_RD_SLICE(VADDR_RD_W, PIPE_VPORT_IDX[i], PIPE_VPORT_CNT[i]);
 
@@ -770,7 +769,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .MAX_VADDR_W              ( PIPE_MAX_VADDR_W           ),
                 .VPORT_CNT                ( VPORT_RD_CNT               ),
 
-                .VADDR_W                  ( PIPE_VADDR_W               ),
+                .VADDR_W                  ( 5                          ), //32 Vector registers
 
                 .VPORT_BUFFER             ( PIPE_VPORT_BUFFER          ),
                 .VPORT_V0                 ( 1'b1                       ),

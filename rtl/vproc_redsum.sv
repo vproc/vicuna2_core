@@ -470,8 +470,8 @@ module vproc_vredsum import vproc_pkg::*; #(
     //////////////////
     cfg_vsew sew;
     assign sew = (pipe_in_ctrl_i.first_cycle) ? ctrl_d.eew : ctrl_q.eew;
-    opcode_reduction op_mode;
-    assign op_mode = (pipe_in_ctrl_i.first_cycle) ? ctrl_d.mode.reduction.op : ctrl_q.mode.reduction.op;
+    opcode_reduction oper_mode;
+    assign oper_mode = (pipe_in_ctrl_i.first_cycle) ? ctrl_d.mode.reduction.op : ctrl_q.mode.reduction.op;
 
     generate
         for (genvar i = 0; i < OP_W / 32; i++) begin
@@ -479,7 +479,7 @@ module vproc_vredsum import vproc_pkg::*; #(
             fractureable_reduction_unit #(
             ) fractureable_reduction_unit (
                 .sew_i(sew),
-                .op_i(op_mode),
+                .op_i(oper_mode),
 
                 .a_i(input_a[i]),
                 .a_mask_i(input_a_mask[i]),

@@ -44,7 +44,7 @@ module vproc_decoder #(
 
         output logic                    vl_override_o,     //signal if instruction has overridden VL
 
-        output decode_metadata          decode_metadata_o //TODO: All necessary signals from above should be migrated to this struct
+        output decoder_metadata         decode_metadata_o //TODO: All necessary signals from above should be migrated to this struct
     );
 
     import vproc_pkg::*;

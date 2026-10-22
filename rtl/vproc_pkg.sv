@@ -564,6 +564,6 @@ typedef struct packed {
     logic         masked;
     cfg_emul      dest_emul;
     op_fractional dest_frac;  
-} decode_metadata;
+} decoder_metadata;
 
 endpackage

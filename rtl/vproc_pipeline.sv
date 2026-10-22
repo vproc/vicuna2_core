@@ -146,7 +146,7 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         logic                     [4 :0] res_vaddr;
         logic                     [31:0] pend_vreg_wr;   // pending vector register writes
 
-        decode_metadata                decode_metadata; //All above relevant signals should be absorbed into this one and passed from decode
+        decoder_metadata                 decode_metadata; //All above relevant signals should be absorbed into this one and passed from decode
 
     } metadata_t;
 

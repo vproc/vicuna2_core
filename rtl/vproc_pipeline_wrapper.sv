@@ -225,7 +225,7 @@ module vproc_pipeline_wrapper import vproc_pkg::*, obi_pkg::*; #(
         logic                            res_narrow_frac;
         logic                     [4 :0] res_vaddr;
         logic                            masked;
-        decode_metadata                  decode_metadata; //TODO: All necessary signals from above should be absorbed into this struct (and set in decode)
+        decoder_metadata                 decode_metadata; //TODO: All necessary signals from above should be absorbed into this struct (and set in decode)
     } state_t;
 
     // identify the unit of the supplied instruction
