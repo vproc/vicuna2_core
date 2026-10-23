@@ -316,7 +316,7 @@ module vproc_vregpack #(
                                                         end
                                                     end
                                                     MF2: begin
-                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/2] = '0; //upper 3/4s 0 for mf4 result
+                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/2] = '0; //upper 1/2s 0 for mf4 result
                                                         shift_reg_mask_d[(VPORT_W/8)/2 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/2 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
                                                         shift_reg_d[(VPORT_W)/2 -1 : 0] = shift_reg_q[(VPORT_W)/2 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
                                                         for (integer i = 0; i < MAX_RES_W/32; i++) begin
@@ -334,12 +334,14 @@ module vproc_vregpack #(
                                                         end
                                                     end
                                                     MF8: begin
-                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/8] = '0; //upper 3/4s 0 for mf4 result
-                                                        shift_reg_mask_d[(VPORT_W/8)/8 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/8 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
-                                                        shift_reg_d[(VPORT_W)/8 -1 : 0] = shift_reg_q[(VPORT_W)/8 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
-                                                        for (integer i = 0; i < MAX_RES_W/32; i++) begin
-                                                            shift_reg_d[(VPORT_W/8)-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];
-                                                            shift_reg_mask_d[(VPORT_W/8)/8-MAX_RES_W/16+i*2 +: 2] = pipe_in_res_mask_i[0][i*4 +: 2];
+                                                        if (VPORT_W/8 >= 32) begin //This case is only legal if an mf8 vector can hold a 32 bit value
+                                                            shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/8] = '0; //upper 7/8s 0 for mf4 result
+                                                            shift_reg_mask_d[(VPORT_W/8)/8 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/8 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
+                                                            shift_reg_d[(VPORT_W)/8 -1 : 0] = shift_reg_q[(VPORT_W)/8 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
+                                                            for (integer i = 0; i < MAX_RES_W/32; i++) begin
+                                                                shift_reg_d[(VPORT_W/8)-MAX_RES_W/2+i*16 +: 16] = pipe_in_res_data_i[0][i*32 +: 16];
+                                                                shift_reg_mask_d[(VPORT_W/8)/8-MAX_RES_W/16+i*2 +: 2] = pipe_in_res_mask_i[0][i*4 +: 2];
+                                                            end
                                                         end
                                                     end
                                                 endcase
@@ -356,7 +358,7 @@ module vproc_vregpack #(
                                                         end
                                                     end
                                                     MF2: begin
-                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/2] = '0; //upper 3/4s 0 for mf4 result
+                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/2] = '0; //upper 1/2s 0 for mf4 result
                                                         shift_reg_mask_d[(VPORT_W/8)/2 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/2 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
                                                         shift_reg_d[(VPORT_W)/2 -1 : 0] = shift_reg_q[(VPORT_W)/2 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
                                                         for (integer i = 0; i < MAX_RES_W/16; i++) begin
@@ -374,12 +376,14 @@ module vproc_vregpack #(
                                                         end
                                                     end
                                                     MF8: begin
-                                                        shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/8] = '0; //upper 3/4s 0 for mf4 result
-                                                        shift_reg_mask_d[(VPORT_W/8)/8 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/8 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
-                                                        shift_reg_d[(VPORT_W)/8 -1 : 0] = shift_reg_q[(VPORT_W)/8 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
-                                                        for (integer i = 0; i < MAX_RES_W/16; i++) begin
-                                                            shift_reg_d[(VPORT_W/8)-MAX_RES_W/2+i*8 +: 8] = pipe_in_res_data_i[0][i*16 +: 8];
-                                                            shift_reg_mask_d[(VPORT_W/8)/8-MAX_RES_W/16+i] = pipe_in_res_mask_i[0][i*2];
+                                                        if (VPORT_W/8 >= 32) begin //This case is only legal if an mf8 vector can hold a 16 bit value (TODO: needs 32 bit check for some reason?)
+                                                            shift_reg_mask_d[(VPORT_W/8) - 1:(VPORT_W/8)/8] = '0; //upper 7/8s 0 for mf4 result
+                                                            shift_reg_mask_d[(VPORT_W/8)/8 -1 : 0] = shift_reg_mask_q[(VPORT_W/8)/8 -1 + (MAX_RES_W/8)/2: (MAX_RES_W/8)/2];
+                                                            shift_reg_d[(VPORT_W)/8 -1 : 0] = shift_reg_q[(VPORT_W)/8 -1 + (MAX_RES_W)/2: (MAX_RES_W)/2];
+                                                            for (integer i = 0; i < MAX_RES_W/16; i++) begin
+                                                                shift_reg_d[(VPORT_W/8)-MAX_RES_W/2+i*8 +: 8] = pipe_in_res_data_i[0][i*16 +: 8];
+                                                                shift_reg_mask_d[(VPORT_W/8)/8-MAX_RES_W/16+i] = pipe_in_res_mask_i[0][i*2];
+                                                            end
                                                         end
                                                     end
                                                     endcase
@@ -436,8 +440,10 @@ module vproc_vregpack #(
                                                         shift_reg_mask_d = {{((VPORT_W*3/4)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[(VPORT_W/4)/8-1 : 2]};
                                                     end
                                                     MF8: begin
-                                                        shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W/8-1 : 16]};
-                                                        shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : 2]};
+                                                        if (VPORT_W/8 >= 32) begin //This case is only legal if an mf8 vector can hold a 16 bit value
+                                                            shift_reg_d = {{(VPORT_W*7/8){1'b0}},pipe_in_res_data_i[0][15:0], shift_reg_q[VPORT_W/8-1 : 16]};
+                                                            shift_reg_mask_d = {{((VPORT_W*7/8)/8){1'b0}}, pipe_in_res_mask_i[0][1:0], shift_reg_mask_q[(VPORT_W/8)/8-1 : 2]};
+                                                        end
                                                     end
                                                 endcase
                                             end

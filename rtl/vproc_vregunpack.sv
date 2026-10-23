@@ -525,8 +525,6 @@ module vproc_vregunpack
         parameter int unsigned                        MAX_VPORT_W        = 128,  // max port width
         parameter int unsigned                        MAX_VADDR_W        = 5,    // max addr width
         parameter int unsigned                        VPORT_CNT          = 1,    // port count
-        //parameter int unsigned                        VPORT_W[VPORT_CNT] = '{0}, // port widths
-        parameter int unsigned                        VADDR_W[VPORT_CNT] = '{5}, // address widths
         parameter bit [VPORT_CNT-1:0]                 VPORT_BUFFER       = '0,   // buffer port
         parameter int unsigned                        VPORT_V0_W         = 128,  // width of v0 port
         parameter int unsigned                        ID_W               = 5,
@@ -711,7 +709,7 @@ module vproc_vregunpack
     logic   [VPORT_CNT-1:0][MAX_VADDR_W-1:0]  shift_reg_addr;
     generate
         //op0 port can be accessed by GATHER unit, so arbitration necessary.  Always give preference to vfu
-        assign vreg_rd_req_o[0] = vfu_vreg_rd_req_i ? vfu_vreg_rd_req_i & ~metadata_q.pend_wr_map[vfu_vreg_rd_addr_i] : shift_reg_req[0] & ~metadata_q.pend_wr_map[shift_reg_addr[i]]; //Request signal from shift reg valid if not marked as pending write (not a data hazard)
+        assign vreg_rd_req_o[0] = vfu_vreg_rd_req_i ? vfu_vreg_rd_req_i & ~metadata_q.pend_wr_map[vfu_vreg_rd_addr_i] : shift_reg_req[0] & ~metadata_q.pend_wr_map[shift_reg_addr[0]]; //Request signal from shift reg valid if not marked as pending write (not a data hazard)
         assign shift_reg_gnt[0] = vreg_rd_gnt_i[0] & !vfu_vreg_rd_req_i;
         assign vfu_vreg_rd_gnt_o = vreg_rd_gnt_i[0] & vfu_vreg_rd_req_i;
         assign vreg_rd_addr_o[0] = vfu_vreg_rd_req_i ? vfu_vreg_rd_addr_i : shift_reg_addr[0];

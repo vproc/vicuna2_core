@@ -12,14 +12,10 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned          MAX_VPORT_W         = 128,  // max port width
         parameter int unsigned          MAX_VADDR_W         = 5,    // max addr width
         parameter int unsigned          VPORT_CNT           = 1,
-        //parameter int unsigned          VPORT_W [VPORT_CNT] = '{0},
-        parameter int unsigned          VADDR_W [VPORT_CNT] = '{0},
         parameter bit [VPORT_CNT-1:0]   VPORT_BUFFER        = '0,   // buffer port
         parameter int unsigned          MAX_OP_W            = 64,
         parameter int unsigned          MEM_W               = 0,
         parameter int unsigned          OP_CNT              = 1,
-        // parameter int unsigned          OP_STAGE[OP_CNT   ] = '{0}, // op load stage
-        // parameter int unsigned          OP_SRC  [OP_CNT   ] = '{0}, // op port index
         parameter int unsigned          OP_DYN_ADDR_SRC     = 0,    // dyn addr src idx
         parameter bit [OP_CNT-1:0]      OP_DYN_ADDR         = '0,   // dynamic addr
         parameter bit [OP_CNT-1:0]      OP_MASK             = '0,   // op is a mask
@@ -200,8 +196,6 @@ module vproc_pipeline import vproc_pkg::*, obi_pkg::*; #(
         .MAX_VPORT_W          ( MAX_VPORT_W                  ),
         .MAX_VADDR_W          ( MAX_VADDR_W                  ),
         .VPORT_CNT            ( VPORT_CNT                    ),
-        //.VPORT_W              ( VPORT_W                      ),
-        .VADDR_W              ( VADDR_W                      ),
         .VPORT_BUFFER         ( VPORT_BUFFER                 ),
         .VPORT_V0_W           ( VREG_W                       ),
         .MAX_OP_W             ( MAX_OP_W                     ),

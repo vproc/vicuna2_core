@@ -137,7 +137,7 @@ module vproc_vredsum import vproc_pkg::*; #(
     reduction_state state_q, state_d;
     logic[$clog2(OP_W/32)-1:0] red_cnt_d, red_cnt_q; //counter for # cycles to complete reduction once last_cycle is triggered
     logic[1:0] res_cnt_d, res_cnt_q; //counter for # cycles to complete final reduction depending on SEW (1, 2, or 3)
-    always_ff @(posedge clk_i, sync_rst_ni) begin
+    always_ff @(posedge clk_i) begin
         begin
             if (~sync_rst_ni) begin 
                 state_q <= PARALLEL_SUM;

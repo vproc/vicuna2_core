@@ -405,7 +405,7 @@ module vproc_mul #(
                     mul_res_rounded[17*i +: 17] = mul_res[66*i+15 +: 17] + (mul_res[66*i + 14] && (|mul_res[66*i +: 14]) | mul_res[66*i + 15]);
             end
             VSEW_32 : begin
-                for (int i = 0; i < (MUL_OP_W / 8 ); i++)
+                for (int i = 0; i < (MUL_OP_W / 32 ); i++)
                     mul_res_rounded[33*i +: 33] = res32  [64*i+31 +: 33] + (res32[64*i + 30] && (|res32[64*i +: 30] | res32[64*i + 31]));
             end
             default;
