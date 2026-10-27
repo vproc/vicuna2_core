@@ -124,8 +124,8 @@ always_comb begin //vtype and vl handled differently, both set explicitly by vse
     vl_d = vl;
     if (valid_i & ready_o & (dec_data_i.cfg.csr == CSR_VSETVL)) begin
         //Vtype setting: contains sew, lmul, t/m settings, and vill
-        vtype_d[2:0] = {1'b0, dec_data_i.cfg.vsew};
-        vtype_d[5:3] = dec_data_i.cfg.lmul;
+        vtype_d[5:3] = {1'b0, dec_data_i.cfg.vsew};
+        vtype_d[2:0] = dec_data_i.cfg.lmul;
         vtype_d[7:6] = dec_data_i.cfg.agnostic;
 
         vtype_d[31]  = illegal_vsetvl; //TODO: reject offloading when this bit is set in decode
@@ -153,7 +153,7 @@ end
 //Translate vl to # bytes - 1 for pipeline
 //TODO: Upgrade pipeline so this is not necessary
 always_comb begin
-    case ({vtype[1:0]})
+    case ({vtype[4:3]})
         VSEW_8:       vl_o = vl - 1;
         VSEW_16:      vl_o = (vl << 1) - 1;
         VSEW_32:      vl_o = (vl << 2) - 1;
@@ -166,7 +166,7 @@ assign vl_0_o = (vl == 0);
 
 always_comb begin
     vlmax_o = '0;
-    case ({vtype[5:3], vtype[1:0]})
+    case ({vtype[2:0], vtype[4:3]})
         //TODO:For small VLEN, some of these low end cases might be illegal
         {LMUL_F8, VSEW_8}:  vlmax_o = (VLEN/8)/8;
         {LMUL_F8, VSEW_16}: vlmax_o = (VLEN/8)/16;
@@ -193,8 +193,8 @@ always_comb begin
     endcase
 end
 
-assign lmul_o = cfg_lmul'(vtype[5:3]);
-assign sew_o = cfg_vsew'(vtype[1:0]);
+assign lmul_o = cfg_lmul'(vtype[2:0]);
+assign sew_o = cfg_vsew'(vtype[4:3]);
 assign illegal_cfg_o = vtype[31];
 assign vxrm_o = cfg_vxrm'(vcsr[2:1]);
 
