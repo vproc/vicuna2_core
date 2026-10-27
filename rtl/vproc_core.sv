@@ -13,7 +13,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         parameter int unsigned           VREG_W                   = vproc_config::VREG_W,
         parameter int unsigned           VPORT_RD_CNT             = vproc_config::VPORT_RD_CNT,
         parameter int unsigned           VPORT_RD_W[VPORT_RD_CNT] = vproc_config::VPORT_RD_W,
-        parameter int unsigned           VPORT_WR_CNT             = vproc_config::VPORT_WR_CNT,
+        parameter int unsigned           VPORT_WR_CNT             = 1, //TODO: CURRENTLY HARDCODED to 1 write port
         parameter int unsigned           VPORT_WR_W[VPORT_WR_CNT] = vproc_config::VPORT_WR_W,
 
         // Vector pipeline configuration
@@ -867,7 +867,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         end
     endgenerate
 
-    //Can remove this
+    // TODO: Can remove this
     vproc_vreg_wr_mux #(
         .VREG_W             ( VREG_W                              ),
         .VPORT_WR_CNT       ( VPORT_WR_CNT                        ),
