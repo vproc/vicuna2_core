@@ -76,7 +76,7 @@ module fractureable_reduction_unit import vproc_pkg::*; #(
 
     assign c_o = {c_3[7:0], c_2[7:0], c_1[7:0], c_0[7:0]};
 
-endmodule;
+endmodule
 
 //Redsum module
 module vproc_vredsum import vproc_pkg::*; #(
@@ -506,4 +506,4 @@ module vproc_vredsum import vproc_pkg::*; #(
             VSEW_8:  pipe_out_mask_o[0] = !ctrl_q.vl_0 ? 1'b1 : 1'b0;
         endcase
     end
-endmodule;
+endmodule
