@@ -301,7 +301,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic result_fifo_full_stall; //Stall issue in case another committed instruction cannot be accepted since commit cannot stall
     logic csr_access_stall;       //Stall in case of a pending CSR access (i.e. speculative vsetvli)
 
-    assign xif_issue_if.issue_ready          = ~issue_id_used & source_xreg_valid & !result_fifo_full_stall & !csr_access_stall;
+    assign xif_issue_if.issue_ready          = ~issue_id_used & source_xreg_valid & !result_fifo_full_stall & !csr_access_stall & !pipeline_disp_full;
     assign dec_ready                         = xif_issue_if.issue_ready;
 
     assign xif_issue_if.issue_resp.accept    = dec_valid;
