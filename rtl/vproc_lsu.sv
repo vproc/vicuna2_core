@@ -210,20 +210,19 @@ module vproc_mem_port #(
     //Assign data and be based on alignment
     always_comb begin
         if (second_req_q) begin
-            //second request takes top half of the data write
+            //second request takes top portion of the data write
             unique case (req_addr_lower_q[1:0])
-            //This case doesn't occur, but is needed to prevent verilator from complaining about a latch
                 2'b01 : begin
-                    obi_bus.be    = {3'b000, mask_q[PORT_WIDTH/8-1:3]};
-                    obi_bus.wdata = {24'h000000, data_q[PORT_WIDTH-1:24]};
+                    obi_bus.be    = {{(PORT_WIDTH/8 - 1){1'b0}}, mask_q[PORT_WIDTH/8-1]};
+                    obi_bus.wdata = {{(PORT_WIDTH - 8){1'b0}}, data_q[PORT_WIDTH-1:PORT_WIDTH-8]};
                 end
                 2'b10 : begin
-                    obi_bus.be    = {2'b00, mask_q[PORT_WIDTH/8-1:2]};
-                    obi_bus.wdata = {16'h0000, data_q[PORT_WIDTH-1:16]};
+                    obi_bus.be    = {{(PORT_WIDTH/8 - 2){1'b0}}, mask_q[PORT_WIDTH/8-1 : PORT_WIDTH/8-2]};
+                    obi_bus.wdata = {{(PORT_WIDTH - 16){1'b0}}, data_q[PORT_WIDTH-1:PORT_WIDTH-16]};
                 end
                 2'b11 : begin
-                    obi_bus.be    = {1'b0, mask_q[PORT_WIDTH/8-1:1]};
-                    obi_bus.wdata = {8'h00, data_q[PORT_WIDTH-1:8]};
+                    obi_bus.be    = {{(PORT_WIDTH/8 - 3){1'b0}}, mask_q[PORT_WIDTH/8-1 : PORT_WIDTH/8-3]};
+                    obi_bus.wdata = {{(PORT_WIDTH - 24){1'b0}}, data_q[PORT_WIDTH-1:PORT_WIDTH-24]};
                 end
             endcase
         end else begin
