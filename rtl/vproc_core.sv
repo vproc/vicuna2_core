@@ -518,7 +518,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     fifo_v3 #(
     .FALL_THROUGH (1'b1        ),
     .dtype        (logic [XIF_ID_W-1:0]),
-    .DEPTH        (1           )   //Currently only one slot needed here (maximum 1 speculative instruction)
+    .DEPTH        (2           )
     ) empty_res_queue (
         .clk_i,
         .rst_ni     ( rst_ni                  ),
