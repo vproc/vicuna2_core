@@ -350,9 +350,12 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
             if (xif_issue_if.issue_valid & xif_issue_if.issue_ready & xif_commit_if.commit_valid) begin
                 instr_state_d[xif_issue_if.issue_req.id] = INSTR_COMMITTED;
             end
-            //Mark instructions invalid once result is signalled
-            if (xif_result_if.result_valid & xif_result_if.result_ready) begin
-                instr_state_d[xif_result_if.result.id] = INSTR_INVALID;
+            //Mark instructions invalid dispatched, ready to another instruction with this ID
+            if (pop_pipeline_disp) begin
+                instr_state_d[pipeline_disp_data.xif_id] = INSTR_INVALID;
+            end
+            if (pop_csr_disp) begin
+                instr_state_d[csr_disp_data.id] = INSTR_INVALID;
             end
         end else begin
             if (xif_issue_if.issue_valid & xif_issue_if.issue_ready & xif_issue_if.issue_resp.accept) begin
@@ -365,8 +368,12 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                     instr_state_d[xif_commit_if.commit.id] = INSTR_COMMITTED;
                 end
             end
-            if (xif_result_if.result_valid & xif_result_if.result_ready) begin
-                instr_state_d[xif_result_if.result.id] = INSTR_INVALID;
+            //Mark instructions invalid dispatched, ready to another instruction with this ID
+            if (pop_pipeline_disp) begin
+                instr_state_d[pipeline_disp_data.xif_id] = INSTR_INVALID;
+            end
+            if (pop_csr_disp) begin
+                instr_state_d[csr_disp_data.id] = INSTR_INVALID;
             end
             //If instruction in CSR queue is killed, mark invalid
             if (pop_csr_disp & ((instr_state_q[csr_disp_data.id] == INSTR_KILLED) | (csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & xif_commit_if.commit.commit_kill)) begin
@@ -415,16 +422,12 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     logic pipeline_ready;
     logic pipeline_valid;
 
-    assign pipeline_valid = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & !xif_commit_if.commit.commit_kill)) | (!pipeline_disp_empty & ((instr_state_q[pipeline_disp_data.xif_id] == INSTR_COMMITTED))));
-
     decoder_data pipeline_disp_data;
+
+    assign pipeline_valid = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & !xif_commit_if.commit.commit_kill)) | (!pipeline_disp_empty & ((instr_state_q[pipeline_disp_data.xif_id] == INSTR_COMMITTED))));
 
     assign push_pipeline_disp = dec_valid & dec_ready & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
     assign pop_pipeline_disp = (pipeline_valid & pipeline_ready) | (!pipeline_disp_empty & (((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & xif_commit_if.commit.commit_kill) | (instr_state_q[pipeline_disp_data.xif_id] == INSTR_KILLED))); //Only pop on successful handshake with pipelines or killed instruction
-
-    //Signal empty result on sucessful dispatch when not LSU or XRESULT instructions
-    assign result_empty_valid = pop_pipeline_disp & (pipeline_disp_data.unit != UNIT_LSU) & (pipeline_disp_data.unit != UNIT_XRESULT);
-    assign result_empty_id = pipeline_disp_data.xif_id;
 
     //Assign sequential pipeline IDs, decoupled from XIF ID.  This allows for multiple of the same XIF ID to exist in the pipeline, while maintaining strict ordering for accesses
     logic [XIF_ID_W-1:0] next_id;
@@ -498,6 +501,34 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .pop_i      ( pop_csr_disp                 ),
         .empty_o    ( csr_disp_empty               ),
         .full_o     ( csr_disp_full                )
+    );
+
+    ///////
+    //Empty results can be result signalled as soon as they are committed.  Keep track of empty result IDs and send them to result immediately
+    ///////
+    logic push_empty_res, pop_empty_res;
+    logic empty_res_queue_empty;
+    logic [XIF_ID_W-1:0]  empty_id_o;
+
+    assign push_empty_res = xif_issue_if.issue_valid & xif_issue_if.issue_ready & (dec_data_d.unit != UNIT_LSU) & (dec_data_d.unit != UNIT_XRESULT) & (dec_data_d.unit != UNIT_CFG);
+    assign pop_empty_res =  !empty_res_queue_empty & xif_commit_if.commit_valid & ((result_empty_id == xif_commit_if.commit.id));
+
+    assign result_empty_valid = pop_empty_res & !xif_commit_if.commit.commit_kill; //signal result if instruction was not killed
+
+    fifo_v3 #(
+    .FALL_THROUGH (1'b1        ),
+    .dtype        (logic [XIF_ID_W-1:0]),
+    .DEPTH        (1           )   //Currently only one slot needed here (maximum 1 speculative instruction)
+    ) empty_res_queue (
+        .clk_i,
+        .rst_ni     ( rst_ni                  ),
+        .flush_i    (1'b0                          ),
+        .data_i     ( xif_issue_if.issue_req.id    ),
+        .push_i     ( push_empty_res               ),
+        .data_o     ( result_empty_id              ),
+        .pop_i      ( pop_empty_res                ),
+        .empty_o    ( empty_res_queue_empty        ),
+        .full_o     (                              )
     );
 
 
