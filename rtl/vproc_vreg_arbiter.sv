@@ -4,7 +4,7 @@ module vproc_vreg_arbiter
         parameter int unsigned                        ID_W         = 5,  // log2(number of possible instruction IDs in the system)
         parameter int unsigned                        REQUESTORS   = 2,  // # of possible requestors per arbiter (number of pipelines)
 
-        parameter int unsigned                        NUM_PORTS_RD = 3, //TODO: +1 for mask reg?
+        parameter int unsigned                        NUM_PORTS_RD = 3,
         parameter int unsigned                        NUM_PORTS_WR = 1
     )(
 
@@ -83,7 +83,7 @@ module vproc_vreg_arbiter
         for (genvar i = 0; i < ID_W**2; i++) begin  //This condition is fine when ID_W is manually set, not inferred?
             always_comb begin
             if ((i == set_id_i) & set_i) begin //Setting a new value takes precedence for a cell.
-                state_d[i] = outstanding_q;
+                state_d[i] = clear_i ? outstanding_q - 1 : outstanding_q; //if also clearing a cell this cycle, set to outstanding - 1
             end else if (clear_i) begin
                 state_d[i] = state_q[i] - completed_q - 1;
             end else begin
