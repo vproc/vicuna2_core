@@ -499,8 +499,9 @@ module vproc_vregpack #(
     //////
     // register write port logic
     //////
+
     always_comb begin
-        vreg_wr_req_o = ((ctrl_q.shifts_remaining == '0) & ((ctrl_q.valid & !ctrl_q.store)) | (single_element_res & !ctrl_q.store)) | ctrl_q.mask_complete;  //Only write on last cycle and when the instruction is valid
+        vreg_wr_req_o = ((ctrl_q.shifts_remaining == '0) & ((ctrl_q.valid & !ctrl_q.store)) | (single_element_res & !ctrl_d.store)) | ctrl_q.mask_complete;  //Only write on last cycle and when the instruction is valid
         vreg_wr_addr_o  = single_element_res ? pipe_in_vaddr_i : ctrl_q.current_vreg;
         vreg_wr_be_o    = ctrl_q.mask_complete ? shift_reg_mask_result_mask_q : single_element_res ? pipe_in_res_mask_i[0] : shift_reg_mask_q;
         vreg_wr_data_o  = ctrl_q.mask_complete ? shift_reg_mask_result_q : single_element_res ? pipe_in_res_data_i[0] : shift_reg_q;
@@ -516,7 +517,7 @@ module vproc_vregpack #(
     //////
     // Handshake logic with unit mux
     //////
-    //Unit ready when writes are successful, not narrowing, and successful single element writes occur //TODO: Confirm stall condition for failed write is correct?
-    assign pipe_in_ready_o = !(!vreg_wr_gnt_i & vreg_wr_req_o) & !(single_element_res & !vreg_wr_gnt_i) & !(ctrl_q.mask_complete & !vreg_wr_gnt_i); //TODO: Allow single cycle "writes" to signal completion and not actually write back (xreg results)
+    //Unit ready when writes are successful, not narrowing, and successful single element writes occur
+    assign pipe_in_ready_o = !(!vreg_wr_gnt_i & vreg_wr_req_o) & !(single_element_res & !vreg_wr_gnt_i) & !(ctrl_q.mask_complete & !vreg_wr_gnt_i);
 
 endmodule
