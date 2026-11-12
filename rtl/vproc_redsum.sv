@@ -294,8 +294,10 @@ module vproc_vredsum import vproc_pkg::*; #(
     //Input assignments for the remaining adders
     //////////////////
     //Useful constants
-    localparam int CENTER_0 = (OP_W / 32) / 2 - 1;
+    // TODO: Strange issue with verilator (multidriven pins)
+    //localparam int CENTER_0 = (OP_W / 32) / 2;
     localparam int CENTER_1 = (OP_W / 32) / 2;
+    localparam int CENTER_0 = CENTER_1 - 1;
     localparam int NUM_ADDERS = OP_W / 32;
     generate
         //Simple case for OP_W=64
@@ -327,24 +329,42 @@ module vproc_vredsum import vproc_pkg::*; #(
                 end
             end
 
-            always_comb begin : input_handling_center_1_a
-                if (state_q == WIDE_RED) begin //During WIDE_RED
-                    input_a[CENTER_1][31:0] = acc_q[CENTER_1 + 1][31:0];
-                end else begin //During Parallel Sum
-                    input_a[CENTER_1][31:0] = pipe_in_op2_i[32*CENTER_1 +: 32];
-                end 
-            end
+            // always_comb begin : input_handling_center_1_a
+            //     if (state_q == WIDE_RED) begin //During WIDE_RED
+            //         input_a[CENTER_1][31:0] = acc_q[CENTER_1 + 1][31:0];
+            //     end else begin //During Parallel Sum
+            //         input_a[CENTER_1][31:0] = pipe_in_op2_i[32*CENTER_1 +: 32];
+            //     end 
+            // end
 
+            // always_comb begin : input_handling_center_0_a
+            //     if (state_q == RESULT_RED) begin //In RESULT RED, take input from upper half of this adder's output
+            //         input_a[CENTER_0][31:16] = '0;
+            //         input_a[CENTER_0][15:0] = acc_q[CENTER_0][31:16];
+            //     end else if ((state_q == WIDE_RED) & !(|red_cnt_q)) begin //Last cycle of WIDE_RED
+            //         input_a[CENTER_0][31:0] = acc_q[CENTER_1][31:0]; 
+            //     end else if (state_q == WIDE_RED) begin //During WIDE_RED
+            //         input_a[CENTER_0][31:0] = acc_q[CENTER_0 - 1][31:0];
+            //     end else begin
+            //         input_a[CENTER_0][31:0] = pipe_in_op2_i[32*CENTER_0 +: 32]; //During Parallel Sum
+            //     end
+            // end
+
+            //TODO Strange Verilator Issue, multidriven pins.  Combining both above statements resolved this, but should not be necessary
             always_comb begin : input_handling_center_0_a
                 if (state_q == RESULT_RED) begin //In RESULT RED, take input from upper half of this adder's output
                     input_a[CENTER_0][31:16] = '0;
                     input_a[CENTER_0][15:0] = acc_q[CENTER_0][31:16];
+                    input_a[CENTER_1][31:0] = pipe_in_op2_i[32*CENTER_1 +: 32];
                 end else if ((state_q == WIDE_RED) & !(|red_cnt_q)) begin //Last cycle of WIDE_RED
                     input_a[CENTER_0][31:0] = acc_q[CENTER_1][31:0]; 
+                    input_a[CENTER_1][31:0] = acc_q[CENTER_1 + 1][31:0];
                 end else if (state_q == WIDE_RED) begin //During WIDE_RED
                     input_a[CENTER_0][31:0] = acc_q[CENTER_0 - 1][31:0];
+                    input_a[CENTER_1][31:0] = acc_q[CENTER_1 + 1][31:0];
                 end else begin
                     input_a[CENTER_0][31:0] = pipe_in_op2_i[32*CENTER_0 +: 32]; //During Parallel Sum
+                    input_a[CENTER_1][31:0] = pipe_in_op2_i[32*CENTER_1 +: 32];
                 end
             end
 
