@@ -424,7 +424,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
     decoder_data pipeline_disp_data;
 
-    assign pipeline_valid = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & !xif_commit_if.commit.commit_kill)) | (!pipeline_disp_empty & ((instr_state_q[pipeline_disp_data.xif_id] == INSTR_COMMITTED))));
+    assign pipeline_valid = ((!pipeline_disp_empty & ((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & !xif_commit_if.commit.commit_kill)) | (!pipeline_disp_empty & ((instr_state_q[pipeline_disp_data.xif_id] == INSTR_COMMITTED)))) & !prec_trap_stall;
 
     assign push_pipeline_disp = dec_valid & dec_ready & (instr_unit != UNIT_CFG); //Push on valid instruction decode for vector pipeline
     assign pop_pipeline_disp = (pipeline_valid & pipeline_ready) | (!pipeline_disp_empty & (((pipeline_disp_data.xif_id == xif_commit_if.commit.id) & xif_commit_if.commit_valid & xif_commit_if.commit.commit_kill) | (instr_state_q[pipeline_disp_data.xif_id] == INSTR_KILLED))); //Only pop on successful handshake with pipelines or killed instruction
@@ -441,6 +441,35 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     end
 
     assign dec_data_d.pipe_id  = next_id;
+
+    /////////
+    //For precise traps on faults, need to block ALL dispatch when a VLSU instruction is pending, as this is the only instruction that cannot fault(TODO: fault-only-first could have different behavior)
+    /////////
+    logic pend_vlsu_d, pend_vlsu_q;
+    logic prec_trap_stall;
+
+    always_ff @(posedge clk_i) begin
+        if (~rst_ni) begin
+            pend_vlsu_q <= '0;
+        end else begin
+            pend_vlsu_q <= pend_vlsu_d;
+        end
+    end
+
+    always_comb begin
+        pend_vlsu_d = pend_vlsu_q;
+        if (pop_pipeline_disp & (pipeline_disp_data.unit == UNIT_LSU)) begin
+            pend_vlsu_d = 1'b1;
+        end else if (lsu_trans_complete_valid) begin //TODO: On fault, need to still block/flush
+            pend_vlsu_d = 1'b0;
+        end
+    end
+
+    assign prec_trap_stall = pend_vlsu_q & !lsu_trans_complete_valid; //Stall until the lsu_trans_complete_valid signal is received  TODO: Should be possible to make this optional.  Will need to resolve metadata storage in VLSU for long latency memory operations, with this stall enabled, this condition never occurs
+
+    ////////
+    //Dispatch queues
+    ////////
 
     fifo_v3 #(
     .FALL_THROUGH (1'b1        ),
@@ -483,7 +512,7 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
 
 
     assign push_csr_disp = dec_valid & dec_ready & (instr_unit == UNIT_CFG); //Push on valid instruction decode for vector pipeline
-    assign pop_csr_disp = ((!csr_disp_empty & ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!csr_disp_empty & ((instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE) & (instr_state_q[csr_disp_data.id] != INSTR_INVALID)))) & csr_ready; //Pop CSR instruction if csr instruction is committed or killed.
+    assign pop_csr_disp = ((!csr_disp_empty & ((csr_disp_data.id == xif_commit_if.commit.id) & xif_commit_if.commit_valid)) | (!csr_disp_empty & ((instr_state_q[csr_disp_data.id] != INSTR_SPECULATIVE) & (instr_state_q[csr_disp_data.id] != INSTR_INVALID)))) & (csr_ready & !prec_trap_stall); //Pop CSR instruction if csr instruction is committed or killed.
 
     assign csr_access_stall = (!csr_disp_empty) & !push_csr_disp; //stall for CSR access 
 
@@ -810,8 +839,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
                 .DONT_CARE_ZERO           ( DONT_CARE_ZERO             )
             ) pipe (
                 .clk_i                    ( clk_i                      ),
-                .async_rst_ni             ( rst_ni                ),
-                .sync_rst_ni              ( rst_ni                 ),
+                .async_rst_ni             ( rst_ni                     ),
+                .sync_rst_ni              ( rst_ni                     ),
                 .pipe_in_valid_i          ( pipe_instr_valid[i]        ),
                 .pipe_in_ready_o          ( pipe_instr_ready[i]        ),
                 .pipe_in_data_i           ( pipe_instr_data            ),
@@ -991,9 +1020,6 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
     );
 
 
-    //On successful (granted) write, generate signal to clear pending writes for pipelines
-
-
     ///////////////////////////////////////////////////////////////////////////
     // RESULT INTERFACE
 
@@ -1002,8 +1028,8 @@ module vproc_core import vproc_pkg::*, obi_pkg::*; #(
         .DONT_CARE_ZERO            ( DONT_CARE_ZERO             )
     ) result_if (
         .clk_i                     ( clk_i                      ),
-        .async_rst_ni              ( rst_ni                ),
-        .sync_rst_ni               ( rst_ni                 ),
+        .async_rst_ni              ( rst_ni                     ),
+        .sync_rst_ni               ( rst_ni                     ),
         .result_empty_valid_i      ( result_empty_valid         ),
         .result_empty_id_i         ( result_empty_id            ),
         .result_lsu_valid_i        ( lsu_trans_complete_valid   ),
